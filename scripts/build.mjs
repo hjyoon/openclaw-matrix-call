@@ -2,6 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { build } from "esbuild";
+import { buildBrowserAssets, copyBrowserLicenses } from "./build-browser-assets.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const targets = [
@@ -11,12 +12,17 @@ const targets = [
   { name: "worker", entry: "packages/worker/src/main.ts", output: "dist/worker/worker.mjs", external: [] },
   { name: "worker-api", entry: "packages/worker/src/index.ts", output: "dist/worker/index.js", external: [] },
   { name: "matrixrtc", entry: "packages/matrixrtc/src/index.ts", output: "dist/matrixrtc/index.js", external: [], platform: "browser" },
+  { name: "browser-worker", entry: "packages/browser-worker/src/main.ts", output: "dist/browser-worker/worker.mjs", external: ["playwright-core"] },
+  { name: "browser-worker-api", entry: "packages/browser-worker/src/index.ts", output: "dist/browser-worker/index.js", external: ["playwright-core"] },
 ];
 
 await mkdir(path.join(root, "dist/build-metadata"), { recursive: true });
 for (const directory of new Set(targets.map((target) => path.dirname(path.join(root, target.output))))) {
   await rm(directory, { recursive: true, force: true });
 }
+const browser = await buildBrowserAssets(root, path.join(root, "dist/browser-worker/assets"));
+await writeFile(path.join(root, "dist/build-metadata/browser-assets.json"), JSON.stringify(browser));
+await copyBrowserLicenses(root, path.join(root, "dist/browser-worker/licenses"), browser);
 for (const target of targets) {
   const outfile = path.join(root, target.output);
   const result = await build({

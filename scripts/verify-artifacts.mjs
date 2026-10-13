@@ -15,6 +15,21 @@ const matrixrtcPackage = JSON.parse(await readFile(path.join(root, "packages/mat
 for (const name of ["livekit-client", "matrix-js-sdk"]) {
   assert.equal(matrixrtcPackage.dependencies[name], workspace.devDependencies[name]);
 }
+const browserBuild = JSON.parse(await readFile(path.join(root, "deployment/browser-build/package.json"), "utf8"));
+for (const name of ["esbuild", "livekit-client", "matrix-js-sdk", "playwright-core"]) assert.equal(browserBuild.dependencies[name], workspace.devDependencies[name]);
+assert.equal(browserBuild.dependencies.zod, corePackage.dependencies.zod);
+const browserAssets = JSON.parse(await readFile(path.join(root, "dist/build-metadata/browser-assets.json"), "utf8"));
+assert(Object.values(browserAssets.outputs).every((output) => output.imports.length === 0));
+assert(!Object.keys(browserAssets.inputs).some((entry) => /(?:openclaw|packages\/core\/src)/.test(entry)));
+const licenses = JSON.parse(await readFile(path.join(root, "dist/browser-worker/licenses/index.json"), "utf8"));
+for (const name of ["matrix-js-sdk", "livekit-client", "playwright-core", "@matrix-org/matrix-sdk-crypto-wasm"]) {
+  assert(licenses.some((entry) => entry.name === name && entry.files.length > 0));
+}
+for (const name of ["browser-worker", "browser-worker-api"]) {
+  const metadata = JSON.parse(await readFile(path.join(root, `dist/build-metadata/${name}.json`), "utf8"));
+  assert(Object.values(metadata.outputs).flatMap((output) => output.imports).every((entry) => entry.path.startsWith("node:") || entry.path === "playwright-core"));
+  assert(!Object.keys(metadata.inputs).some((entry) => /node_modules\/.*(?:matrix-js-sdk|livekit-client|openclaw)/.test(entry)));
+}
 const browserMetadata = JSON.parse(await readFile(path.join(root, "dist/build-metadata/matrixrtc.json"), "utf8"));
 assert(Object.values(browserMetadata.outputs).every((output) => output.imports.length === 0));
 assert(!Object.keys(browserMetadata.inputs).some((entry) => /(?:openclaw|packages\/core\/src)/.test(entry)));
