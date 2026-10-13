@@ -13,6 +13,8 @@
     "verify:worker": "node scripts/verify-worker.mjs",
     "verify:plugin": "node scripts/verify-plugin.mjs",
     "verify:container": "node scripts/verify-container.mjs",
+    "verify:media": "node scripts/verify-media.mjs",
+    "browser:install": "PLAYWRIGHT_BROWSERS_PATH=.cache/browsers playwright-core install chromium",
     "schema:sync": "pnpm build && node scripts/sync-manifest.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
@@ -26,6 +28,7 @@
     "livekit-client": "2.22.4",
     "matrix-js-sdk": "43.0.0",
     "openclaw": "2026.10.2",
+    "playwright-core": "1.64.0",
     "typescript": "5.9.3",
     "vite": "7.3.1",
     "vitest": "5.0.4"

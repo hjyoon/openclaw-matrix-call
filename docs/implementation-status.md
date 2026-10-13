@@ -30,6 +30,7 @@ Decision rationale and changes are recorded in [ADRs](adr/README.md). This statu
 - A browser-safe MatrixRTC package with pinned public Matrix/LiveKit SDKs and a per-participant WebCrypto key provider. Imports that finish after call or membership invalidation are discarded.
 - Authenticated remote-key admission matching Rust crypto sender/device evidence to the current room-scoped MatrixRTC membership, with expiry, scope, ambiguity, and lifecycle checks.
 - A participant verifier binding public SDK membership identities to connected encrypted LiveKit audio, with fresh device-trust checks and bounded core proofs.
+- Real bidirectional encrypted LiveKit audio using the repository key provider in sandboxed Chromium, including wrong-key rejection with continued RTP traffic, recovery, and key rotation. This media-layer check supplies test keys directly; see [evidence and limits](media-integration.md).
 
 `pnpm check` and the worker container check pass locally. The current suite has 283 passing tests, with 100% per-file runtime coverage. Tests use isolated fixtures, temporary profiles, and local test services. GitHub Actions has also passed package installation, full coverage, image build, and container checks.
 
