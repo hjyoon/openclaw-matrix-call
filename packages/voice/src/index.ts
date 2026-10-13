@@ -3,8 +3,10 @@ import {
   type AgentPort, type CallPolicy, type ConversationStore, type ParticipantReference, type ParticipantVerifier,
   type PcmAudio, type RtcTransportPort, type SpeechRecognitionPort, type SpeechSynthesisPort, type VerifiedParticipant,
 } from "@matrix-call/core";
+import { cancelable } from "./cancellation.js";
 
 export { PcmSegmenter } from "./segmenter.js";
+export { cancelable } from "./cancellation.js";
 
 export type VoiceOptions = Readonly<{
   policy: CallPolicy;
@@ -21,17 +23,6 @@ export type VoiceOptions = Readonly<{
 
 type Session = { key: string; controller: AbortController; recordId: string | undefined };
 export type VoiceResult = "replied" | "silence" | "busy";
-
-export async function cancelable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) { void operation.catch(() => {}); signal.throwIfAborted(); }
-  let abort!: () => void;
-  try {
-    return await Promise.race([operation, new Promise<never>((_resolve, reject) => {
-      abort = () => reject(signal.reason);
-      signal.addEventListener("abort", abort, { once: true });
-    })]);
-  } finally { signal.removeEventListener("abort", abort); }
-}
 
 export class VoiceAssistant {
   readonly #options: VoiceOptions;

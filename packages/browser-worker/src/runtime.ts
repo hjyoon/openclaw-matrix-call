@@ -7,6 +7,7 @@ import { createMatrixClient, enrollPinnedDevices, initializeMatrixClient, joined
 import { createBrowserMedia, type BrowserMedia } from "./media.js";
 import { MatrixPublicationGuard, MatrixPublicationChangedError } from "./guard.js";
 import type { BrowserSetup } from "./types.js";
+import { VerifiedAudioInbox } from "./inbox.js";
 
 type ActiveCall = {
   roomId: string;
@@ -24,6 +25,8 @@ type ActiveCall = {
   subscribe: () => void;
   timer: ReturnType<typeof setInterval> | undefined;
   closing: Promise<void> | undefined;
+  input: VerifiedAudioInbox;
+  playing: boolean;
 };
 
 export async function waitUntil(predicate: () => boolean, signal: AbortSignal): Promise<void> {
@@ -128,12 +131,16 @@ export class BrowserMatrixRuntime {
     const receive = (message: ReceivedToDeviceMessage): void => {
       if (message.message.type === EventType.CallEncryptionKeysPrefix) void keys.receive(message).then((accepted) => { if (accepted) subscribe(); }).catch(() => fail("keys"));
     };
-    const changed = (): void => {
+    const refresh = (): void => {
       media.suspend();
       subscribe();
       if (call.connected) void refreshPublication(guard, AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)])).catch(() => fail("listeners"));
     };
-    const call: ActiveCall = { roomId, session, media, keys, guard, controller, connected: false, receive, changed, stateFailed, mediaFailed, encryptionFailed, subscribe, timer: undefined, closing: undefined };
+    const changed = (): void => { call.input.reset(); refresh(); };
+    const input = new VerifiedAudioInbox({ verify: (reference, signal) => this.verify(reference, signal) },
+      (reference) => this.#call === call && call.connected && !controller.signal.aborted && keys.hasCurrentKey(reference.participantId),
+      () => media.resetCapture());
+    const call: ActiveCall = { roomId, session, media, keys, guard, controller, connected: false, receive, changed, stateFailed, mediaFailed, encryptionFailed, subscribe, timer: undefined, closing: undefined, input, playing: false };
     this.#call = call;
     this.#client.on(ClientEvent.ReceivedToDeviceMessage, receive);
     session.on(MatrixRTCSessionEvent.MembershipsChanged, changed);
@@ -144,6 +151,9 @@ export class BrowserMatrixRuntime {
     const { userId, deviceId } = this.#setup.credentials;
     const own = () => memberships().filter((member) => member.userId === userId && member.deviceId === deviceId);
     try {
+      if (this.#setup.captureAudio) await media.startCapture((identity, audio) => {
+        void input.accept({ roomId, rtcSessionId: slotId, participantId: identity }, audio).catch(() => fail("capture"));
+      }, (identity) => input.listening && call.connected && !controller.signal.aborted && keys.hasCurrentKey(identity), () => fail("capture"));
       session.joinRTCSession({ userId, deviceId, memberId: `${userId}:${deviceId}` }, [
         { type: "livekit", livekit_service_url: this.#setup.policy.focusUrls[0]!, livekit_alias: roomId },
       ], undefined, { manageMediaKeys: false, callIntent: "audio", membershipEventExpiryMs: 60_000, delayedLeaveEventDelayMs: 5_000, delayedLeaveEventRestartMs: 2_000 });
@@ -159,7 +169,7 @@ export class BrowserMatrixRuntime {
       subscribe();
       call.connected = true;
       await refreshPublication(guard, signal);
-      call.timer = setInterval(changed, 5_000);
+      call.timer = setInterval(() => { if (!call.playing) refresh(); }, 5_000);
     } catch (error) {
       await this.#disconnect(call);
       throw error;
@@ -174,7 +184,10 @@ export class BrowserMatrixRuntime {
     signal.throwIfAborted();
     const revision = call.guard.revision;
     if (!call.guard.permits(revision)) throw new Error("Matrix publication is suspended");
-    await call.media.publish(audio, AbortSignal.any([signal, call.controller.signal]));
+    const listening = call.input.listening;
+    call.input.pause(); call.playing = true;
+    try { await call.media.publish(audio, AbortSignal.any([signal, call.controller.signal])); }
+    finally { call.playing = false; if (listening) call.input.resume(); }
     signal.throwIfAborted();
     if (!call.guard.permits(revision)) throw new Error("Matrix publication changed during playback");
   }
@@ -186,6 +199,10 @@ export class BrowserMatrixRuntime {
       media: call.media.room, keys: call.keys, now: Date.now }).verify(reference, signal);
   }
 
+  takeAudio() { return this.#call?.input.take() ?? null; }
+
+  resumeAudio(): void { this.#call?.input.resume(); }
+
   async disconnect(): Promise<void> {
     const call = this.#call;
     if (!call) return;
@@ -194,7 +211,7 @@ export class BrowserMatrixRuntime {
 
   #disconnect(call: ActiveCall): Promise<void> {
     if (call.closing) return call.closing;
-    call.controller.abort(); call.keys.close(); call.guard.close();
+    call.controller.abort(); call.input.close(); call.keys.close(); call.guard.close();
     clearInterval(call.timer);
     this.#client.off(ClientEvent.ReceivedToDeviceMessage, call.receive);
     call.session.off(MatrixRTCSessionEvent.MembershipsChanged, call.changed);

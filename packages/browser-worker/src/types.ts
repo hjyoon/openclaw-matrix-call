@@ -22,4 +22,5 @@ export type BrowserSetup = Readonly<{
   credentials: MatrixCredentials;
   policy: BrowserPolicy;
   expectedKeys: DeviceKeys | undefined;
+  captureAudio?: boolean;
 }>;

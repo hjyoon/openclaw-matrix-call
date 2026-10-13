@@ -25,9 +25,9 @@ function member(userId: string, deviceId: string): CallMembership {
   return { userId, deviceId, memberId: `${userId}:${deviceId}`, rtcBackendIdentity: `${userId}:${deviceId}`, createdTs: () => created, getAbsoluteExpiry: () => undefined, getTransport: () => ({ type: "livekit", livekit_service_url: configuration.focusUrls[0], livekit_alias: "!room" }) } as unknown as CallMembership;
 }
 
-function fixture() {
+function fixture(captureAudio = false) {
   const config = parseBrowserConfig(configuration, credentials);
-  const setup: BrowserSetup = { credentials: config.credentials, policy: config.policy, expectedKeys: undefined };
+  const setup: BrowserSetup = { credentials: config.credentials, policy: config.policy, expectedKeys: undefined, captureAudio };
   const pin = setup.policy.devices[0]!;
   const local = member(credentials.userId, credentials.deviceId);
   const remote = member(pin.userId, pin.deviceId);
@@ -37,7 +37,7 @@ function fixture() {
   const client = Object.assign(new EventEmitter(), { whoami: vi.fn(async () => ({ user_id: credentials.userId, device_id: credentials.deviceId })), downloadKeysForUsers: vi.fn(async () => ({ failures: {}, device_keys: {} })), initRustCrypto: vi.fn(async () => {}), getCrypto: () => cryptoApi, startClient: vi.fn(async () => {}), stopClient: vi.fn(), getSyncState: vi.fn(() => SyncState.Prepared), getRoom: vi.fn(() => room), getUserId: () => credentials.userId, getDeviceId: () => credentials.deviceId, encryptAndSendToDevice: vi.fn(async () => {}), matrixRTC: { getRoomSession: () => session } });
   const publication = { kind: Track.Kind.Audio, isEncrypted: true, isSubscribed: true, track: { mediaStreamTrack: { readyState: "live" } }, setSubscribed: vi.fn((value: boolean) => { publication.isSubscribed = value; }) };
   const mediaRoom = Object.assign(new EventEmitter(), { state: ConnectionState.Connected, isE2EEEnabled: true, remoteParticipants: new Map([[remote.rtcBackendIdentity, { identity: remote.rtcBackendIdentity, trackPublications: new Map([["audio", publication]]) }]]) });
-  const media = { room: mediaRoom, connect: vi.fn(async () => {}), suspend: vi.fn(), resume: vi.fn(), publish: vi.fn(async () => {}), close: vi.fn(async () => {}) };
+  const media = { room: mediaRoom, startCapture: vi.fn(async (_listener: (identity: string, audio: typeof pcm) => void, _permitted: (identity: string) => boolean, _failure: () => void) => {}), resetCapture: vi.fn(), connect: vi.fn(async () => {}), suspend: vi.fn(), resume: vi.fn(), publish: vi.fn(async () => {}), close: vi.fn(async () => {}) };
   const grant = { url: "wss://sfu.example.org", jwt: "opaque-jwt", identity: local.rtcBackendIdentity, expiresAtMs: Date.now() + 60_000 };
   const authorizer = { authorize: vi.fn(async (_source: FocusAuthorizationSource, _signal: AbortSignal) => grant) };
   sdkFactory.mockReturnValue(client); mediaFactory.mockReturnValue(media); focusFactory.mockReturnValue(authorizer);
@@ -49,7 +49,68 @@ async function ready(f = fixture()) { await f.runtime.initialize(); await f.runt
 const pcm = { samples: new Int16Array([1]), sampleRate: 16_000, channels: 1 as const };
 const signal = () => new AbortController().signal;
 
+async function admit(f: Awaited<ReturnType<typeof ready>>) {
+  f.client.emit(ClientEvent.ReceivedToDeviceMessage, {
+    encryptionInfo: { senderVerified: true, sender: f.remote.userId, senderDevice: f.remote.deviceId },
+    message: { type: EventType.CallEncryptionKeysPrefix, sender: f.remote.userId, content: { room_id: "!room", member: { id: f.remote.memberId, claimed_device_id: f.remote.deviceId }, session: { application: "m.call", call_id: "", scope: "m.room" }, keys: { index: 0, key: btoa("0123456789abcdef") }, sent_ts: Date.now() } },
+  });
+  await vi.waitFor(() => expect(f.publication.isSubscribed).toBe(true));
+}
+
 describe("production Matrix browser runtime", () => {
+  it("exposes only verified current call PCM over the private browser interface", async () => {
+    const f = await ready(fixture(true));
+    expect(f.runtime.takeAudio()).toBeNull(); f.runtime.resumeAudio();
+    await f.runtime.connect("!room");
+    const [receive, permitted] = f.media.startCapture.mock.calls[0]!;
+    expect(permitted(f.remote.rtcBackendIdentity)).toBe(false);
+    receive(f.remote.rtcBackendIdentity, { ...pcm, samples: pcm.samples.slice() });
+    expect(f.runtime.takeAudio()).toBeNull();
+    await admit(f); expect(permitted(f.remote.rtcBackendIdentity)).toBe(true);
+    receive(f.remote.rtcBackendIdentity, { ...pcm, samples: pcm.samples.slice() });
+    let audio;
+    await vi.waitFor(() => { audio = f.runtime.takeAudio(); expect(audio).not.toBeNull(); });
+    expect(audio).toEqual({ reference: { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: f.remote.rtcBackendIdentity }, audio: { samples: [1], sampleRate: 16_000, channels: 1 } });
+    expect(permitted(f.remote.rtcBackendIdentity)).toBe(false);
+    await f.runtime.publish(pcm, signal()); expect(permitted(f.remote.rtcBackendIdentity)).toBe(false);
+    f.runtime.resumeAudio(); expect(permitted(f.remote.rtcBackendIdentity)).toBe(true);
+    const verified = f.cryptoApi.getDeviceVerificationStatus.mock.calls.length;
+    receive(f.remote.rtcBackendIdentity, { ...pcm, samples: pcm.samples.slice() });
+    await vi.waitFor(() => expect(f.cryptoApi.getDeviceVerificationStatus.mock.calls.length).toBeGreaterThan(verified));
+    f.session.emit(MatrixRTCSessionEvent.MembershipsChanged);
+    expect(f.runtime.takeAudio()).toBeNull();
+    await f.runtime.close(); expect(permitted(f.remote.rtcBackendIdentity)).toBe(false);
+    receive(f.remote.rtcBackendIdentity, { ...pcm, samples: pcm.samples.slice() });
+  });
+
+  it.each(["callback", "invalid-pcm", "setup"])("closes failed capture: %s", async (stage) => {
+    const f = await ready(fixture(true));
+    if (stage === "setup") {
+      f.media.startCapture.mockRejectedValueOnce(new Error("capture setup failed"));
+      await expect(f.runtime.connect("!room")).rejects.toThrow("capture setup failed");
+    } else {
+      await f.runtime.connect("!room"); await admit(f);
+      const [receive, _permitted, failed] = f.media.startCapture.mock.calls[0]!;
+      if (stage === "callback") failed();
+      else receive(f.remote.rtcBackendIdentity, { ...pcm, samples: new Int16Array() });
+      await vi.waitFor(() => expect(f.runtime.status().roomId).toBeNull());
+    }
+    expect(f.media.close).toHaveBeenCalledOnce(); await f.runtime.close();
+  });
+
+  it("preserves bounded playback through a periodic rotation while retaining immediate membership cancellation", async () => {
+    vi.useFakeTimers(); const f = await ready(); await f.runtime.connect("!room");
+    let finish!: () => void;
+    f.media.publish.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const playing = f.runtime.publish(pcm, signal());
+    await vi.waitFor(() => expect(f.media.publish).toHaveBeenCalled());
+    const count = f.client.encryptAndSendToDevice.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5000); expect(f.client.encryptAndSendToDevice).toHaveBeenCalledTimes(count);
+    finish(); await playing;
+    await vi.advanceTimersByTimeAsync(5000); expect(f.client.encryptAndSendToDevice.mock.calls.length).toBeGreaterThan(count);
+    await f.runtime.close();
+  });
+
   it("reauthorizes a changed focus membership and preserves fatal errors and cancellation", async () => {
     vi.useFakeTimers();
     const f = await ready();

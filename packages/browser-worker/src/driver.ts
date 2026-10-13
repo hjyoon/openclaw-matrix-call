@@ -94,7 +94,7 @@ export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
       this.#connected = true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
-      const reason = ["state", "media", "keys", "listeners", "missing-key", "invalid-key", "encryption"].find((code) => message.includes(`Matrix call ended: ${code}`)) ??
+      const reason = ["state", "media", "keys", "listeners", "missing-key", "invalid-key", "encryption", "capture"].find((code) => message.includes(`Matrix call ended: ${code}`)) ??
         ["invalid-config", "unsupported-call", "untrusted-focus", "membership-changed", "invalid-response", "untrusted-sfu", "identity-mismatch", "response-too-large", "http-error"].find((code) => message.includes(`FocusAuthorizationError: ${code}`)) ?? "connection";
       console.info(JSON.stringify({ event: "browser-call-failed", reason }));
       throw error;
