@@ -11,6 +11,7 @@ Number records in order. An accepted ADR is a historical record, not a second in
 | [0001](0001-portable-agent-and-call-boundaries.md) | Accepted | Portable core and replaceable agent/runtime boundaries |
 | [0002](0002-matrix-protocol-compatibility.md) | Accepted | Matrix protocol capabilities instead of an Element-only target |
 | [0003](0003-development-instructions-and-decision-history.md) | Accepted | Current instructions separated from decision history |
+| [0004](0004-delegated-openclaw-ingress.md) | Accepted | Delegated, tool-free OpenClaw ingress until supported owner admission exists |
 
 ## Record format
 
