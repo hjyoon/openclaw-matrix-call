@@ -1,0 +1,12 @@
+{
+  "name": "@matrix-call/speech-worker",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@matrix-call/core": "workspace:*",
+    "@matrix-call/speech-http": "workspace:*",
+    "zod": "4.6.7"
+  }
+}
