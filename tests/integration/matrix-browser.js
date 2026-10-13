@@ -78,6 +78,12 @@ window.matrixTest = {
     const signal = AbortSignal.timeout(30_000);
     for (;;) {
       signal.throwIfAborted();
+      const members = keySource.memberships();
+      const own = members.filter((member) => member.userId === client.getUserId() && member.deviceId === client.getDeviceId());
+      if (!session.isJoined() || own.length !== 1 || new Set(members.map((member) => member.participantId)).size !== members.length) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        continue;
+      }
       localIndex = Math.max(index, localIndex + 1);
       localKey = await publishMatrixRtcKey(keySource, localIndex, signal);
       if (localKey) return true;

@@ -8,6 +8,7 @@ const room = new Room({ encryption: { keyProvider: provider, worker }, adaptiveS
 const audio = new AudioContext({ sampleRate: 48_000 });
 const analyzers = new Map();
 let oscillator;
+let volume;
 const encryptionErrors = [];
 room.on(RoomEvent.EncryptionError, (error) => encryptionErrors.push(error.name));
 
@@ -40,6 +41,7 @@ window.mediaTest = {
   async publish(frequency) {
     const destination = audio.createMediaStreamDestination();
     const gain = audio.createGain();
+    volume = gain;
     gain.gain.value = 0.25;
     oscillator = audio.createOscillator();
     oscillator.frequency.value = frequency;
@@ -47,6 +49,8 @@ window.mediaTest = {
     oscillator.start();
     await room.localParticipant.publishTrack(destination.stream.getAudioTracks()[0], { source: Track.Source.Microphone, dtx: false, red: false });
   },
+  sound(frequency) { oscillator.frequency.value = frequency; volume.gain.value = 0.25; },
+  silence() { volume.gain.value = 0; },
   measure(identity) {
     const entry = analyzers.get(identity);
     if (!entry) return { rms: 0, frequency: 0, encrypted: false };

@@ -6,6 +6,8 @@ import { once } from "node:events";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
+import { startTestVoiceServices } from "./voice-services.mjs";
 
 async function freePort() {
   const server = createServer(); server.listen(0, "127.0.0.1"); await once(server, "listening");
@@ -54,11 +56,13 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
   let peerJoined = false;
   let keys;
   let previousId;
+  let voiceServices;
+  let voiceConfiguration;
   let rotation = 0;
   let failure = "none";
   const network = { focusStatuses: [], failed: [], csp: false };
   const originalStart = BrowserDriver.start;
-  BrowserDriver.start = (config) => originalStart(config, { async launchPersistentContext(...args) {
+  BrowserDriver.start = (config, _launcher, captureAudio) => originalStart(config, { async launchPersistentContext(...args) {
     const context = await chromium.launchPersistentContext(...args);
     context.on("page", (page) => {
       page.on("requestfailed", (request) => {
@@ -68,7 +72,7 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
       page.on("console", (message) => { if (message.text().includes("Content Security Policy")) network.csp = true; });
     });
     return context;
-  } });
+  } }, captureAudio);
   const identity = `${credentials.userId}:${credentials.deviceId}`;
 
   async function control(url) {
@@ -98,6 +102,16 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
     await waitFor(async () => (await peer.evaluate((id) => window.matrixTest.status(id), identity)).remoteKey, "production-driver authenticated outbound key");
     assert(await peer.evaluate((index) => window.matrixTest.rotate(index), rotation++));
     return response.value.sessionId;
+  }
+
+  async function utterance(frequency, label) {
+    await peer.evaluate((frequency) => window.mediaTest.sound(frequency), frequency);
+    await delay(900);
+    await peer.evaluate(() => window.mediaTest.silence());
+    await waitFor(async () => {
+      const audio = await peer.evaluate((id) => window.mediaTest.measure(id), identity);
+      return audio.encrypted && audio.rms > 0.03 && Math.abs(audio.frequency - 1320) < 35;
+    }, label);
   }
 
   try {
@@ -142,9 +156,42 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
       await worker.close(); worker = undefined;
       await waitFor(async () => (await peer.evaluate((id) => window.matrixTest.status(id), identity)).members === 1, "production-driver departure");
     }
+    await peer.evaluate(() => window.mediaTest.silence());
+    voiceServices = await startTestVoiceServices(root);
+    await writeFile(path.join(data, "agent.secret"), voiceServices.agentSecret, { mode: 0o600 });
+    await writeFile(path.join(data, "speech.secret"), voiceServices.speechSecret, { mode: 0o600 });
+    voiceConfiguration = { agentId: "assistant", agent: { baseUrl: voiceServices.agentUrl, secretFile: path.join(data, "agent.secret") },
+      speech: { baseUrl: voiceServices.speechUrl, secretFile: path.join(data, "speech.secret") }, allowInsecureLoopback: true };
+    const voiceFile = path.join(data, "voice.json"); await writeFile(voiceFile, JSON.stringify(voiceConfiguration));
+    await writeFile(configFile, JSON.stringify({ ...config, voiceFile }));
+    worker = await startBrowserWorker(env); assert(worker.voice, "Voice must be explicitly configured");
+    const request = await control(`http://127.0.0.1:${worker.server.address().port}`);
+    let sessionId = await connect(request);
+    await utterance(660, "encrypted audio to speech, agent and synthesized PCM");
+    await waitFor(() => !worker.voice.busy, "first voice turn completion");
+    assert.equal(voiceServices.state.turns.length, 1);
+    assert(Math.abs(voiceServices.state.transcriptions[0].frequency - 660) < 45);
+    assert.equal(voiceServices.state.turns[0].caller.userId, owner.userId);
+    assert.equal(voiceServices.state.turns[0].caller.deviceId, owner.deviceId);
+    await utterance(770, "second half-duplex voice turn");
+    await waitFor(() => !worker.voice.busy, "second voice turn completion");
+    assert.equal(voiceServices.state.turns.length, 2);
+    assert.equal(voiceServices.state.turns[0].conversationId, voiceServices.state.turns[1].conversationId);
+    assert.notEqual(voiceServices.state.turns[0].turnId, voiceServices.state.turns[1].turnId);
+    assert.equal(voiceServices.state.turns[1].messages.length, 3);
+    voiceServices.state.holdRecognition = true;
+    await peer.evaluate(() => window.mediaTest.sound(880)); await delay(900); await peer.evaluate(() => window.mediaTest.silence());
+    await waitFor(() => voiceServices.state.transcriptions.length === 3, "pending real speech HTTP request");
+    assert.equal((await request("/v1/media/leave", { sessionId })).status, 200);
+    await waitFor(() => voiceServices.state.canceledRecognition === 1, "speech HTTP cancellation on leave");
+    voiceServices.release(); assert.equal(voiceServices.state.turns.length, 2);
+    await worker.close(); worker = undefined;
+    await waitFor(async () => (await peer.evaluate((id) => window.matrixTest.status(id), identity)).members === 1, "voice worker departure");
     let containerChecked = false;
     if (process.env.MATRIX_CALL_BROWSER_IMAGE) {
-      const containerConfig = { ...config, credentialsFile: "/data/matrix.json", profileDir: "/data/profile", assetDir: "/app/assets" };
+      const containerVoice = { ...voiceConfiguration, agent: { ...voiceConfiguration.agent, secretFile: "/data/agent.secret" }, speech: { ...voiceConfiguration.speech, secretFile: "/data/speech.secret" } };
+      await writeFile(path.join(data, "container-voice.json"), JSON.stringify(containerVoice));
+      const containerConfig = { ...config, credentialsFile: "/data/matrix.json", profileDir: "/data/profile", assetDir: "/app/assets", voiceFile: "/data/container-voice.json" };
       await writeFile(path.join(data, "container.json"), JSON.stringify(containerConfig));
       const port = await freePort();
       container = `matrix-call-browser-${randomUUID()}`;
@@ -153,6 +200,10 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
       await waitFor(async () => { try { return (await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(500) })).ok; } catch { return false; } }, "browser image startup", 45_000);
       const request = await control(url);
       const sessionId = await connect(request);
+      await utterance(660, "voice pipeline inside the browser container");
+      assert.equal(voiceServices.state.turns.length, 3);
+      assert.notEqual(voiceServices.state.turns[2].conversationId, voiceServices.state.turns[1].conversationId);
+      assert.equal(voiceServices.state.turns[2].messages.length, 1);
       const probe = await readFile(path.join(root, "scripts/integration/renderer-probe.mjs"), "utf8");
       const sandbox = JSON.parse(execFileSync("docker", ["exec", container, "node", "--input-type=module", "-e", probe], { encoding: "utf8" }));
       assert(sandbox.uid !== 0 && sandbox.renderers.some((renderer) => renderer.namespaces > 1 && renderer.filters >= 2 && renderer.seccomp && renderer.noNewPrivileges), `The production renderer must retain PID and seccomp isolation: ${JSON.stringify(sandbox)}`);
@@ -164,10 +215,13 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
       assert.equal(state.ExitCode, 0); assert.equal(state.OOMKilled, false);
       containerChecked = true;
     }
-    return { productionBrowserDriver: true, persistentDeviceBinding: true, pcmPublication: true, browserContainer: containerChecked };
+    assert.equal(voiceServices.state.invalidRequests, 0);
+    return { productionBrowserDriver: true, persistentDeviceBinding: true, pcmPublication: true, voicePipeline: true,
+      speechModel: "protocol-fixture", agentRuntime: "protocol-fixture", browserContainer: containerChecked };
   } finally {
     BrowserDriver.start = originalStart;
     await worker?.close();
+    await voiceServices?.close();
     if (container) execFileSync("docker", ["rm", "--force", container], { stdio: "pipe" });
     if (peerJoined) await peer.evaluate(async () => { await window.matrixTest.leave(); await window.mediaTest.close(); });
   }

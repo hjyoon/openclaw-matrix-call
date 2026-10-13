@@ -27,12 +27,18 @@ The tested MatrixRTC mode uses `m.call.member` state membership, room slot `m.ca
 - The production browser package validates a new service device, enrolls explicitly pinned owner keys, and executes the same signed worker control protocol.
 - The production driver sends real 880 Hz and 1100 Hz PCM through encrypted media and verifies the owner's actual inbound track. Its persistent profile survives restart with the same device keys and fresh call/session state.
 - The optional image restores that device profile, completes real authorization and encrypted Matrix key exchange, retains non-root execution and additional Chromium PID/seccomp isolation, and exits cleanly after signed media leave.
+- The production capture worklet collects encrypted 660 Hz and 770 Hz microphone utterances, verifies current participants, and sends signed PCM requests to local speech protocol fixtures.
+- Those fixtures return deterministic transcripts, the agent fixture receives the verified Matrix user/device and call history, and the synthesis fixture returns 1320 Hz PCM that the other peer measures through encrypted media.
+- Two voice turns share a conversation UUID and ordered history while using distinct turn IDs. Leaving during a stalled recognition request aborts the actual HTTP request without dispatching an agent or accepting its late transcript.
+- The restored browser image runs the same audio-to-speech-to-agent-to-audio path with a new conversation UUID and an empty initial history. Its device keys and sandbox isolation remain intact.
+
+The synthetic peers wait for joined, unique current membership before attempting key publication; discarded attempts never reuse indices. Production authorization still rejects unsupported or unauthorized identities and endpoints. Temporary absence of selected focus/local membership is reauthorized only inside the bounded connection deadline.
 
 The separate [media check](media-integration.md) also verifies that wrong-key receivers remain silent while receiving RTP packets, followed by recovery and key rotation.
 
 ## Limits
 
-The tested focus mode is the explicit standalone OpenID endpoint. Homeserver-mediated MSC4195 discovery/authorization is not covered. The harness first uses injected test peers, then the actual production browser driver and explicit fingerprint enrollment. The optional image check restores the same private device profile inside Docker. Speech capture, STT/TTS, SAS enrollment UI, and model-backed call dispatch remain unfinished.
+The tested focus mode is the explicit standalone OpenID endpoint. Homeserver-mediated MSC4195 discovery/authorization is not covered. The harness first uses injected test peers, then the actual production browser driver and explicit fingerprint enrollment. The optional image check restores the same private device profile inside Docker. Voice uses signed protocol fixtures, not real speech or language models. Speech recognition quality, languages, provider latency, SAS enrollment UI, and model-backed call dispatch remain unfinished.
 
 The authorization service reaches the real Synapse OpenID userinfo endpoint through a temporary loopback HTTPS proxy. That proxy has a disposable self-signed test certificate, so certificate verification is disabled only inside this isolated test authorization-service container. Production clients retain the TLS requirement; no insecure setting is added to the worker deployment.
 
