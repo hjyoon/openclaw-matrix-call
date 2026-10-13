@@ -35,8 +35,9 @@ Decision rationale and changes are recorded in [ADRs](adr/README.md). This statu
 - Real MatrixRTC state membership and encrypted per-device key delivery against Synapse, followed by bidirectional encrypted audio and actual participant verification. Restart/rejoin preserves device trust while requiring fresh call keys; see [evidence and limits](matrix-integration.md).
 - An explicit OpenID focus authorization adapter with trusted endpoints, room/identity binding, grant checks, bounded streaming responses, cancellation, and membership fencing. The real Matrix/audio harness obtains tokens through authorization service 0.8.0 with SFU automatic room creation disabled.
 - A portable worker media controller with configured room access, independent session IDs, capacity reservation, cancellation/timeouts, late-completion fencing, and idempotent backend cleanup.
+- Authenticated media status/join/leave HTTP endpoints with signed results and errors, replay/path binding, request-disconnect cancellation, and injected transport shutdown. Assistant readiness remains unavailable.
 
-`pnpm check` and the worker container check pass locally. The current suite has 402 passing tests, with 100% per-file runtime coverage. Tests use isolated fixtures, temporary profiles, and local test services. GitHub Actions has also passed package installation, full coverage, image build, and container checks.
+`pnpm check` and the worker container check pass locally. The current suite has 414 passing tests, with 100% per-file runtime coverage. Tests use isolated fixtures, temporary profiles, and local test services. GitHub Actions has also passed package installation, full coverage, image build, and container checks.
 
 ## Remaining release work
 

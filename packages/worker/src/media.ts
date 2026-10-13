@@ -21,6 +21,7 @@ type MediaSession = {
 
 const joinSchema = z.strictObject({ roomId: matrixRoomIdSchema });
 const leaveSchema = z.strictObject({ sessionId: z.uuid() });
+const statusSchema = z.strictObject({});
 
 function cancellable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   signal.throwIfAborted();
@@ -50,7 +51,8 @@ export class WorkerMediaController {
     this.#timeout = timeoutMs;
   }
 
-  status() {
+  status(value: unknown = {}) {
+    if (!statusSchema.safeParse(value).success) throw new MediaControlError("invalid-request");
     const active = this.#active;
     return Object.freeze({ available: !this.#closed, session: active ? Object.freeze({ sessionId: active.id, roomId: active.roomId,
       state: active.controller.signal.aborted ? "closing" : (active.connected ? "connected" : "connecting"),

@@ -1,4 +1,4 @@
-import { once } from "node:events";
+import { EventEmitter, once } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { RequestAuthenticator } from "../../packages/core/src/index.js";
@@ -101,7 +101,7 @@ describe("worker control plane", () => {
     const worker = createWorkerServer(secret);
     const handler = worker.server.listeners("request")[0] as (req: unknown, res: unknown) => Promise<void>;
     const request = Object.assign(new PassThrough(), { method: "POST", url: "/v1/calls", headers: {} });
-    const response = { status: 0, body: "", writeHead(status: number) { this.status = status; }, end(body: string) { this.body = body; } };
+    const response = Object.assign(new EventEmitter(), { status: 0, body: "", writeHead(status: number) { this.status = status; }, end(body: string) { this.body = body; } });
     const pending = handler(request, response);
     request.destroy(new Error("private stream details"));
     await pending;

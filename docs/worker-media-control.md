@@ -11,3 +11,19 @@ The connection deadline applies only to opening media. Completing an HTTP operat
 Backend drivers must honor the connection abort signal and release their browser/media resources when disconnected. A driver must create new media/key resources for a new call while preserving only its private Matrix crypto profile. A transport that never settles after cancellation cannot be safely reused; the controller retains its reservation.
 
 The control layer does not create, reset, or delete an SFU room. It delegates connection to the configured transport. Agent ingress, STT/TTS, speaker authorization, and listener-aware publication/key rotation remain separate runtime responsibilities.
+
+## Authenticated API
+
+Inject the controller into `createWorkerServer(secret, media)` or `startWorker(env, media)`. The standalone CLI has no browser driver configured yet and continues to report unavailable media. The injected driver can be replaced without importing its SDK into the portable worker.
+
+| POST path | Strict request body | Success |
+| --- | --- | --- |
+| `/v1/media/status` | `{}` | Controller availability and current session, or `null` |
+| `/v1/media/join` | `{ "roomId": "!opaque" }` | A new session ID, exact room ID, and connected state |
+| `/v1/media/leave` | `{ "sessionId": "uuid" }` | `{ "closed": true }` after cleanup |
+
+All paths require the dedicated [worker message authentication](http-authentication.md), including process audience and replay protection. Success and media-control error responses are signed against the actual HTTP status and path. Invalid requests return 400, unconfigured rooms 403, missing sessions 404, busy/closed controllers 409, and redacted backend failures 503.
+
+Disconnecting an HTTP client cancels only a connection still being opened. The response-close listener is removed after the operation completes, so finishing a successful request does not terminate its media session. Worker shutdown closes the injected media controller after stopping its HTTP listener.
+
+Health may advertise `media-control` when an injected controller exists. `/readyz` remains 503 and `/v1/calls` remains unavailable because the assistant pipeline is not implemented. Media control readiness and assistant readiness are separate capabilities.

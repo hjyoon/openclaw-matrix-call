@@ -2,11 +2,12 @@ import { readFile } from "node:fs/promises";
 import { once } from "node:events";
 import { readWorkerConfig } from "./config.js";
 import { createWorkerServer } from "./server.js";
+import type { WorkerMediaController } from "./media.js";
 
-export async function startWorker(env: NodeJS.ProcessEnv = process.env) {
+export async function startWorker(env: NodeJS.ProcessEnv = process.env, media?: WorkerMediaController) {
   const config = readWorkerConfig(env);
   const secret = (await readFile(config.secretFile, "utf8")).trim();
-  const { server, audience } = createWorkerServer(secret);
+  const { server, audience } = createWorkerServer(secret, media);
   const listening = once(server, "listening");
   server.listen(config.port, config.host);
   await listening;
@@ -16,7 +17,7 @@ export async function startWorker(env: NodeJS.ProcessEnv = process.env) {
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);
     server.closeAllConnections();
-    closing = new Promise<void>((resolve) => { server.close(() => resolve()); });
+    closing = new Promise<void>((resolve) => { server.close(() => resolve()); }).then(() => media?.shutdown());
     return closing;
   };
   const onSignal = (): void => { void close(); };
