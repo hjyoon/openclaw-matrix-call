@@ -32,26 +32,31 @@ export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
   static async start(config: ReturnType<typeof parseBrowserConfig>, launcher: Pick<BrowserType, "launchPersistentContext"> = chromium) {
     const assets = await startAssetServer(config.assetDir, config.assetPort, config.credentials.baseUrl, config.policy);
     let context: BrowserContext | undefined;
+    let stage = "profile";
     try {
       const profile = await openDeviceProfile(config.profileDir, config.credentials, assets.origin);
-      context = await launcher.launchPersistentContext(config.profileDir, { headless: true, chromiumSandbox: true,
+      stage = "browser";
+      context = await launcher.launchPersistentContext(config.profileDir, { headless: true, channel: "chromium", chromiumSandbox: true,
         args: ["--autoplay-policy=no-user-gesture-required"], acceptDownloads: false, serviceWorkers: "block",
         handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false });
       const page = await context.newPage();
       for (const other of context.pages()) if (other !== page) await other.close();
+      stage = "bootstrap";
       await page.goto(assets.origin);
       await page.waitForFunction(() => typeof window.createMatrixCall === "function");
+      stage = "device";
       const keys = await page.evaluate(async (setup) => {
         window.matrixCall = window.createMatrixCall(setup);
         return window.matrixCall.initialize();
       }, { credentials: config.credentials, policy: config.policy, expectedKeys: profile.expectedKeys });
       await profile.persist(keys);
+      stage = "enrollment";
       await page.evaluate(() => window.matrixCall.prepare());
       return new BrowserDriver(context, page, assets, keys);
     } catch {
       try { await context?.close(); }
       finally { await assets.close(); }
-      throw new Error("Browser driver could not start");
+      throw new Error(`Browser driver could not start: ${stage}`);
     }
   }
 
@@ -87,6 +92,11 @@ export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
       signal.throwIfAborted();
       if (this.#closed || generation !== this.#generation) throw new Error("Browser driver connection changed");
       this.#connected = true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      const reason = ["state", "media", "keys", "listeners", "missing-key", "invalid-key", "encryption"].find((code) => message.includes(`Matrix call ended: ${code}`)) ?? "connection";
+      console.info(JSON.stringify({ event: "browser-call-failed", reason }));
+      throw error;
     } finally { this.#opening = false; signal.removeEventListener("abort", abort); }
   }
 

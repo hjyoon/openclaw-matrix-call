@@ -13,6 +13,7 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 function fixture() {
   vi.useFakeTimers();
+  const log = vi.spyOn(console, "info").mockImplementation(() => {});
   const config = parseBrowserConfig(configuration, credentials);
   const keys = { ed25519: "A".repeat(43), curve25519: "B".repeat(43) };
   const runtime = { initialize: vi.fn(async () => keys), prepare: vi.fn(async () => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), publish: vi.fn(async () => {}), verify: vi.fn(async (reference: object) => ({ ...reference, userId: "@owner:example.org", deviceId: "OWNER", expiresAtMs: Date.now() + 10_000, deviceVerified: true, mediaEncrypted: true })), status: vi.fn(() => ({ connected: true })) };
@@ -23,17 +24,25 @@ function fixture() {
   const assets = { origin: "http://127.0.0.1:19791", close: vi.fn(async () => {}) };
   const profile = { expectedKeys: undefined, persist: vi.fn(async () => {}) };
   assetFactory.mockResolvedValue(assets); profileFactory.mockResolvedValue(profile); launch.mockResolvedValue(context);
-  return { config, keys, runtime, page, spare, context, assets, profile };
+  return { config, keys, runtime, page, spare, context, assets, profile, log };
 }
 const signal = () => new AbortController().signal;
 const pcm = { samples: new Int16Array([-1, 0, 1]), sampleRate: 16_000, channels: 1 as const };
 const reference = { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: "remote" };
 
 describe("persistent production browser driver", () => {
+  it.each([new Error("Matrix call ended: missing-key"), credentials.accessToken])("logs only a bounded failure code for failed connections", async (error) => {
+    const f = fixture(); const driver = await BrowserDriver.start(f.config);
+    f.runtime.connect.mockRejectedValueOnce(error);
+    await expect(driver.connect("!room", signal())).rejects.toBe(error);
+    expect(JSON.parse(f.log.mock.calls[0]![0] as string)).toEqual({ event: "browser-call-failed", reason: error instanceof Error ? "missing-key" : "connection" });
+    expect(JSON.stringify(f.log.mock.calls)).not.toContain(credentials.accessToken);
+    await driver.close();
+  });
   it("launches sandboxed Chromium and binds private keys before device enrollment", async () => {
     const f = fixture();
     const driver = await BrowserDriver.start(f.config);
-    expect(launch).toHaveBeenCalledWith(f.config.profileDir, expect.objectContaining({ chromiumSandbox: true, headless: true, acceptDownloads: false, serviceWorkers: "block", handleSIGTERM: false }));
+    expect(launch).toHaveBeenCalledWith(f.config.profileDir, expect.objectContaining({ chromiumSandbox: true, headless: true, channel: "chromium", acceptDownloads: false, serviceWorkers: "block", handleSIGTERM: false }));
     expect(f.spare.close).toHaveBeenCalledOnce();
     expect(f.page.goto).toHaveBeenCalledWith(f.assets.origin);
     expect(f.profile.persist).toHaveBeenCalledWith(f.keys);
@@ -52,7 +61,7 @@ describe("persistent production browser driver", () => {
     if (stage === "navigation") f.page.goto.mockRejectedValue(error);
     if (stage === "initialization") f.runtime.initialize.mockRejectedValue(error);
     if (stage === "enrollment") f.runtime.prepare.mockRejectedValue(error);
-    await expect(BrowserDriver.start(f.config)).rejects.toThrow(/^Browser driver could not start$/);
+    await expect(BrowserDriver.start(f.config)).rejects.toThrow(/^Browser driver could not start: (profile|browser|bootstrap|device|enrollment)$/);
     expect(f.assets.close).toHaveBeenCalledOnce();
     expect(f.context.close.mock.calls.length).toBe(stage === "profile" || stage === "launch" ? 0 : 1);
   });
