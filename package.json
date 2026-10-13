@@ -11,10 +11,12 @@
     "build": "node scripts/build.mjs",
     "verify:artifacts": "node scripts/verify-artifacts.mjs",
     "verify:worker": "node scripts/verify-worker.mjs",
+    "verify:plugin": "node scripts/verify-plugin.mjs",
+    "verify:container": "node scripts/verify-container.mjs",
     "schema:sync": "pnpm build && node scripts/sync-manifest.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
-    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm verify:artifacts && pnpm verify:worker"
+    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm verify:artifacts && pnpm verify:worker && pnpm verify:plugin"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

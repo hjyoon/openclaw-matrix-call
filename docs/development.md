@@ -21,3 +21,7 @@ Build output and coverage reports are generated locally and are not committed. E
 The OpenClaw adapter's runtime boundary is described in [ADR 0004](adr/0004-delegated-openclaw-ingress.md). Its current turns are delegated and tool-free. SDK registration tests do not establish model-backed execution or RTC audio support.
 
 When changing the native channel configuration shape, run `pnpm schema:sync` and commit the manifest change with the source change. Artifact verification checks that `channelConfigs.matrix-call.schema` matches the runtime channel schema. This metadata lets a host validate configuration before loading plugin code.
+
+`pnpm check` also starts the standalone worker and installs a packed plugin in a disposable OpenClaw profile. The install check accepts capabilities only inside that isolated profile; it never dispatches an agent or starts a call. Production installation remains a separate operational action.
+
+To check the container, build `deployment/worker.Dockerfile` with the `matrix-call-worker:0.1.0-alpha.1` tag and run `pnpm verify:container`. It uses a temporary secret and removes its test container afterward. GitHub Actions runs these same standard commands; local development and other CI hosts do not require GitHub APIs or marketplace access.
