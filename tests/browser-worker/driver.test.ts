@@ -31,11 +31,11 @@ const pcm = { samples: new Int16Array([-1, 0, 1]), sampleRate: 16_000, channels:
 const reference = { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: "remote" };
 
 describe("persistent production browser driver", () => {
-  it.each([new Error("Matrix call ended: missing-key"), credentials.accessToken])("logs only a bounded failure code for failed connections", async (error) => {
+  it.each([new Error("Matrix call ended: missing-key"), new Error("page.evaluate: FocusAuthorizationError: http-error"), credentials.accessToken])("logs only a bounded failure code for failed connections", async (error) => {
     const f = fixture(); const driver = await BrowserDriver.start(f.config);
     f.runtime.connect.mockRejectedValueOnce(error);
     await expect(driver.connect("!room", signal())).rejects.toBe(error);
-    expect(JSON.parse(f.log.mock.calls[0]![0] as string)).toEqual({ event: "browser-call-failed", reason: error instanceof Error ? "missing-key" : "connection" });
+    expect(JSON.parse(f.log.mock.calls[0]![0] as string)).toEqual({ event: "browser-call-failed", reason: error instanceof Error ? (error.message.includes("FocusAuthorizationError") ? "http-error" : "missing-key") : "connection" });
     expect(JSON.stringify(f.log.mock.calls)).not.toContain(credentials.accessToken);
     await driver.close();
   });
