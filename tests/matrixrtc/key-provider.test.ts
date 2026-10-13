@@ -5,6 +5,7 @@ import { MatrixMediaKeyProvider } from "../../packages/matrixrtc/src/key-provide
 describe("MatrixMediaKeyProvider", () => {
   it("imports real WebCrypto HKDF material for separate participants and explicit indices", async () => {
     const provider = new MatrixMediaKeyProvider();
+    provider.bindLocalIdentity("bob");
     const events: unknown[] = [];
     provider.on(KeyProviderEvent.SetKey, (...args) => events.push(args));
     const bytes = new Uint8Array(16).fill(7);
@@ -32,6 +33,19 @@ describe("MatrixMediaKeyProvider", () => {
     current = false;
     expect(await pending).toBe(false);
     expect(provider.getKeys()).toEqual([]);
+  });
+
+  it("keeps the local sending index independent of received participant rotations", async () => {
+    const provider = new MatrixMediaKeyProvider();
+    expect(provider.getLatestManuallySetKeyIndex()).toBe(0);
+    provider.bindLocalIdentity("alice");
+    expect(provider.getLatestManuallySetKeyIndex()).toBe(0);
+    provider.bindLocalIdentity("alice");
+    await provider.install("alice", new Uint8Array(16), 1, () => true);
+    await provider.install("bob", new Uint8Array(16), 255, () => true);
+    expect(provider.getLatestManuallySetKeyIndex()).toBe(1);
+    expect(() => provider.bindLocalIdentity("bob")).toThrow("Invalid MatrixRTC local identity");
+    expect(() => provider.bindLocalIdentity(" ")).toThrow("Invalid MatrixRTC local identity");
   });
 
   it.each([

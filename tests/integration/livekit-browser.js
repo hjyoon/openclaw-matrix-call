@@ -31,7 +31,8 @@ window.mediaTest = {
   async key(identity, bytes, index) {
     return provider.install(identity, new Uint8Array(bytes), index, () => true);
   },
-  async connect(url, token) {
+  async connect(url, token, identity) {
+    provider.bindLocalIdentity(identity);
     await audio.resume();
     await room.setE2EEEnabled(true);
     await room.connect(url, token, { rtcConfig: { iceServers: [] } });
@@ -92,3 +93,5 @@ window.mediaTest = {
     await audio.close();
   },
 };
+
+export { provider, room };

@@ -96,8 +96,8 @@ try {
       await window.mediaTest.key("bob", bobKey, 0);
     }, { aliceKey, bobKey });
   }
-  await alice.evaluate(({ url, token }) => window.mediaTest.connect(url, token), { url: sfuUrl, token: token("alice") });
-  await bob.evaluate(({ url, token }) => window.mediaTest.connect(url, token), { url: sfuUrl, token: token("bob") });
+  await alice.evaluate(({ url, token }) => window.mediaTest.connect(url, token, "alice"), { url: sfuUrl, token: token("alice") });
+  await bob.evaluate(({ url, token }) => window.mediaTest.connect(url, token, "bob"), { url: sfuUrl, token: token("bob") });
   await alice.evaluate(() => window.mediaTest.publish(440));
   await bob.evaluate(() => window.mediaTest.publish(660));
   await expectTone(bob, "alice", 440);
