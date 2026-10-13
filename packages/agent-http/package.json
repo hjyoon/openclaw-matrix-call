@@ -1,0 +1,10 @@
+{
+  "name": "@matrix-call/agent-http",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@matrix-call/core": "workspace:*"
+  }
+}
