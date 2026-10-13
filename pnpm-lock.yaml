@@ -51,6 +51,12 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
 
+  packages/worker:
+    dependencies:
+      '@matrix-call/core':
+        specifier: workspace:*
+        version: link:../core
+
 packages:
 
   '@agentclientprotocol/sdk@1.5.0':
