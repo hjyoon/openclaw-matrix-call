@@ -1,0 +1,31 @@
+{
+  "ko": {
+    "file": "fleurs-ko.wav",
+    "sha256": "0773998819f83d07b0142bcd75e2773b1255dbd2ee453bf74a87b5ad7d50883c",
+    "source": "https://huggingface.co/datasets/google/fleurs/tree/70bb2e84b976b7e960aa89f1c648e09c59f894dd/data/ko_kr",
+    "archive": "data/ko_kr/audio/dev.tar.gz",
+    "archiveSha256": "496edcb5323e75b4a2830f5b5623684a0baf86d3728101853fd4fe503372157c",
+    "member": "dev/10171268745771502507.wav",
+    "originalSha256": "90f4ab01258b2cc1004c2eb2323d87e9cd22e2ca9997b4b4bd2bea26a1dbb4ce",
+    "license": "CC-BY-4.0",
+    "transformation": "Float32 mono audio converted to PCM16 at its original 16 kHz rate.",
+    "keywords": [
+      "때문에",
+      "나무"
+    ],
+    "reply": "안녕하세요."
+  },
+  "en": {
+    "file": "jfk-en.wav",
+    "sha256": "43e6a960b344dd5408628ca2f11ee444291790f0e52a5b44ea11e98fcc47f591",
+    "source": "https://github.com/ggml-org/whisper.cpp/blob/927cfce34f31707e17f2bff35c349632fb9e2c3a/samples/jfk.wav",
+    "originalSha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e",
+    "license": "MIT repository distribution",
+    "transformation": "First eight seconds, mono PCM16 at 16 kHz.",
+    "keywords": [
+      "americans",
+      "country"
+    ],
+    "reply": "Hello from the local speech test."
+  }
+}
