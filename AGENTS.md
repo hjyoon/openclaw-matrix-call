@@ -12,6 +12,8 @@ Use public SDK interfaces and explicit version compatibility. Never treat a disp
 
 Keep the core and worker independent of OpenClaw and hosted vendors. Isolate agent, speech, RTC, identity-verification, and persistence integrations behind documented ports and adapters. No hosted vendor account may be mandatory for the portable core.
 
+Agent portability includes the agent framework, model provider, conversation data, and tool authorization. Keep host session keys and provider credentials inside adapters. Maintain a documented agent protocol and exportable conversation records. Replacing an agent must never broaden caller permissions.
+
 Keep credentials and runtime state outside the repository. Use isolated test accounts and infrastructure for integration tests.
 
 Document implementation status accurately. An encrypted call must pass an interoperability test before the package claims Element Call support.

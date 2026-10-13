@@ -13,7 +13,7 @@
     "noEmit": true,
     "types": ["node"],
     "paths": {
-      "@openclaw-matrix-call/core": ["./packages/core/src/index.ts"]
+      "@matrix-call/core": ["./packages/core/src/index.ts"]
     }
   },
   "include": ["packages/**/*.ts", "tests/**/*.ts"],
