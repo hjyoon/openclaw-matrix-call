@@ -2,9 +2,9 @@
 
 The repository contains an OpenClaw channel plugin, an isolated RTC worker, and shared protocol and policy code. The first supported host target is OpenClaw 2026.10.2 on Node.js 24.16 or newer.
 
-The plugin owns agent dispatch, call session routing, and caller policy. The worker owns Matrix device state, MatrixRTC membership, LiveKit audio, and media encryption. Speech recognition and synthesis use explicitly configured external providers.
+The core owns caller policy, independent conversation records, and call lifecycle. The selected agent adapter owns dispatch to its host. The worker's transport adapter owns Matrix device state, call signaling, audio, and media encryption. Speech recognition and synthesis use explicitly configured providers, including self-hosted implementations.
 
-The core and worker are host-independent. OpenClaw, MatrixRTC, LiveKit, speech, and persistence integrations use replaceable adapters as described in [Portability](portability.md).
+The core and worker are host-independent. OpenClaw, MatrixRTC, legacy Matrix VoIP, LiveKit, speech, and persistence integrations use replaceable adapters as described in [Portability](portability.md). Client support is recorded by protocol capability in [Matrix compatibility](matrix-compatibility.md).
 
 Each call receives a new random identifier. A room identifier and an agent identifier do not define a call session. Concurrent calls must not share history or mutable active-agent state.
 

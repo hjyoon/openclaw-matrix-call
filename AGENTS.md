@@ -17,3 +17,5 @@ Agent portability includes the agent framework, model provider, conversation dat
 Keep credentials and runtime state outside the repository. Use isolated test accounts and infrastructure for integration tests.
 
 Document implementation status accurately. An encrypted call must pass an interoperability test before the package claims Element Call support.
+
+Target Matrix protocols rather than Element-specific UI behavior. Keep MatrixRTC and legacy Matrix VoIP signaling behind separate transport adapters. Publish tested protocol capabilities and client interoperability results; do not infer calling support from Matrix login or messaging alone.
