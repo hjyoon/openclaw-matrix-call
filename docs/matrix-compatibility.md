@@ -15,6 +15,8 @@ MatrixRTC and legacy Matrix VoIP are separate transports. A client implementing 
 
 Call authorization uses verified Matrix user and device identities, room identifiers, current membership, and the corresponding media participant. Display names, client names, transcripts, and caller-supplied owner flags never establish authority.
 
+Treat room identifiers as case-sensitive opaque strings. The core accepts both older `!opaque:server` identifiers and newer domain-less identifiers used by room version 12. It validates the room sigil and the 255-byte limit without requiring a homeserver suffix or normalizing case.
+
 Both transports must expose the same core participant-verification and audio interfaces. Their encryption mechanisms differ, so the adapter must verify the actual mechanism used. Secure transport to an SFU alone is not proof of media confidentiality from that SFU.
 
 ## Interoperability evidence
@@ -27,4 +29,5 @@ No client has passed this repository's audio interoperability tests yet. This do
 
 - [Matrix Client-Server API: Voice over IP](https://spec.matrix.org/latest/client-server-api/#voice-over-ip)
 - [MatrixRTC proposal MSC4143](https://github.com/matrix-org/matrix-spec-proposals/pull/4143)
+- [Matrix room identifier grammar](https://spec.matrix.org/latest/appendices/#room-ids)
 - [LiveKit media encryption](https://docs.livekit.io/transport/encryption/)

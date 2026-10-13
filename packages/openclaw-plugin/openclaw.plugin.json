@@ -45,9 +45,9 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "minLength": 1,
-                  "maxLength": 512,
-                  "pattern": "^![^:\\s]+:[^\\s]+$"
+                  "minLength": 2,
+                  "maxLength": 255,
+                  "pattern": "^![^\\s]+$"
                 }
               },
               "agents": {

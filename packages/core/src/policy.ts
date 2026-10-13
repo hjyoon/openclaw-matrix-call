@@ -3,7 +3,8 @@ import type { CallPolicy, ParticipantReference, VerifiedParticipant } from "./co
 
 const nonempty = z.string().min(1).max(512);
 const matrixUserId = nonempty.regex(/^@[^:\s]+:[^\s]+$/);
-export const matrixRoomIdSchema = nonempty.regex(/^![^:\s]+:[^\s]+$/);
+export const matrixRoomIdSchema = z.string().min(2).max(255).regex(/^![^\s]+$/)
+  .refine((value) => Buffer.byteLength(value, "utf8") <= 255);
 
 export const policySchema = z.strictObject({
   owners: z.array(matrixUserId).min(1).max(256).readonly(),

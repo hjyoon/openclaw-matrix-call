@@ -32,6 +32,27 @@ describe("caller policy", () => {
   });
 
   it.each([
+    "!room:example.org", "!Yibd4kGyZ7w6YWjlXmbm3v0SMlZ3LqEUKgtIkgICAp0", `!${"r".repeat(254)}`,
+    `!${"界".repeat(84)}`,
+  ])("treats room identifiers as opaque strings: %s", (roomId) => {
+    const policy = parsePolicy({ ...config, rooms: [roomId] });
+    expect(authorizeParticipant(policy, { ...reference, roomId }, { ...participant, roomId }, 1_000).roomId)
+      .toBe(roomId);
+  });
+
+  it.each(["!", "!room id", `!${"r".repeat(255)}`, `!${"界".repeat(85)}`])
+    ("rejects invalid or oversized room identifiers %#", (roomId) => {
+      expect(() => parsePolicy({ ...config, rooms: [roomId] })).toThrowError(new CallError("invalid-input"));
+    });
+
+  it("preserves case-sensitive room authorization", () => {
+    const roomId = "!Yibd4kGyZ7w6YWjlXmbm3v0SMlZ3LqEUKgtIkgICAp0";
+    const policy = parsePolicy({ ...config, rooms: [roomId.toLowerCase()] });
+    expect(() => authorizeParticipant(policy, { ...reference, roomId }, { ...participant, roomId }, 1_000))
+      .toThrowError(new CallError("forbidden"));
+  });
+
+  it.each([
     null,
     {},
     { ...config, owners: [] },

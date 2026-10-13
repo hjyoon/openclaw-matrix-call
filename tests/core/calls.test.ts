@@ -125,6 +125,20 @@ describe("independent call lifecycle", () => {
     expect((await store.get(second.id))!.messages).toHaveLength(2);
   });
 
+  it("supports domain-less room identifiers throughout call routing and persistence", async () => {
+    const roomId = "!Yibd4kGyZ7w6YWjlXmbm3v0SMlZ3LqEUKgtIkgICAp0";
+    const { verify, reply, store } = setup();
+    const calls = new CallCoordinator({
+      policy: { ...policy, rooms: [roomId] }, verifier: { verify },
+      agent: { id: "portable", historyMode: "messages", reply }, store, now: () => 1_000,
+    });
+    const record = await calls.open({ ...input, reference: { ...reference, roomId } });
+    await calls.turn(record.id, reference.participantId, "Version 12 room");
+    expect((await store.get(record.id))!.roomId).toBe(roomId);
+    await calls.close(record.id);
+    expect((await store.get(record.id))!.status).toBe("closed");
+  });
+
   it("revalidates current participant authority for each turn", async () => {
     const { calls, verify, reply, store } = setup();
     const record = await calls.open(input);
