@@ -24,13 +24,13 @@ export async function publishMatrixRtcKey(source: OutboundKeySource, index: numb
       new Set(members.map((member) => member.participantId)).size !== members.length) {
     throw new Error("MatrixRTC local membership is unavailable");
   }
+  const local = own[0]!;
   for (const member of members) {
-    if (!source.owners.includes(member.userId) || !Number.isSafeInteger(member.createdAtMs) || member.createdAtMs < 0 || member.createdAtMs > now ||
+    if ((member !== local && !source.owners.includes(member.userId)) || !Number.isSafeInteger(member.createdAtMs) || member.createdAtMs < 0 || member.createdAtMs > now ||
         (member.expiresAtMs !== undefined && (!Number.isSafeInteger(member.expiresAtMs) || member.expiresAtMs <= now))) {
       throw new Error("MatrixRTC listener is not authorized");
     }
   }
-  const local = own[0]!;
   const targets = members.filter((member) => member !== local);
   const snapshot = JSON.stringify(members);
   const cryptoApi = source.client.getCrypto();

@@ -54,6 +54,15 @@ describe("publishMatrixRtcKey", () => {
     expect(getDeviceVerificationStatus).toHaveBeenCalledWith(local.userId, "OTHER");
   });
 
+  it("allows the service device without granting authority to other devices on its account", async () => {
+    const { source, setMembers, signal } = fixture();
+    source.owners = [remote.userId];
+    expect(await publishMatrixRtcKey(source, 0, signal)).toBe(true);
+    setMembers([local, { ...remote, userId: local.userId, deviceId: "OTHER" }]);
+    await expect(publishMatrixRtcKey(source, 1, signal)).rejects.toThrow("listener is not authorized");
+    expect(source.client.encryptAndSendToDevice).toHaveBeenCalledTimes(1);
+  });
+
   it.each([-1, 0.5, 256])("rejects invalid key indices before distribution: %s", async (index) => {
     const { source, signal } = fixture();
     await expect(publishMatrixRtcKey(source, index, signal)).rejects.toThrow("Invalid MatrixRTC key index");
