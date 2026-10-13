@@ -87,8 +87,10 @@ export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
       await listener(utterance.reference, audio);
       if (this.#connected && generation === this.#generation) await this.#page.evaluate(() => window.matrixCall.resumeAudio());
     } catch {
-      console.info(JSON.stringify({ event: "browser-voice-failed", reason: "pipeline" }));
-      await this.disconnect().catch(() => {}); await this.#notify();
+      if (this.#connected && generation === this.#generation) {
+        console.info(JSON.stringify({ event: "browser-voice-failed", reason: "pipeline" }));
+        await this.disconnect().catch(() => {}); await this.#notify();
+      }
     } finally { audio?.samples.fill(0); this.#receiving = false; }
   }
 

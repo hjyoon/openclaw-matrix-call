@@ -77,6 +77,17 @@ describe("persistent production browser driver", () => {
     await vi.advanceTimersByTimeAsync(100); expect(f.runtime.resumeAudio).not.toHaveBeenCalled(); await driver.close();
   });
 
+  it.each([false, true])("does not let a stale listener failure end a newer call: %s", async (reconnect) => {
+    const f = fixture(); const driver = await BrowserDriver.start(f.config); const ended = vi.fn(async () => {}); driver.onEnded(ended);
+    let fail!: (error: Error) => void;
+    driver.onAudio(() => new Promise((_resolve, reject) => { fail = reject; }));
+    await driver.connect("!room", signal()); f.runtime.takeAudio.mockResolvedValueOnce({ reference, audio: { ...pcm, samples: [1] } });
+    await vi.advanceTimersByTimeAsync(100); await driver.disconnect();
+    if (reconnect) await driver.connect("!room", signal());
+    fail(new Error("late private error")); await vi.advanceTimersByTimeAsync(0);
+    expect(f.runtime.disconnect).toHaveBeenCalledOnce(); expect(ended).not.toHaveBeenCalled(); await driver.close();
+  });
+
   it.each(["browser", "pcm", "listener", "resume", "cleanup"])("ends voice calls on %s failure without logging transcripts", async (stage) => {
     const f = fixture(); const driver = await BrowserDriver.start(f.config); const ended = vi.fn(async () => {}); driver.onEnded(ended);
     const received = vi.fn(async () => {}); driver.onAudio(received); await driver.connect("!room", signal());
