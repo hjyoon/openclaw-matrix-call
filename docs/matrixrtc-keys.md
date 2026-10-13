@@ -1,0 +1,17 @@
+# MatrixRTC key admission
+
+The browser adapter uses `matrix-js-sdk` 43.0.0 and `livekit-client` 2.22.4. The portable worker does not load these SDKs.
+
+`VerifiedMatrixRtcKeys.receive` accepts the public SDK's `ReceivedToDeviceMessage` object directly. Its `encryptionInfo` must originate from the worker's Rust crypto client, never from a control request, room message, transcript, or SFU metadata. `senderVerified` must be true, the authenticated sender device must be present, and the message's claimed sender and device must match that evidence.
+
+The current key format is the room-scoped `m.call` session with an empty call ID. Other applications, session scopes, and call IDs are rejected. Keys must be canonical 16-byte base64 values, with explicit indices between 0 and 255. Additional protocol fields are tolerated. The message timestamp must be within 30 seconds of the worker's clock; synchronized clocks are an operational requirement.
+
+Membership snapshots must come from the current public MatrixRTC session. Match the authenticated Matrix user, device, and member ID, and take the backend identity from the SDK's computed `rtcBackendIdentity`. Never construct that identity from an HTTP caller claim. Exactly one matching live membership is required. Its identity and creation timestamp bind the imported key to that membership incarnation. A changed identity, changed incarnation, ambiguous membership, expiry, or departure invalidates its proof.
+
+Remote keys from the session's compatibility callback are not accepted. That callback lacks authenticated device provenance. A separate local callback can supply outbound keys after matching the worker's own user and device.
+
+`MatrixMediaKeyProvider` subclasses the public LiveKit `BaseKeyProvider`. It imports non-extractable WebCrypto HKDF material and uses separate participant identities and key indices. It checks membership validity again after asynchronous import, before emitting a key to LiveKit. Concurrent imports for the same participant and index cannot overwrite a newer pending import. Closing the admission gate discards pending work and permanently removes its proofs.
+
+A key proof alone does not authorize an agent turn. The transport must also recheck current device verification, active Matrix membership, actual connected SFU participant identity, and encrypted inbound audio. A new call requires new media resources; closed-call key providers are not reused. Assistant publication must stop when a participant is not authorized, because the Matrix SDK distributes outbound media keys to call members.
+
+The current tests cover key admission, real WebCrypto import, lifecycle races, and invalid evidence. They do not establish Matrix login, persistent device verification, focus authorization, or encrypted audio interoperability.
