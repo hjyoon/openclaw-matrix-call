@@ -13,7 +13,7 @@ export async function startBrowserWorker(env: NodeJS.ProcessEnv = process.env) {
   const media = new WorkerMediaController({ rooms: config.policy.rooms, transport: driver });
   try {
     const worker = await startWorker(env, media, () => driver.close());
-    driver.onEnded(() => driver.available ? media.endSession() : media.shutdown());
+    driver.onEnded(() => driver.available ? media.endSession() : worker.close());
     return Object.freeze({ ...worker, driver, media });
   } catch (error) { await driver.close(); throw error; }
 }

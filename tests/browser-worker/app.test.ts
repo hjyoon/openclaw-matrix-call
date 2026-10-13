@@ -48,6 +48,7 @@ describe("browser worker application", () => {
       f.driver.available = false;
       await notify();
       expect(worker.media.status().available).toBe(false);
+      expect(worker.server.listening).toBe(false);
     } finally { await worker.close(); await f.clean(); }
   });
 
