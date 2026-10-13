@@ -1,0 +1,9 @@
+{
+  "repository": "moby/profiles",
+  "revision": "4b8214fc4971e06172938a1f1554ccff6647ee80",
+  "path": "seccomp/default.json",
+  "sha256": "6416b47770785a41ac59073cdc77d9fe98517df2799dc83ef207e622de3053f6",
+  "changes": [
+    "Allow clone, setns, unshare, and chroot for non-root Chromium user namespaces with all container capabilities dropped"
+  ]
+}

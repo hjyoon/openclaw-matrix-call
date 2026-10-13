@@ -1,0 +1,55 @@
+services:
+  browser-worker:
+    build:
+      context: ..
+      dockerfile: deployment/browser-worker.Dockerfile
+    image: matrix-call-browser-worker:0.1.0-alpha.1
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./browser-seccomp.json
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: 1.0
+    shm_size: 128m
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=256m
+    ports:
+      - "127.0.0.1:${MATRIX_CALL_CONTROL_PORT:-19790}:19790"
+    environment:
+      MATRIX_CALL_HOST: "0.0.0.0"
+      MATRIX_CALL_PORT: "19790"
+      MATRIX_CALL_SECRET_FILE: /run/secrets/matrix_call_secret
+      MATRIX_CALL_BROWSER_CONFIG: /run/config/browser.json
+    configs:
+      - source: browser_config
+        target: /run/config/browser.json
+    secrets:
+      - matrix_call_secret
+      - source: matrix_credentials
+        target: matrix.json
+    volumes:
+      - browser_data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:19790/healthz').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 45s
+      retries: 3
+
+configs:
+  browser_config:
+    file: "${MATRIX_CALL_BROWSER_CONFIG:?Set MATRIX_CALL_BROWSER_CONFIG to an absolute config-file path}"
+
+secrets:
+  matrix_call_secret:
+    file: "${MATRIX_CALL_SECRET_FILE:?Set MATRIX_CALL_SECRET_FILE to an absolute control-secret path}"
+  matrix_credentials:
+    file: "${MATRIX_CALL_MATRIX_CREDENTIALS:?Set MATRIX_CALL_MATRIX_CREDENTIALS to an absolute Matrix credential-file path}"
+
+volumes:
+  browser_data:

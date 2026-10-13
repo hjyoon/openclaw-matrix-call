@@ -4,6 +4,10 @@
 !deployment/worker-build/
 !deployment/worker-build/package.json
 !deployment/worker-build/package-lock.json
+!deployment/browser-worker.Dockerfile
+!deployment/browser-build/
+!deployment/browser-build/package.json
+!deployment/browser-build/package-lock.json
 !tsconfig.json
 !LICENSE
 !packages/
@@ -13,3 +17,11 @@
 !packages/worker/
 !packages/worker/src/
 !packages/worker/src/**
+!packages/matrixrtc/
+!packages/matrixrtc/src/
+!packages/matrixrtc/src/**
+!packages/browser-worker/
+!packages/browser-worker/src/
+!packages/browser-worker/src/**
+!scripts/
+!scripts/build-browser-assets.mjs
