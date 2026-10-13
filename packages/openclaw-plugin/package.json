@@ -1,0 +1,24 @@
+{
+  "name": "@hjyoon/openclaw-matrix-call",
+  "version": "0.1.0-alpha.1",
+  "description": "Experimental Matrix calling integration with portable agent adapters",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": "./dist/index.js",
+  "files": ["dist", "openclaw.plugin.json", "README.md", "LICENSE"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hjyoon/openclaw-matrix-call.git",
+    "directory": "packages/openclaw-plugin"
+  },
+  "engines": { "node": ">=24.16.0 <25 || >=26.1.0" },
+  "openclaw": {
+    "extensions": ["./dist/index.js"],
+    "compat": { "pluginApi": "=2026.10.2" },
+    "build": { "openclawVersion": "2026.10.2" }
+  },
+  "devDependencies": { "@matrix-call/core": "workspace:*", "zod": "4.6.7" },
+  "peerDependencies": { "openclaw": "2026.10.2" },
+  "peerDependenciesMeta": { "openclaw": { "optional": true } }
+}

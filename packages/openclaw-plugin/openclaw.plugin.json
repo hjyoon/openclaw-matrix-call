@@ -1,0 +1,12 @@
+{
+  "id": "matrix-call",
+  "name": "Matrix Call",
+  "version": "0.1.0-alpha.1",
+  "description": "Experimental Matrix call adapters; RTC audio is not implemented yet",
+  "channels": ["matrix-call"],
+  "configSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  }
+}
