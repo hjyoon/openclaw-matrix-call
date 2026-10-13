@@ -5,14 +5,14 @@ import { CallMembership } from "matrix-js-sdk/lib/matrixrtc/index.js";
 import { DeviceVerificationStatus, type CryptoApi } from "matrix-js-sdk/lib/crypto-api/index.js";
 import { MatrixRtcParticipantVerifier, membershipSnapshot, type MatrixParticipantSource } from "../../packages/matrixrtc/src/participants.js";
 
-const reference = { roomId: "!room", rtcSessionId: "m.call#", participantId: "@alice:example.org:ALICE" };
+const reference = { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: "@alice:example.org:ALICE" };
 
 async function member(modern = false): Promise<CallMembership> {
   return CallMembership.parseFromEvent(new MatrixEvent({
     event_id: "$member", sender: "@alice:example.org", origin_server_ts: 90_000,
     type: modern ? EventType.RTCMembership : EventType.GroupCallMemberPrefix,
     content: modern ? {
-      slot_id: "m.call#", msc4354_sticky_key: "m.call#", member: { user_id: "@alice:example.org", device_id: "ALICE", id: "incarnation-a" },
+      slot_id: "m.call#ROOM", msc4354_sticky_key: "m.call#ROOM", member: { user_id: "@alice:example.org", device_id: "ALICE", id: "incarnation-a" },
       application: { type: "m.call" }, transports: { published: [], can_subscribe: [] }, versions: ["1"],
     } : {
       device_id: "ALICE", application: "m.call", call_id: "", scope: "m.room", expires: 110_000,
@@ -31,7 +31,7 @@ async function fixture() {
   const crypto = { getDeviceVerificationStatus };
   const source = {
     roomId: "!room", client: { getCrypto: () => crypto as unknown as CryptoApi },
-    session: { slotId: "m.call#", memberships: [await member()] },
+    session: { slotId: "m.call#ROOM", memberships: [await member()] },
     media: { state: ConnectionState.Connected as ConnectionState, isE2EEEnabled: true as boolean, remoteParticipants: new Map([[reference.participantId, participant as unknown as RemoteParticipant]]) },
     keys: { hasCurrentKey: vi.fn(() => true) }, now: vi.fn(() => 100_000),
   } satisfies MatrixParticipantSource;
@@ -41,6 +41,7 @@ async function fixture() {
 describe("MatrixRtcParticipantVerifier", () => {
   it("uses the public SDK's parsed user, device, member, expiry, and backend identities", async () => {
     const old = membershipSnapshot(await member());
+    expect((await member()).slotId).toBe("m.call#ROOM");
     expect(old).toEqual({ userId: "@alice:example.org", deviceId: "ALICE", memberId: reference.participantId, participantId: reference.participantId, createdAtMs: 90_000, expiresAtMs: 200_000 });
     expect(Object.isFrozen(old)).toBe(true);
     const modern = await member(true);

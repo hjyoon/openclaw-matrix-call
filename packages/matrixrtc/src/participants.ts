@@ -53,7 +53,7 @@ export class MatrixRtcParticipantVerifier implements ParticipantVerifier {
 
   #member(reference: ParticipantReference): RtcMembership {
     const { session, media } = this.#source;
-    if (reference.roomId !== this.#source.roomId || reference.rtcSessionId !== session.slotId || session.slotId !== "m.call#") {
+    if (reference.roomId !== this.#source.roomId || reference.rtcSessionId !== session.slotId || session.slotId !== "m.call#ROOM") {
       throw new Error("MatrixRTC session does not match");
     }
     if (media.state !== ConnectionState.Connected || !media.isE2EEEnabled || !this.#source.keys.hasCurrentKey(reference.participantId)) {

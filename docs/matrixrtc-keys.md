@@ -1,5 +1,7 @@
 # MatrixRTC key admission
 
+The supported room-wide session uses SDK slot ID `m.call#ROOM`. Its key message retains the legacy empty `call_id`. These are different protocol representations; admission matches the actual SDK slot instead of constructing one from the key payload.
+
 The browser adapter uses `matrix-js-sdk` 43.0.0 and `livekit-client` 2.22.4. The portable worker does not load these SDKs.
 
 `VerifiedMatrixRtcKeys.receive` accepts the public SDK's `ReceivedToDeviceMessage` object directly. Its `encryptionInfo` must originate from the worker's Rust crypto client, never from a control request, room message, transcript, or SFU metadata. `senderVerified` must be true, the authenticated sender device must be present, and the message's claimed sender and device must match that evidence.
