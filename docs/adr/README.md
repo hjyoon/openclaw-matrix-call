@@ -13,6 +13,7 @@ Number records in order. An accepted ADR is a historical record, not a second in
 | [0003](0003-development-instructions-and-decision-history.md) | Accepted | Current instructions separated from decision history |
 | [0004](0004-delegated-openclaw-ingress.md) | Accepted | Delegated, tool-free OpenClaw ingress until supported owner admission exists |
 | [0005](0005-browser-matrixrtc-media.md) | Accepted | Browser MatrixRTC media with authenticated per-device keys |
+| [0006](0006-local-outbound-key-provenance.md) | Accepted | Locally generated outbound keys instead of ambiguous SDK callbacks |
 
 ## Record format
 
