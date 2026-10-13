@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-for (const name of ["core", "agent-http", "openclaw-plugin"]) {
+for (const name of ["core", "agent-http", "openclaw-plugin", "worker", "worker-api"]) {
   const metadata = JSON.parse(await readFile(path.join(root, `dist/build-metadata/${name}.json`), "utf8"));
   const imports = Object.values(metadata.outputs).flatMap((output) => output.imports);
   if (name === "openclaw-plugin") {
@@ -26,4 +26,5 @@ assert.equal(typeof plugin.default.register, "function");
 const manifest = JSON.parse(await readFile(path.join(root, "packages/openclaw-plugin/openclaw.plugin.json"), "utf8"));
 assert.equal(manifest.id, plugin.default.id);
 assert.equal(manifest.version, "0.1.0-alpha.1");
+assert.deepEqual(manifest.channelConfigs["matrix-call"].schema, plugin.matrixCallChannel.configSchema.schema);
 console.log("Standalone bundles, public SDK imports, and plugin metadata verified.");

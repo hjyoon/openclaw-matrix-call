@@ -26,7 +26,13 @@ export const matrixCallChannel: ChannelPlugin<MatrixCallAccount> = {
     blurb: "Portable Matrix calling adapters; RTC audio is not available yet",
   },
   capabilities: { chatTypes: ["group"], media: false, nativeCommands: false },
-  configSchema: { schema: z.toJSONSchema(accountSchema, { unrepresentable: "any" }) },
+  configSchema: { schema: {
+    ...z.toJSONSchema(accountSchema, { unrepresentable: "any", io: "input" }),
+    allOf: [{
+      if: { required: ["enabled"], properties: { enabled: { const: true } } },
+      then: { required: ["policy"] },
+    }],
+  } },
   config: {
     listAccountIds: () => ["default"],
     defaultAccountId: () => "default",

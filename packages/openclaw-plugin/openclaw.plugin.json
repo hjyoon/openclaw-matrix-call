@@ -3,10 +3,101 @@
   "name": "Matrix Call",
   "version": "0.1.0-alpha.1",
   "description": "Experimental Matrix call adapters; RTC audio is not implemented yet",
-  "channels": ["matrix-call"],
+  "channels": [
+    "matrix-call"
+  ],
   "configSchema": {
     "type": "object",
     "properties": {},
     "additionalProperties": false
+  },
+  "channelConfigs": {
+    "matrix-call": {
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "readOnly": true,
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "default": false,
+            "type": "boolean"
+          },
+          "policy": {
+            "readOnly": true,
+            "type": "object",
+            "properties": {
+              "owners": {
+                "readOnly": true,
+                "minItems": 1,
+                "maxItems": 256,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^@[^:\\s]+:[^\\s]+$"
+                }
+              },
+              "rooms": {
+                "readOnly": true,
+                "minItems": 1,
+                "maxItems": 256,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^![^:\\s]+:[^\\s]+$"
+                }
+              },
+              "agents": {
+                "readOnly": true,
+                "minItems": 1,
+                "maxItems": 256,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+                }
+              }
+            },
+            "required": [
+              "owners",
+              "rooms",
+              "agents"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "enabled"
+              ],
+              "properties": {
+                "enabled": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "policy"
+              ]
+            }
+          }
+        ]
+      },
+      "label": "Matrix Call",
+      "description": "Experimental Matrix calling policy; no RTC transport is ready",
+      "commands": {
+        "nativeCommandsAutoEnabled": false,
+        "nativeSkillsAutoEnabled": false
+      }
+    }
   }
 }
