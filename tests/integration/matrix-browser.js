@@ -17,6 +17,7 @@ let localKey = false;
 let failed = false;
 let keySource;
 let roomId;
+let localIndex = -1;
 
 window.matrixTest = {
   async init(credentials) {
@@ -33,8 +34,10 @@ window.matrixTest = {
   async trust(userId, deviceId, expected) {
     const devices = await client.getCrypto().getUserDeviceInfo([userId], true);
     const device = devices.get(userId)?.get(deviceId);
-    if (device?.getFingerprint() !== expected.ed25519 || device.getIdentityKey() !== expected.curve25519) throw new Error("Test device fingerprint mismatch");
+    if (!device) return false;
+    if (device.getFingerprint() !== expected.ed25519 || device.getIdentityKey() !== expected.curve25519) throw new Error("Test device fingerprint mismatch");
     await client.getCrypto().setDeviceVerified(userId, deviceId, true);
+    return true;
   },
   async trusted(userId, deviceId) {
     return (await client.getCrypto().getDeviceVerificationStatus(userId, deviceId))?.isVerified() === true;
@@ -72,15 +75,21 @@ window.matrixTest = {
     return { connected: true, expiresAtMs: grant.expiresAtMs };
   },
   async rotate(index) {
-    localKey = await publishMatrixRtcKey(keySource, index, new AbortController().signal);
-    return localKey;
+    const signal = AbortSignal.timeout(30_000);
+    for (;;) {
+      signal.throwIfAborted();
+      localIndex = Math.max(index, localIndex + 1);
+      localKey = await publishMatrixRtcKey(keySource, localIndex, signal);
+      if (localKey) return true;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
   },
   async verify(participantId) {
     const verifier = new MatrixRtcParticipantVerifier({ roomId, client, session, media, keys: gate, now: Date.now });
     return verifier.verify({ roomId, rtcSessionId: session.slotId, participantId }, new AbortController().signal);
   },
   status(remoteIdentity) {
-    return { members: session?.memberships.length ?? 0, localKey, remoteKey: gate?.hasCurrentKey(remoteIdentity) ?? false, accepted, rejected, authenticated, verified, failed };
+    return { members: session?.memberships.length ?? 0, joined: session?.isJoined() === true, localMember: session?.memberships.filter((member) => member.userId === client.getUserId() && member.deviceId === client.getDeviceId()).length === 1, localKey, remoteKey: gate?.hasCurrentKey(remoteIdentity) ?? false, accepted, rejected, authenticated, verified, failed };
   },
   async sendKey(targetUserId, targetDeviceId, roomId, claim, plaintext) {
     const content = {

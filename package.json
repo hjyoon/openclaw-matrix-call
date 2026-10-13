@@ -15,6 +15,8 @@
     "verify:container": "node scripts/verify-container.mjs",
     "verify:media": "node scripts/verify-media.mjs",
     "verify:matrix": "node scripts/verify-matrix.mjs",
+    "verify:browser-sandbox": "node scripts/verify-browser-sandbox.mjs",
+    "verify:browser-container": "MATRIX_CALL_BROWSER_IMAGE=matrix-call-browser-worker:0.1.0-alpha.1 node scripts/verify-matrix.mjs",
     "browser:install": "PLAYWRIGHT_BROWSERS_PATH=.cache/browsers playwright-core install chromium",
     "schema:sync": "pnpm build && node scripts/sync-manifest.mjs",
     "typecheck": "tsc --noEmit",

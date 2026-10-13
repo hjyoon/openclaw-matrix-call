@@ -42,4 +42,7 @@ jobs:
       - run: PLAYWRIGHT_BROWSERS_PATH=.cache/browsers pnpm exec playwright-core install --with-deps chromium
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: pnpm verify:media
-      - run: pnpm verify:matrix
+      - run: pnpm build
+      - run: docker build -f deployment/browser-worker.Dockerfile -t matrix-call-browser-worker:0.1.0-alpha.1 .
+      - run: pnpm verify:browser-sandbox
+      - run: pnpm verify:browser-container

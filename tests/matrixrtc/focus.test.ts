@@ -264,15 +264,21 @@ describe("OpenIdFocusAuthorizer", () => {
     getOpenIdToken.mockResolvedValue(openId);
     const controller = new AbortController();
     fetcher.mockImplementation(async () => { controller.abort(new Error("cancelled HTTP")); return response(); });
-    await expect(timed.authorize(source, controller.signal)).rejects.toThrow("cancelled HTTP");
+    await expect(new OpenIdFocusAuthorizer(options).authorize(source, controller.signal)).rejects.toThrow("cancelled HTTP");
   });
 
   it("cancels a stalled response stream and releases its reader", async () => {
     const { source, options, fetcher } = fixture();
     const cancel = vi.fn();
-    fetcher.mockResolvedValue(new Response(new ReadableStream({ cancel })));
-    const timed = new OpenIdFocusAuthorizer({ ...options, timeoutMs: 10 });
-    await expect(timed.authorize(source, new AbortController().signal)).rejects.toThrow();
+    let reading!: () => void;
+    const entered = new Promise<void>((resolve) => { reading = resolve; });
+    fetcher.mockResolvedValue(new Response(new ReadableStream({ pull: reading, cancel }, { highWaterMark: 0 })));
+    const authorizer = new OpenIdFocusAuthorizer(options);
+    const controller = new AbortController();
+    const pending = authorizer.authorize(source, controller.signal);
+    await entered;
+    controller.abort(new Error("cancelled stream"));
+    await expect(pending).rejects.toThrow("cancelled stream");
     expect(cancel).toHaveBeenCalledOnce();
   });
 });

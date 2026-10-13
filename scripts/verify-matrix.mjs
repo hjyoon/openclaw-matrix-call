@@ -13,6 +13,7 @@ import { build } from "esbuild";
 import { startTestSfu } from "./integration/sfu.mjs";
 import { startTestAuthorization } from "./integration/authorization.mjs";
 import { loadTestControl } from "./integration/control.mjs";
+import { verifyBrowserDriver } from "./integration/browser-driver.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= path.join(root, ".cache/browsers");
@@ -117,14 +118,14 @@ try {
   const fingerprints = await Promise.all(pages.map((page) => page.evaluate(() => window.matrixTest.keys())));
   for (let i = 0; i < accounts.length; i++) {
     const other = 1 - i;
-    await pages[i].evaluate(({ userId, deviceId, fingerprint }) => window.matrixTest.trust(userId, deviceId, fingerprint), { ...accounts[other], fingerprint: fingerprints[other] });
+    await waitFor(() => pages[i].evaluate(({ userId, deviceId, fingerprint }) => window.matrixTest.trust(userId, deviceId, fingerprint), { ...accounts[other], fingerprint: fingerprints[other] }), "published test device keys");
   }
   const owners = accounts.map((account) => account.userId);
   sfu = await startTestSfu(directory, { autoCreate: false });
   authorization = await startTestAuthorization(directory, sfu, serverName);
   for (const page of pages) await page.evaluate(({ id, owners, focus }) => window.matrixTest.join(id, owners, focus), { id: room.room_id, owners, focus: authorization.url });
   for (const page of pages) {
-    await waitFor(async () => (await page.evaluate((id) => window.matrixTest.status(id), "ignored")).members === 2, "MatrixRTC membership");
+    await waitFor(async () => { const status = await page.evaluate((id) => window.matrixTest.status(id), "ignored"); return status.members === 2 && status.joined && status.localMember; }, "MatrixRTC membership");
   }
   for (const page of pages) assert(await page.evaluate(() => window.matrixTest.rotate(0)), "Locally generated key publication must succeed");
   for (let i = 0; i < pages.length; i++) {
@@ -185,7 +186,7 @@ try {
   assert(await page.evaluate(({ userId, deviceId }) => window.matrixTest.trusted(userId, deviceId), accounts[1]), "Device trust must persist across browser restart");
   assert.equal((await page.evaluate((id) => window.matrixTest.status(id), identities[1])).remoteKey, false, "Restart must not restore active-call key authority");
   await page.evaluate(({ id, owners, focus }) => window.matrixTest.join(id, owners, focus), { id: room.room_id, owners, focus: authorization.url });
-  for (const participant of [page, pages[1]]) await waitFor(async () => (await participant.evaluate((id) => window.matrixTest.status(id), "ignored")).members === 2, "rejoined membership");
+  for (const participant of [page, pages[1]]) await waitFor(async () => { const status = await participant.evaluate((id) => window.matrixTest.status(id), "ignored"); return status.members === 2 && status.joined && status.localMember; }, "rejoined membership");
   assert(await page.evaluate(() => window.matrixTest.rotate(0)));
   assert(await pages[1].evaluate(() => window.matrixTest.rotate(1)));
   await waitFor(async () => (await page.evaluate((id) => window.matrixTest.status(id), identities[1])).remoteKey, "rejoined remote key");
@@ -207,7 +208,9 @@ try {
   await page.evaluate((id) => window.matrixTest.verify(id), identities[1]);
   assert.equal((await restoredControl.request("/v1/media/leave", { sessionId: restoredSession.value.sessionId })).status, 200);
   assert.equal((await controls[1].request("/v1/media/leave", { sessionId: sessions[1] })).status, 200);
-  console.log(JSON.stringify({ browser: restored.browser().version(), synapse: "1.162.0", matrixSdk: "43.0.0", livekit: "1.13.9", authorization: "0.8.0", matrixRtcKeys: true, authenticatedDeviceBinding: true, plaintextRejected: true, deviceClaimRejected: true, persistentKeysAndTrust: true, matrixAudio: true, restartAndRejoin: true, focusAuthorization: true, authenticatedWorkerControl: true }));
+  const driver = await verifyBrowserDriver({ root, directory, api, waitFor, homeserver, registrationSecret, roomId: room.room_id,
+    creator: accounts[0], owner: accounts[1], ownerKeys: fingerprints[1], peer: pages[1], focusUrl: authorization.url, sfuUrl: sfu.url });
+  console.log(JSON.stringify({ browser: restored.browser().version(), synapse: "1.162.0", matrixSdk: "43.0.0", livekit: "1.13.9", authorization: "0.8.0", matrixRtcKeys: true, authenticatedDeviceBinding: true, plaintextRejected: true, deviceClaimRejected: true, persistentKeysAndTrust: true, matrixAudio: true, restartAndRejoin: true, focusAuthorization: true, authenticatedWorkerControl: true, ...driver }));
   succeeded = true;
 } finally {
   if (!succeeded) console.log(JSON.stringify({ openIdStatuses }));
