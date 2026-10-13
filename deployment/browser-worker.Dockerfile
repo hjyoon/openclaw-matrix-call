@@ -7,6 +7,7 @@ COPY packages/core/src ./packages/core/src
 COPY packages/worker/src ./packages/worker/src
 COPY packages/matrixrtc/src ./packages/matrixrtc/src
 COPY packages/browser-worker/src ./packages/browser-worker/src
+COPY packages/voice/src ./packages/voice/src
 COPY scripts/build-browser-assets.mjs ./scripts/build-browser-assets.mjs
 RUN ./node_modules/.bin/esbuild packages/browser-worker/src/main.ts --bundle --platform=node --format=esm --target=node24 --external:playwright-core --outfile=worker.mjs --legal-comments=none
 RUN node scripts/build-browser-assets.mjs

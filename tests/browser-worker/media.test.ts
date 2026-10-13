@@ -15,7 +15,7 @@ function fixture() {
   const samples = new Float32Array(3);
   let endOnStart = true;
   const source = { buffer: undefined, onended: undefined as (() => void) | undefined, connect: vi.fn(), disconnect: vi.fn(), start: vi.fn(() => { if (endOnStart) queueMicrotask(() => source.onended?.()); }), stop: vi.fn(() => { source.onended?.(); }) };
-  const audio = { createMediaStreamDestination: () => destination, resume: vi.fn(async () => {}), close: vi.fn(async () => {}), createBuffer: vi.fn(() => ({ getChannelData: () => samples })), createBufferSource: () => source };
+  const audio = { audioWorklet: { addModule: vi.fn(async () => {}) }, sampleRate: 16_000, createMediaStreamDestination: () => destination, resume: vi.fn(async () => {}), close: vi.fn(async () => {}), createBuffer: vi.fn(() => ({ getChannelData: () => samples })), createBufferSource: () => source };
   const worker = { terminate: vi.fn() };
   const room = Object.assign(new EventEmitter(), { setE2EEEnabled: vi.fn(async () => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), localParticipant: { publishTrack: vi.fn(async () => {}) } });
   const appended = vi.fn();
@@ -30,6 +30,16 @@ function fixture() {
 const pcm: PcmAudio = { samples: new Int16Array([-32_768, 0, 16_384]), sampleRate: 16_000, channels: 1 };
 
 describe("browser PCM media", () => {
+  it("enables optional capture once and resets or closes its graphs with the media lifetime", async () => {
+    const f = fixture(); const listener = vi.fn(); const permitted = vi.fn(); const failure = vi.fn();
+    f.media.resetCapture();
+    await f.media.startCapture(listener, permitted, failure); f.media.resetCapture();
+    expect(f.audio.audioWorklet.addModule).toHaveBeenCalledWith("/capture-worklet.js");
+    await expect(f.media.startCapture(listener, permitted, failure)).rejects.toThrow("unavailable");
+    await f.media.close(); expect(f.room.listenerCount(RoomEvent.TrackSubscribed)).toBe(1);
+    const g = fixture(); await g.media.close();
+    await expect(g.media.startCapture(listener, permitted, failure)).rejects.toThrow("unavailable");
+  });
   it("enables encrypted media and publishes an initially suspended audio track", async () => {
     const f = fixture();
     expect(f.track.enabled).toBe(false);

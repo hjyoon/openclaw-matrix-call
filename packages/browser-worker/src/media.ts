@@ -2,6 +2,7 @@ import { Room, RoomEvent, Track, setLogLevel } from "livekit-client";
 import type { PcmAudio } from "@matrix-call/core";
 import { MatrixMediaKeyProvider } from "../../matrixrtc/src/key-provider.js";
 import { validatePcm } from "./audio.js";
+import { RemoteAudioCapture } from "./capture.js";
 
 export type BrowserMedia = Readonly<{
   room: Room;
@@ -9,6 +10,8 @@ export type BrowserMedia = Readonly<{
   suspend(): void;
   resume(): void;
   publish(audio: PcmAudio, signal: AbortSignal): Promise<void>;
+  startCapture(onAudio: (identity: string, audio: PcmAudio) => void, permitted: (identity: string) => boolean, onFailure: () => void): Promise<void>;
+  resetCapture(): void;
   close(): Promise<void>;
 }>;
 
@@ -23,6 +26,7 @@ export function createBrowserMedia(provider: MatrixMediaKeyProvider): BrowserMed
   track.enabled = false;
   let source: AudioBufferSourceNode | undefined;
   let closed = false;
+  let capture: RemoteAudioCapture | undefined;
 
   room.on(RoomEvent.TrackSubscribed, (remote) => {
     if (remote.kind !== Track.Kind.Audio) return;
@@ -52,6 +56,12 @@ export function createBrowserMedia(provider: MatrixMediaKeyProvider): BrowserMed
     },
     suspend,
     resume() { if (!closed) track.enabled = true; },
+    async startCapture(onAudio, permitted, onFailure) {
+      if (capture || closed) throw new Error("Audio capture is unavailable");
+      capture = new RemoteAudioCapture(room, context, onAudio, permitted, onFailure);
+      await capture.start();
+    },
+    resetCapture() { capture?.reset(); },
     async publish(audio: PcmAudio, signal: AbortSignal) {
       signal.throwIfAborted();
       if (closed || !track.enabled || source) throw new Error("Browser audio is unavailable");
@@ -80,6 +90,7 @@ export function createBrowserMedia(provider: MatrixMediaKeyProvider): BrowserMed
     async close() {
       if (closed) return;
       closed = true;
+      capture?.close();
       suspend();
       track.stop();
       try { await room.disconnect(); }

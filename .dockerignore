@@ -23,5 +23,8 @@
 !packages/browser-worker/
 !packages/browser-worker/src/
 !packages/browser-worker/src/**
+!packages/voice/
+!packages/voice/src/
+!packages/voice/src/**
 !scripts/
 !scripts/build-browser-assets.mjs

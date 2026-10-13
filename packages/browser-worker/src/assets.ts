@@ -10,6 +10,7 @@ export async function startAssetServer(directory: string, port: number, matrixUr
     ["/", { type: "text/html", body: Buffer.from('<!doctype html><meta charset="utf-8"><script type="module" src="/browser.js"></script>') }],
     ["/browser.js", { type: "text/javascript", body: await readFile(path.join(directory, "browser.js")) }],
     ["/e2ee-worker.js", { type: "text/javascript", body: await readFile(path.join(directory, "e2ee-worker.js")) }],
+    ["/capture-worklet.js", { type: "text/javascript", body: await readFile(path.join(directory, "capture-worklet.js")) }],
     ["/pkg/matrix_sdk_crypto_wasm_bg.wasm", { type: "application/wasm", body: await readFile(path.join(directory, "matrix_sdk_crypto_wasm_bg.wasm")) }],
   ]);
   const endpoints = ["'self'", ...[matrixUrl, ...policy.focusUrls, ...policy.sfuUrls, ...policy.sfuUrls.map((url) => url.replace(/^ws/, "http"))].map((url) => new URL(url).origin)];

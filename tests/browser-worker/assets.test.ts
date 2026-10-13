@@ -10,11 +10,11 @@ import { credentials, configuration } from "../fixtures/browser.js";
 describe("private browser asset server", () => {
   it("serves an exact asset allowlist with isolation headers and no secret responses", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "matrix-call-assets-"));
-    for (const file of ["browser.js", "e2ee-worker.js", "matrix_sdk_crypto_wasm_bg.wasm"]) await writeFile(path.join(dir, file), file);
+    for (const file of ["browser.js", "e2ee-worker.js", "capture-worklet.js", "matrix_sdk_crypto_wasm_bg.wasm"]) await writeFile(path.join(dir, file), file);
     const policy = parseBrowserConfig(configuration, credentials).policy;
     const assets = await startAssetServer(dir, 0, credentials.baseUrl, policy);
     try {
-      for (const file of ["/", "/browser.js", "/e2ee-worker.js", "/pkg/matrix_sdk_crypto_wasm_bg.wasm"]) {
+      for (const file of ["/", "/browser.js", "/e2ee-worker.js", "/capture-worklet.js", "/pkg/matrix_sdk_crypto_wasm_bg.wasm"]) {
         const response = await fetch(`${assets.origin}${file}`);
         expect(response.status).toBe(200);
         expect(response.headers.get("cache-control")).toBe("no-store");
