@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { startTestVoiceServices } from "./voice-services.mjs";
 import { verifyMatrixSpeech } from "./matrix-speech.mjs";
+import { installCaptureProbe } from "../../tests/integration/capture-probe.js";
 
 async function freePort() {
   const server = createServer(); server.listen(0, "127.0.0.1"); await once(server, "listening");
@@ -61,11 +62,14 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
   let voiceConfiguration;
   let rotation = 0;
   let failure = "none";
+  let driverPage;
   const network = { focusStatuses: [], failed: [], csp: false };
   const originalStart = BrowserDriver.start;
   BrowserDriver.start = (config, _launcher, captureAudio) => originalStart(config, { async launchPersistentContext(...args) {
     const context = await chromium.launchPersistentContext(...args);
+    if (process.env.MATRIX_CALL_MATRIX_SPEECH_IMAGE) await context.addInitScript(installCaptureProbe);
     context.on("page", (page) => {
+      driverPage = page;
       const evaluate = page.evaluate.bind(page);
       page.evaluate = async (operation, ...args) => {
         try { return await evaluate(operation, ...args); }
@@ -100,11 +104,11 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
     };
   }
 
-  async function connect(request) {
+  async function connect(request, diagnosticContainer = container) {
     assert.equal((await request("/v1/media/join", { roomId: "!unconfigured" })).status, 403);
     const response = await request("/v1/media/join", { roomId });
-    if (response.status !== 200 && container) {
-      const lines = execFileSync("docker", ["logs", container], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).split("\n");
+    if (response.status !== 200 && diagnosticContainer) {
+      const lines = execFileSync("docker", ["logs", diagnosticContainer], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).split("\n");
       for (const line of lines) { try { const record = JSON.parse(line); if (record.event === "browser-call-failed") failure = record.reason; } catch {} }
     }
     assert.equal(response.status, 200, `Production driver connection: ${failure}; network ${JSON.stringify(network)}`);
@@ -242,7 +246,7 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
     }
     assert.equal(voiceServices.state.invalidRequests, 0);
     const realSpeech = process.env.MATRIX_CALL_MATRIX_SPEECH_IMAGE ? await verifyMatrixSpeech({ root, directory, data, config, env, peer, identity,
-      owner, waitFor, control, connect, startBrowserWorker }) : undefined;
+      owner, keys, waitFor, control, connect, startBrowserWorker, freePort, getDriverPage: () => driverPage }) : undefined;
     return { productionBrowserDriver: true, persistentDeviceBinding: true, pcmPublication: true, voicePipeline: true,
       speechModel: "protocol-fixture", agentRuntime: "protocol-fixture", browserContainer: containerChecked, realSpeech };
   } finally {
