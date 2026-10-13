@@ -58,6 +58,7 @@ export function authorizeParticipant(
   participant: VerifiedParticipant,
   nowMs: number,
 ): VerifiedParticipant {
+  if (!Number.isSafeInteger(nowMs) || nowMs < 0) throw new CallError("invalid-input");
   const result = participantSchema.safeParse(participant);
   if (!result.success) throw new CallError("invalid-input");
   const verified = result.data;

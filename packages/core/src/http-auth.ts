@@ -85,7 +85,7 @@ export class RequestAuthenticator {
     }
     const now = this.#now();
     const timestamp = Number(auth.data.time);
-    if (!Number.isSafeInteger(now) || !Number.isSafeInteger(timestamp) ||
+    if (!Number.isSafeInteger(now) || now < 0 || !Number.isSafeInteger(timestamp) ||
       Math.abs(now - timestamp) > this.#windowMs) {
       throw new AuthenticationError("stale-request");
     }

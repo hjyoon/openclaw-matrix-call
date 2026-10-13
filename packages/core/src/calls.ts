@@ -94,11 +94,13 @@ export class CallCoordinator {
     entry.busy = true;
     const signal = entry.controller.signal;
     try {
-      const reference = participantReferenceSchema.parse({
+      const parsedReference = participantReferenceSchema.safeParse({
         roomId: entry.record.roomId,
         rtcSessionId: entry.record.rtcSessionId,
         participantId,
       });
+      if (!parsedReference.success) throw new CallError("invalid-input");
+      const reference = parsedReference.data;
       const participant = await this.#verifier.verify(reference, signal);
       signal.throwIfAborted();
       const caller = authorizeParticipant(this.#policy, reference, participant, this.#now());

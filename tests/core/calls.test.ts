@@ -135,6 +135,18 @@ describe("independent call lifecycle", () => {
     expect((await store.get(record.id))!.messages).toEqual([]);
   });
 
+  it("rejects an invalid participant reference with a bounded error and releases the turn lock", async () => {
+    const { calls, verify, reply } = setup();
+    const record = await calls.open(input);
+    verify.mockClear();
+    await expect(calls.turn(record.id, "", "Question"))
+      .rejects.toThrowError(new CallError("invalid-input"));
+    expect(verify).not.toHaveBeenCalled();
+    expect(reply).not.toHaveBeenCalled();
+    await expect(calls.turn(record.id, reference.participantId, "Valid question"))
+      .resolves.toEqual({ text: "Response" });
+  });
+
   it.each(["", " ", null, "x".repeat(16_001)])("rejects invalid text %#", async (text) => {
     const { calls } = setup();
     const record = await calls.open(input);

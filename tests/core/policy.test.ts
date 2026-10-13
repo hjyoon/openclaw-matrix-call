@@ -95,4 +95,9 @@ describe("caller policy", () => {
       ...participant, userId: "Owner Display Name",
     }, 1_000)).toThrowError(new CallError("invalid-input"));
   });
+
+  it.each([NaN, -1, 1.5])("fails closed when the current clock is invalid: %s", (nowMs) => {
+    expect(() => authorizeParticipant(parsePolicy(config), reference, participant, nowMs))
+      .toThrowError(new CallError("invalid-input"));
+  });
 });

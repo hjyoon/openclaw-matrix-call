@@ -88,7 +88,7 @@ describe("dedicated HTTP authentication", () => {
       .toThrowError(new AuthenticationError("invalid-auth"));
   });
 
-  it.each([69_999, 130_001, NaN])("rejects stale, future, or invalid clock values %s", (time) => {
+  it.each([69_999, 130_001, NaN, -1])("rejects stale, future, or invalid clock values %s", (time) => {
     const { auth, setTime } = setup();
     const headers = auth.sign(message);
     setTime(time);
