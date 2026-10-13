@@ -8,6 +8,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { startTestVoiceServices } from "./voice-services.mjs";
+import { verifyMatrixSpeech } from "./matrix-speech.mjs";
 
 async function freePort() {
   const server = createServer(); server.listen(0, "127.0.0.1"); await once(server, "listening");
@@ -65,6 +66,17 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
   BrowserDriver.start = (config, _launcher, captureAudio) => originalStart(config, { async launchPersistentContext(...args) {
     const context = await chromium.launchPersistentContext(...args);
     context.on("page", (page) => {
+      const evaluate = page.evaluate.bind(page);
+      page.evaluate = async (operation, ...args) => {
+        try { return await evaluate(operation, ...args); }
+        catch (error) {
+          if (operation.toString().includes("window.matrixCall.prepare")) {
+            const codes = ["Matrix device fingerprint does not match enrollment", "Matrix crypto is unavailable", "Matrix runtime is unavailable", "TimeoutError"];
+            console.log(JSON.stringify({ event: "matrix-enrollment-failed", reason: codes.find((code) => error.message.includes(code)) ?? "unknown" }));
+          }
+          throw error;
+        }
+      };
       page.on("requestfailed", (request) => {
         if (new URL(request.url()).origin === new URL(focusUrl).origin) network.failed.push(request.failure()?.errorText === "net::ERR_FAILED" ? "network-failed" : "other");
       });
@@ -229,8 +241,10 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
       containerChecked = true;
     }
     assert.equal(voiceServices.state.invalidRequests, 0);
+    const realSpeech = process.env.MATRIX_CALL_MATRIX_SPEECH_IMAGE ? await verifyMatrixSpeech({ root, directory, data, config, env, peer, identity,
+      owner, waitFor, control, connect, startBrowserWorker }) : undefined;
     return { productionBrowserDriver: true, persistentDeviceBinding: true, pcmPublication: true, voicePipeline: true,
-      speechModel: "protocol-fixture", agentRuntime: "protocol-fixture", browserContainer: containerChecked };
+      speechModel: "protocol-fixture", agentRuntime: "protocol-fixture", browserContainer: containerChecked, realSpeech };
   } finally {
     BrowserDriver.start = originalStart;
     await worker?.close();
