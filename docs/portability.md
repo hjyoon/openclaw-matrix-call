@@ -23,3 +23,7 @@ Conversation records use versioned JSON with text, roles, caller identifiers, an
 The portable agent HTTP protocol is a separate integration option. A self-hosted service can implement it using any agent framework or model backend. OpenAI-compatible model APIs are optional adapters, not the definition of an agent.
 
 Caller authorization happens before agent dispatch. An adapter must preserve the verified caller and call isolation and must keep its host's tool approval checks authoritative. Changing an agent backend cannot grant owner authority to an unverified participant. Capability differences must be declared rather than silently replaced with broader permissions.
+
+## Speech portability
+
+The portable voice coordinator consumes the existing recognition and synthesis ports. The [signed HTTP speech protocol](speech-protocol.md) uses canonical little endian mono PCM and request IDs, with a dedicated service secret and process audience. A local bridge or a hosted bridge can implement that protocol without changing Matrix policy, agent runtime or history formats. Provider model names, voices and credentials stay in the bridge. The browser image contains capture and dispatch code, and no required hosted speech account or bundled speech model.

@@ -4,6 +4,8 @@ The repository contains an OpenClaw channel plugin, an isolated RTC worker, and 
 
 The core owns caller policy, independent conversation records, and call lifecycle. The selected agent adapter owns dispatch to its host. The worker's transport adapter owns Matrix device state, call signaling, audio, and media encryption. Speech recognition and synthesis use explicitly configured providers, including self-hosted implementations.
 
+The portable voice package composes the existing call coordinator with recognition, synthesis and publishing ports. Its half-duplex turns have bounded audio, one active operation and explicit cancellation. The optional browser worker obtains audio through its private automation pipe and authenticates separately configured agent and speech services before starting Matrix. See [voice pipeline](voice-pipeline.md), [speech protocol](speech-protocol.md) and [ADR 0009](adr/0009-bounded-portable-voice-turns.md).
+
 The core and worker are host-independent. OpenClaw, MatrixRTC, legacy Matrix VoIP, LiveKit, speech, and persistence integrations use replaceable adapters as described in [Portability](portability.md). Client support is recorded by protocol capability in [Matrix compatibility](matrix-compatibility.md).
 
 Each call receives a new random identifier. A room identifier and an agent identifier do not define a call session. Concurrent calls must not share history or mutable active-agent state.

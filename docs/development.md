@@ -16,7 +16,7 @@ Tests must exercise security decisions, invalid inputs, cancellation, concurrenc
 
 Build output and coverage reports are generated locally and are not committed. Explain design changes in Markdown rather than adding source comments.
 
-`pnpm build` bundles the portable core and HTTP agent adapter under `dist/` and the native plugin under `packages/openclaw-plugin/dist/`. `pnpm verify:artifacts` loads these outputs, checks native plugin metadata, and verifies that portable bundles have no OpenClaw SDK dependency or other external package requirement. The plugin leaves public OpenClaw SDK imports external so the host supplies the tested SDK.
+`pnpm build` bundles the portable core, voice coordinator, and HTTP agent/speech adapters under `dist/`, and the native plugin under `packages/openclaw-plugin/dist/`. `pnpm verify:artifacts` loads these outputs, checks native plugin metadata, and verifies that portable bundles have no OpenClaw SDK dependency or other external package requirement. The plugin leaves public OpenClaw SDK imports external so the host supplies the tested SDK.
 
 The OpenClaw adapter's runtime boundary is described in [ADR 0004](adr/0004-delegated-openclaw-ingress.md). Its current turns are delegated and tool-free. SDK registration tests do not establish model-backed execution or RTC audio support.
 
@@ -30,6 +30,8 @@ For actual encrypted WebRTC audio, run `pnpm browser:install` and `pnpm verify:m
 
 Run `pnpm verify:matrix` to add a disposable Synapse homeserver, persistent device trust, encrypted MatrixRTC key delivery, actual participant verification, and audio across restart/rejoin. See [Matrix integration](matrix-integration.md) for the tested protocol mode and remaining production gaps.
 
-The optional [browser worker](browser-worker.md) is built under `dist/browser-worker`, including local browser assets, crypto WASM, the E2EE worker, and dependency notices. Its Node host keeps Matrix and LiveKit SDKs in the browser bundle and leaves only Playwright external. Artifact checks enforce these boundaries and align image build dependencies with the workspace.
+The optional [browser worker](browser-worker.md) is built under `dist/browser-worker`, including local browser assets, crypto WASM, E2EE and capture worklets, and dependency notices. Its Node host keeps Matrix and LiveKit SDKs in the browser bundle and leaves only Playwright external. Artifact checks enforce these boundaries and align image build dependencies with the workspace. Node-side Zod and Playwright notices are included alongside browser dependency notices.
 
 Build `deployment/browser-worker.Dockerfile` with tag `matrix-call-browser-worker:0.1.0-alpha.1`, then run `pnpm verify:browser-sandbox` and `pnpm verify:browser-container`. These checks preserve Chromium sandboxing, drop container capabilities, and use private temporary state. The latter includes the complete Matrix integration check and exercises the production image with the same persisted device profile. GitHub Actions runs these commands on its disposable runner. Runtime instructions and seccomp provenance are documented in [Browser worker](browser-worker.md).
+
+Both `pnpm verify:matrix` and the image check exercise the real voice capture path against signed local speech/agent protocol fixtures. They validate audio-to-agent routing, two-turn history, actual STT request cancellation, encrypted synthesized output and fresh history after container restart. Fixtures analyze test tones and return deterministic text/PCM; they do not run a speech or language model. Always build artifacts before starting integration checks, and do not rebuild `dist` while an integration process uses it.

@@ -42,14 +42,21 @@ Decision rationale and changes are recorded in [ADRs](adr/README.md). This statu
 - A pinned browser-worker image and Compose example retaining Chromium's namespace and Seccomp-BPF sandboxes with non-root execution, a read-only root, dropped capabilities, a private data volume, and a documented Moby-derived seccomp policy.
 - Production-driver encrypted PCM publication and participant verification against real isolated infrastructure, including preserved device keys, fresh worker sessions, and restart/rejoin. See [Browser worker](browser-worker.md) for configuration and remaining limits.
 - The production browser image restoring the same device profile, exchanging authenticated Matrix keys, connecting through the actual authorization service, retaining extra PID/seccomp isolation, and shutting down without an OOM or nonzero exit.
+- Provider-independent speech HTTP schemas and a canonical signed mono PCM codec with strict size, format, UTF-8 and request-ID checks.
+- An authenticated speech adapter with separate service authentication, process-incarnation binding, bounded streaming responses and cancellation, including a real local HTTP service test.
+- A portable half-duplex voice coordinator using existing conversation and caller policy, repeated same-device verification, silence handling, bounded volatile history, deadlines, overlap rejection and late-result discard.
+- Remote microphone capture through a backpressured audio worklet, bounded energy segmentation, current encrypted/live publication checks, reset epochs and a verified one-utterance private inbox.
+- Optional external voice configuration and Compose mounts, with distinct control, agent and speech secrets and authenticated capability checks before Matrix starts.
+- A complete production-driver voice path using real encrypted input, signed STT/agent/TTS protocol fixtures and measured encrypted synthesized PCM output. Two turns preserve the call's history; session end aborts a real pending STT HTTP request.
+- The same voice path inside the production browser image after restoring its profile, with a fresh conversation UUID and empty history while retaining device keys and renderer isolation.
 
-`pnpm check` and the worker container check pass locally. The current suite has 532 passing tests, with 100% per-file runtime coverage across 31 non-empty files. Tests use isolated fixtures, temporary profiles, and local test services. GitHub Actions has passed package installation, full coverage, both image builds, Chromium sandbox checks, and production-driver/container behavior.
+The current suite has 719 passing tests, with 100% per-file runtime coverage across 40 non-empty files. Tests use isolated fixtures, temporary profiles, and local test services. Full package/worker/plugin checks and the updated production-driver/browser-image integration pass locally. The voice fixtures analyze actual audio tones and generate deterministic text/PCM; no speech or language model is evaluated by those checks. GitHub Actions runs the same package, image, sandbox and encrypted integration commands.
 
 ## Remaining release work
 
 - Homeserver-mediated MatrixRTC focus discovery/authorization, modern sticky membership, SAS enrollment UI, and target-server deployment/resource measurements.
 - Legacy VoIP transport implementation.
-- Speech capture/provider adapters and the complete STT/agent/TTS audio pipeline.
+- Real speech model/provider integration, recognition quality/language checks and voice latency/resource measurements; streaming and interruption remain separate design work.
 - Model-backed OpenClaw dispatch and a supported privileged execution/approval path. The pinned SDK does not allow a community plugin to admit owner authority; see [ADR 0004](adr/0004-delegated-openclaw-ingress.md).
 - Real encrypted audio interoperability with documented client versions, including a non-Element client where compatible calling support exists.
 - Marketplace validation, source provenance, release assets, and publication setup.
