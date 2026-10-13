@@ -47,7 +47,7 @@ export function createBrowserMedia(provider: MatrixMediaKeyProvider): BrowserMed
       provider.bindLocalIdentity(identity);
       await context.resume();
       await room.setE2EEEnabled(true);
-      await room.connect(url, jwt);
+      await room.connect(url, jwt, { autoSubscribe: false });
       await room.localParticipant.publishTrack(track, { source: Track.Source.Microphone, dtx: false, red: false });
     },
     suspend,

@@ -35,14 +35,14 @@ function fixture() {
   const cryptoApi = { getOwnDeviceKeys: vi.fn(async () => ({ ed25519: "C".repeat(43), curve25519: "D".repeat(43) })), getUserDeviceInfo: vi.fn(async () => new Map([[pin.userId, new Map([[pin.deviceId, new Device({ userId: pin.userId, deviceId: pin.deviceId, algorithms: [], keys: new Map([[`ed25519:${pin.deviceId}`, pin.ed25519], [`curve25519:${pin.deviceId}`, pin.curve25519]]) })]])]])), setDeviceVerified: vi.fn(async () => {}), getDeviceVerificationStatus: vi.fn(async () => new DeviceVerificationStatus({ localVerified: true })) };
   const room = { getMyMembership: () => "join", hasEncryptionStateEvent: () => true };
   const client = Object.assign(new EventEmitter(), { downloadKeysForUsers: vi.fn(async () => ({ failures: {}, device_keys: {} })), initRustCrypto: vi.fn(async () => {}), getCrypto: () => cryptoApi, startClient: vi.fn(async () => {}), stopClient: vi.fn(), getSyncState: vi.fn(() => SyncState.Prepared), getRoom: vi.fn(() => room), getUserId: () => credentials.userId, getDeviceId: () => credentials.deviceId, encryptAndSendToDevice: vi.fn(async () => {}), matrixRTC: { getRoomSession: () => session } });
-  const publication = { kind: Track.Kind.Audio, isEncrypted: true, isSubscribed: true, track: { mediaStreamTrack: { readyState: "live" } } };
+  const publication = { kind: Track.Kind.Audio, isEncrypted: true, isSubscribed: true, track: { mediaStreamTrack: { readyState: "live" } }, setSubscribed: vi.fn((value: boolean) => { publication.isSubscribed = value; }) };
   const mediaRoom = Object.assign(new EventEmitter(), { state: ConnectionState.Connected, isE2EEEnabled: true, remoteParticipants: new Map([[remote.rtcBackendIdentity, { identity: remote.rtcBackendIdentity, trackPublications: new Map([["audio", publication]]) }]]) });
   const media = { room: mediaRoom, connect: vi.fn(async () => {}), suspend: vi.fn(), resume: vi.fn(), publish: vi.fn(async () => {}), close: vi.fn(async () => {}) };
   const grant = { url: "wss://sfu.example.org", jwt: "opaque-jwt", identity: local.rtcBackendIdentity, expiresAtMs: Date.now() + 60_000 };
   const authorizer = { authorize: vi.fn(async (_source: FocusAuthorizationSource, _signal: AbortSignal) => grant) };
   sdkFactory.mockReturnValue(client); mediaFactory.mockReturnValue(media); focusFactory.mockReturnValue(authorizer);
   const runtime = new BrowserMatrixRuntime(setup, client as unknown as MatrixClient, () => media as unknown as BrowserMedia, authorizer);
-  return { setup, runtime, client, cryptoApi, session, local, remote, media, authorizer, grant };
+  return { setup, runtime, client, cryptoApi, session, local, remote, media, authorizer, grant, publication };
 }
 
 async function ready(f = fixture()) { await f.runtime.initialize(); await f.runtime.prepare(); return f; }
@@ -216,6 +216,7 @@ describe("production Matrix browser runtime", () => {
     await expect(f.runtime.verify(reference, signal())).rejects.toThrow("unavailable");
     await f.runtime.connect("!room");
     const receive = vi.spyOn(VerifiedMatrixRtcKeys.prototype, "receive");
+    expect(f.publication.isSubscribed).toBe(false);
     f.client.emit(ClientEvent.ReceivedToDeviceMessage, { message: { type: "ignored" } });
     expect(receive).not.toHaveBeenCalled();
     f.client.emit(ClientEvent.ReceivedToDeviceMessage, {
@@ -224,7 +225,23 @@ describe("production Matrix browser runtime", () => {
     });
     await receive.mock.results[0]!.value;
     const proof = await f.runtime.verify(reference, signal());
+    expect(f.publication.isSubscribed).toBe(true);
     expect(proof).toMatchObject({ userId: f.remote.userId, deviceId: f.remote.deviceId, deviceVerified: true, mediaEncrypted: true });
+    await f.runtime.close();
+  });
+
+  it("gates new audio publications on authenticated keys and never subscribes to video", async () => {
+    const f = await ready();
+    const video = { ...f.publication, kind: Track.Kind.Video, setSubscribed: vi.fn() };
+    f.media.room.remoteParticipants.get(f.remote.rtcBackendIdentity)!.trackPublications.set("video", video);
+    await f.runtime.connect("!room");
+    f.media.room.emit(RoomEvent.TrackPublished, f.publication);
+    expect(f.publication.setSubscribed).toHaveBeenLastCalledWith(false);
+    expect(video.setSubscribed).not.toHaveBeenCalled();
+    const receive = vi.spyOn(VerifiedMatrixRtcKeys.prototype, "receive");
+    f.client.emit(ClientEvent.ReceivedToDeviceMessage, { message: { type: EventType.CallEncryptionKeysPrefix } });
+    await receive.mock.results[0]!.value;
+    expect(f.publication.isSubscribed).toBe(false);
     await f.runtime.close();
   });
 

@@ -1,6 +1,6 @@
 import { ClientEvent, EventType, type MatrixClient, type ReceivedToDeviceMessage } from "matrix-js-sdk";
 import { MatrixRTCSessionEvent, type MatrixRTCSession } from "matrix-js-sdk/lib/matrixrtc/index.js";
-import { RoomEvent } from "livekit-client";
+import { RoomEvent, Track } from "livekit-client";
 import type { ParticipantReference, PcmAudio } from "@matrix-call/core";
 import { MatrixMediaKeyProvider, VerifiedMatrixRtcKeys, MatrixRtcParticipantVerifier, membershipSnapshot, OpenIdFocusAuthorizer, type FocusAuthorizationPort, type OutboundKeySource } from "../../matrixrtc/src/index.js";
 import { createMatrixClient, enrollPinnedDevices, initializeMatrixClient, joinedEncryptedRoom } from "./client.js";
@@ -19,6 +19,7 @@ type ActiveCall = {
   receive: (message: ReceivedToDeviceMessage) => void;
   changed: () => void;
   fail: () => void;
+  subscribe: () => void;
   timer: ReturnType<typeof setInterval> | undefined;
   closing: Promise<void> | undefined;
 };
@@ -86,20 +87,29 @@ export class BrowserMatrixRuntime {
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]);
     const guard = new MatrixPublicationGuard(source, media);
     const fail = (): void => { if (!controller.signal.aborted) void this.#disconnect(call).catch(() => {}); };
+    const subscribe = (): void => {
+      for (const participant of media.room.remoteParticipants.values()) {
+        for (const publication of participant.trackPublications.values()) {
+          if (publication.kind === Track.Kind.Audio) publication.setSubscribed(keys.hasCurrentKey(participant.identity));
+        }
+      }
+    };
     const receive = (message: ReceivedToDeviceMessage): void => {
-      if (message.message.type === EventType.CallEncryptionKeysPrefix) void keys.receive(message).catch(fail);
+      if (message.message.type === EventType.CallEncryptionKeysPrefix) void keys.receive(message).then((accepted) => { if (accepted) subscribe(); }).catch(fail);
     };
     const changed = (): void => {
       media.suspend();
+      subscribe();
       if (call.connected) void guard.refresh().catch(fail);
     };
-    const call: ActiveCall = { roomId, session, media, keys, guard, controller, connected: false, receive, changed, fail, timer: undefined, closing: undefined };
+    const call: ActiveCall = { roomId, session, media, keys, guard, controller, connected: false, receive, changed, fail, subscribe, timer: undefined, closing: undefined };
     this.#call = call;
     this.#client.on(ClientEvent.ReceivedToDeviceMessage, receive);
     session.on(MatrixRTCSessionEvent.MembershipsChanged, changed);
     session.on(MatrixRTCSessionEvent.MembershipManagerError, fail);
     media.room.on(RoomEvent.Disconnected, fail);
     media.room.on(RoomEvent.EncryptionError, fail);
+    media.room.on(RoomEvent.TrackPublished, subscribe);
     const { userId, deviceId } = this.#setup.credentials;
     const own = () => memberships().filter((member) => member.userId === userId && member.deviceId === deviceId);
     try {
@@ -115,6 +125,7 @@ export class BrowserMatrixRuntime {
       signal.throwIfAborted();
       await media.connect(grant.url, grant.jwt, grant.identity);
       signal.throwIfAborted();
+      subscribe();
       call.connected = true;
       await guard.refresh();
       call.timer = setInterval(changed, 5_000);
@@ -159,6 +170,7 @@ export class BrowserMatrixRuntime {
     call.session.off(MatrixRTCSessionEvent.MembershipManagerError, call.fail);
     call.media.room.off(RoomEvent.Disconnected, call.fail);
     call.media.room.off(RoomEvent.EncryptionError, call.fail);
+    call.media.room.off(RoomEvent.TrackPublished, call.subscribe);
     call.closing = (async () => {
       try { await call.media.close(); }
       finally { await call.session.leaveRoomSession(5_000); }

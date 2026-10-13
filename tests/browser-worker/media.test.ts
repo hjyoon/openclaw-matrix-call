@@ -38,7 +38,7 @@ describe("browser PCM media", () => {
     await f.media.connect("wss://sfu.example.org", "jwt", "local");
     expect(f.provider.getLatestManuallySetKeyIndex()).toBe(0);
     expect(f.room.setE2EEEnabled).toHaveBeenCalledWith(true);
-    expect(f.room.connect).toHaveBeenCalledWith("wss://sfu.example.org", "jwt");
+    expect(f.room.connect).toHaveBeenCalledWith("wss://sfu.example.org", "jwt", { autoSubscribe: false });
     expect(f.room.localParticipant.publishTrack).toHaveBeenCalledWith(f.track, { source: Track.Source.Microphone, dtx: false, red: false });
     await f.media.close();
   });
