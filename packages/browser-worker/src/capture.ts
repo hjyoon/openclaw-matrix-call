@@ -48,7 +48,8 @@ export class RemoteAudioCapture {
       node.port.onmessage = ({ data }) => {
         try {
           if (!entry.active || data.epoch !== entry.epoch) return;
-          if (!this.permitted(identity)) { entry.segmenter.reset(); return; }
+          if (!publication.isEncrypted || !participant.isEncrypted || track.mediaStreamTrack.readyState !== "live" ||
+              !this.permitted(identity)) { entry.segmenter.reset(); return; }
           const audio = entry.segmenter.push(data.samples);
           if (audio) this.onAudio(identity, audio);
         } catch { this.onFailure(); }

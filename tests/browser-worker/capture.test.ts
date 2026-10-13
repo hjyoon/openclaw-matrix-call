@@ -20,10 +20,10 @@ function fixture() {
   vi.stubGlobal("AudioWorkletNode", class { constructor() { return worklet(); } });
   const room = new EventEmitter(); const received = vi.fn(); const permitted = vi.fn(() => true); const failure = vi.fn();
   const capture = new RemoteAudioCapture(room as unknown as Room, context as unknown as AudioContext, received, permitted, failure);
-  const track = { kind: Track.Kind.Audio, mediaStreamTrack: {} };
+  const track = { kind: Track.Kind.Audio, mediaStreamTrack: { readyState: "live" } };
   const publication = { source: Track.Source.Microphone, isEncrypted: true };
-  const participant = { identity: "speaker" };
-  const subscribe = (id = "speaker", remote = track, pub = publication) => room.emit(RoomEvent.TrackSubscribed, remote, pub, { identity: id });
+  const participant = { identity: "speaker", isEncrypted: true };
+  const subscribe = (id = "speaker", remote = track, pub = publication) => room.emit(RoomEvent.TrackSubscribed, remote, pub, id === "speaker" ? participant : { identity: id, isEncrypted: true });
   const send = (value: number, count: number, node = nodes.at(-1)!, epoch = 0) => {
     for (let i = 0; i < count; i++) node.port.onmessage!({ data: { epoch, samples: new Float32Array(160).fill(value) } });
   };
@@ -70,7 +70,7 @@ describe("decrypted remote microphone capture", () => {
   it("replaces duplicate microphone tracks without allowing a stale unsubscribe to remove the new track", async () => {
     const f = fixture(); await f.capture.start(); f.subscribe();
     const stale = f.nodes[0]!.port.onmessage!; const staleError = f.nodes[0]!.onprocessorerror!;
-    const next = { ...f.track, mediaStreamTrack: {} }; f.subscribe("speaker", next);
+    const next = { ...f.track, mediaStreamTrack: { readyState: "live" } }; f.subscribe("speaker", next);
     stale({ data: { epoch: 0, samples: new Float32Array(160).fill(0.5) } }); staleError();
     f.room.emit(RoomEvent.TrackUnsubscribed, f.track, f.publication, f.participant);
     f.room.emit(RoomEvent.TrackUnsubscribed, f.track, f.publication, { identity: "absent" });
@@ -87,6 +87,16 @@ describe("decrypted remote microphone capture", () => {
     f.received.mockImplementationOnce(() => { throw new Error("consumer failed"); });
     f.send(0.5, 10); f.send(0, 30); expect(f.failure).toHaveBeenCalledTimes(3);
     f.capture.close();
+  });
+
+  it.each(["publication", "participant", "track"])("discards partial speech when %s stops providing encrypted live media", async (changed) => {
+    const f = fixture(); await f.capture.start(); f.subscribe(); f.send(0.5, 9);
+    if (changed === "publication") f.publication.isEncrypted = false;
+    else if (changed === "participant") f.participant.isEncrypted = false;
+    else f.track.mediaStreamTrack.readyState = "ended";
+    f.send(0.5, 10);
+    f.publication.isEncrypted = true; f.participant.isEncrypted = true; f.track.mediaStreamTrack.readyState = "live";
+    f.send(0, 30); expect(f.received).not.toHaveBeenCalled(); f.capture.close();
   });
 
   it("cleans partially constructed audio graphs and reports SDK or graph failures", async () => {
