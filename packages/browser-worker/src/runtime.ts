@@ -5,7 +5,7 @@ import type { ParticipantReference, PcmAudio } from "@matrix-call/core";
 import { MatrixMediaKeyProvider, VerifiedMatrixRtcKeys, MatrixRtcParticipantVerifier, membershipSnapshot, OpenIdFocusAuthorizer, type FocusAuthorizationPort, type OutboundKeySource } from "../../matrixrtc/src/index.js";
 import { createMatrixClient, enrollPinnedDevices, initializeMatrixClient, joinedEncryptedRoom } from "./client.js";
 import { createBrowserMedia, type BrowserMedia } from "./media.js";
-import { MatrixPublicationGuard } from "./guard.js";
+import { MatrixPublicationGuard, MatrixPublicationChangedError } from "./guard.js";
 import type { BrowserSetup } from "./types.js";
 
 type ActiveCall = {
@@ -18,7 +18,9 @@ type ActiveCall = {
   connected: boolean;
   receive: (message: ReceivedToDeviceMessage) => void;
   changed: () => void;
-  fail: () => void;
+  stateFailed: () => void;
+  mediaFailed: () => void;
+  encryptionFailed: (error: Error) => void;
   subscribe: () => void;
   timer: ReturnType<typeof setInterval> | undefined;
   closing: Promise<void> | undefined;
@@ -30,6 +32,18 @@ export async function waitUntil(predicate: () => boolean, signal: AbortSignal): 
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
   }
   signal.throwIfAborted();
+}
+
+export async function refreshPublication(guard: MatrixPublicationGuard, signal: AbortSignal): Promise<void> {
+  for (;;) {
+    signal.throwIfAborted();
+    try {
+      await guard.refresh();
+      signal.throwIfAborted();
+      if (guard.permits(guard.revision)) return;
+    } catch (error) { if (!(error instanceof MatrixPublicationChangedError)) throw error; }
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  }
 }
 
 export class BrowserMatrixRuntime {
@@ -86,7 +100,15 @@ export class BrowserMatrixRuntime {
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]);
     const guard = new MatrixPublicationGuard(source, media);
-    const fail = (): void => { if (!controller.signal.aborted) void this.#disconnect(call).catch(() => {}); };
+    const fail = (reason: string): void => {
+      if (!controller.signal.aborted) {
+        controller.abort(new Error(`Matrix call ended: ${reason}`));
+        void this.#disconnect(call).catch(() => {});
+      }
+    };
+    const stateFailed = (): void => fail("state");
+    const mediaFailed = (): void => fail("media");
+    const encryptionFailed = (error: Error): void => fail(error.message.startsWith("MissingKey:") ? "missing-key" : (error.message.startsWith("InvalidKey:") ? "invalid-key" : "encryption"));
     const subscribe = (): void => {
       for (const participant of media.room.remoteParticipants.values()) {
         for (const publication of participant.trackPublications.values()) {
@@ -95,20 +117,20 @@ export class BrowserMatrixRuntime {
       }
     };
     const receive = (message: ReceivedToDeviceMessage): void => {
-      if (message.message.type === EventType.CallEncryptionKeysPrefix) void keys.receive(message).then((accepted) => { if (accepted) subscribe(); }).catch(fail);
+      if (message.message.type === EventType.CallEncryptionKeysPrefix) void keys.receive(message).then((accepted) => { if (accepted) subscribe(); }).catch(() => fail("keys"));
     };
     const changed = (): void => {
       media.suspend();
       subscribe();
-      if (call.connected) void guard.refresh().catch(fail);
+      if (call.connected) void refreshPublication(guard, AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)])).catch(() => fail("listeners"));
     };
-    const call: ActiveCall = { roomId, session, media, keys, guard, controller, connected: false, receive, changed, fail, subscribe, timer: undefined, closing: undefined };
+    const call: ActiveCall = { roomId, session, media, keys, guard, controller, connected: false, receive, changed, stateFailed, mediaFailed, encryptionFailed, subscribe, timer: undefined, closing: undefined };
     this.#call = call;
     this.#client.on(ClientEvent.ReceivedToDeviceMessage, receive);
     session.on(MatrixRTCSessionEvent.MembershipsChanged, changed);
-    session.on(MatrixRTCSessionEvent.MembershipManagerError, fail);
-    media.room.on(RoomEvent.Disconnected, fail);
-    media.room.on(RoomEvent.EncryptionError, fail);
+    session.on(MatrixRTCSessionEvent.MembershipManagerError, stateFailed);
+    media.room.on(RoomEvent.Disconnected, mediaFailed);
+    media.room.on(RoomEvent.EncryptionError, encryptionFailed);
     media.room.on(RoomEvent.TrackPublished, subscribe);
     const { userId, deviceId } = this.#setup.credentials;
     const own = () => memberships().filter((member) => member.userId === userId && member.deviceId === deviceId);
@@ -117,7 +139,7 @@ export class BrowserMatrixRuntime {
         { type: "livekit", livekit_service_url: this.#setup.policy.focusUrls[0]!, livekit_alias: roomId },
       ], undefined, { manageMediaKeys: false, callIntent: "audio", membershipEventExpiryMs: 60_000, delayedLeaveEventDelayMs: 5_000, delayedLeaveEventRestartMs: 2_000 });
       await waitUntil(() => session.isJoined() && own().length === 1, signal);
-      await guard.refresh();
+      await refreshPublication(guard, signal);
       const grant = await this.#authorizer.authorize({ roomId, slotId, client: this.#client,
         focus: () => { const oldest = session.getOldestMembership(); return oldest?.getTransport(oldest); },
         membership: () => { const matches = own(); return matches.length === 1 ? matches[0] : undefined; },
@@ -127,7 +149,7 @@ export class BrowserMatrixRuntime {
       signal.throwIfAborted();
       subscribe();
       call.connected = true;
-      await guard.refresh();
+      await refreshPublication(guard, signal);
       call.timer = setInterval(changed, 5_000);
     } catch (error) {
       await this.#disconnect(call);
@@ -139,7 +161,7 @@ export class BrowserMatrixRuntime {
     signal.throwIfAborted();
     const call = this.#call;
     if (!call?.connected || call.controller.signal.aborted) throw new Error("Matrix media is unavailable");
-    await call.guard.refresh();
+    await refreshPublication(call.guard, AbortSignal.any([signal, call.controller.signal, AbortSignal.timeout(30_000)]));
     signal.throwIfAborted();
     const revision = call.guard.revision;
     if (!call.guard.permits(revision)) throw new Error("Matrix publication is suspended");
@@ -167,9 +189,9 @@ export class BrowserMatrixRuntime {
     clearInterval(call.timer);
     this.#client.off(ClientEvent.ReceivedToDeviceMessage, call.receive);
     call.session.off(MatrixRTCSessionEvent.MembershipsChanged, call.changed);
-    call.session.off(MatrixRTCSessionEvent.MembershipManagerError, call.fail);
-    call.media.room.off(RoomEvent.Disconnected, call.fail);
-    call.media.room.off(RoomEvent.EncryptionError, call.fail);
+    call.session.off(MatrixRTCSessionEvent.MembershipManagerError, call.stateFailed);
+    call.media.room.off(RoomEvent.Disconnected, call.mediaFailed);
+    call.media.room.off(RoomEvent.EncryptionError, call.encryptionFailed);
     call.media.room.off(RoomEvent.TrackPublished, call.subscribe);
     call.closing = (async () => {
       try { await call.media.close(); }

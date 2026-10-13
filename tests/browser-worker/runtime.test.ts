@@ -5,8 +5,8 @@ import { DeviceVerificationStatus } from "matrix-js-sdk/lib/crypto-api/index.js"
 import { Device } from "matrix-js-sdk/lib/models/device.js";
 import { MatrixRTCSessionEvent, type CallMembership } from "matrix-js-sdk/lib/matrixrtc/index.js";
 import { ConnectionState, RoomEvent, Track } from "livekit-client";
-import { BrowserMatrixRuntime, waitUntil } from "../../packages/browser-worker/src/runtime.js";
-import { MatrixPublicationGuard } from "../../packages/browser-worker/src/guard.js";
+import { BrowserMatrixRuntime, waitUntil, refreshPublication } from "../../packages/browser-worker/src/runtime.js";
+import { MatrixPublicationGuard, MatrixPublicationChangedError } from "../../packages/browser-worker/src/guard.js";
 import { VerifiedMatrixRtcKeys } from "../../packages/matrixrtc/src/verified-keys.js";
 import { parseBrowserConfig } from "../../packages/browser-worker/src/config.js";
 import type { BrowserMedia } from "../../packages/browser-worker/src/media.js";
@@ -34,7 +34,7 @@ function fixture() {
   const session = Object.assign(new EventEmitter(), { slotId: "m.call#ROOM", memberships: [local, remote], isJoined: vi.fn(() => true), joinRTCSession: vi.fn(), leaveRoomSession: vi.fn(async () => true), getOldestMembership: vi.fn(() => local) });
   const cryptoApi = { getOwnDeviceKeys: vi.fn(async () => ({ ed25519: "C".repeat(43), curve25519: "D".repeat(43) })), getUserDeviceInfo: vi.fn(async () => new Map([[pin.userId, new Map([[pin.deviceId, new Device({ userId: pin.userId, deviceId: pin.deviceId, algorithms: [], keys: new Map([[`ed25519:${pin.deviceId}`, pin.ed25519], [`curve25519:${pin.deviceId}`, pin.curve25519]]) })]])]])), setDeviceVerified: vi.fn(async () => {}), getDeviceVerificationStatus: vi.fn(async () => new DeviceVerificationStatus({ localVerified: true })) };
   const room = { getMyMembership: () => "join", hasEncryptionStateEvent: () => true };
-  const client = Object.assign(new EventEmitter(), { downloadKeysForUsers: vi.fn(async () => ({ failures: {}, device_keys: {} })), initRustCrypto: vi.fn(async () => {}), getCrypto: () => cryptoApi, startClient: vi.fn(async () => {}), stopClient: vi.fn(), getSyncState: vi.fn(() => SyncState.Prepared), getRoom: vi.fn(() => room), getUserId: () => credentials.userId, getDeviceId: () => credentials.deviceId, encryptAndSendToDevice: vi.fn(async () => {}), matrixRTC: { getRoomSession: () => session } });
+  const client = Object.assign(new EventEmitter(), { whoami: vi.fn(async () => ({ user_id: credentials.userId, device_id: credentials.deviceId })), downloadKeysForUsers: vi.fn(async () => ({ failures: {}, device_keys: {} })), initRustCrypto: vi.fn(async () => {}), getCrypto: () => cryptoApi, startClient: vi.fn(async () => {}), stopClient: vi.fn(), getSyncState: vi.fn(() => SyncState.Prepared), getRoom: vi.fn(() => room), getUserId: () => credentials.userId, getDeviceId: () => credentials.deviceId, encryptAndSendToDevice: vi.fn(async () => {}), matrixRTC: { getRoomSession: () => session } });
   const publication = { kind: Track.Kind.Audio, isEncrypted: true, isSubscribed: true, track: { mediaStreamTrack: { readyState: "live" } }, setSubscribed: vi.fn((value: boolean) => { publication.isSubscribed = value; }) };
   const mediaRoom = Object.assign(new EventEmitter(), { state: ConnectionState.Connected, isE2EEEnabled: true, remoteParticipants: new Map([[remote.rtcBackendIdentity, { identity: remote.rtcBackendIdentity, trackPublications: new Map([["audio", publication]]) }]]) });
   const media = { room: mediaRoom, connect: vi.fn(async () => {}), suspend: vi.fn(), resume: vi.fn(), publish: vi.fn(async () => {}), close: vi.fn(async () => {}) };
@@ -50,6 +50,16 @@ const pcm = { samples: new Int16Array([1]), sampleRate: 16_000, channels: 1 as c
 const signal = () => new AbortController().signal;
 
 describe("production Matrix browser runtime", () => {
+  it("retries discarded and superseded rotations without weakening listener checks", async () => {
+    vi.useFakeTimers();
+    const f = await ready();
+    vi.spyOn(MatrixPublicationGuard.prototype, "refresh").mockRejectedValueOnce(new MatrixPublicationChangedError()).mockResolvedValueOnce(undefined);
+    const connecting = f.runtime.connect("!room");
+    await vi.advanceTimersByTimeAsync(200); await connecting;
+    await f.runtime.close();
+    const controller = new AbortController(); controller.abort(new Error("cancelled"));
+    await expect(refreshPublication({} as MatrixPublicationGuard, controller.signal)).rejects.toThrow("cancelled");
+  });
   it("initializes public SDK defaults and preserves a sanitized lifecycle status", async () => {
     const f = fixture();
     const runtime = new BrowserMatrixRuntime(f.setup);
@@ -200,7 +210,7 @@ describe("production Matrix browser runtime", () => {
 
   it("rejects revoked trust, publication suspension, and changes during playback", async () => {
     const f = await ready(); await f.runtime.connect("!room");
-    const permits = vi.spyOn(MatrixPublicationGuard.prototype, "permits").mockReturnValueOnce(false);
+    const permits = vi.spyOn(MatrixPublicationGuard.prototype, "permits").mockReturnValueOnce(true).mockReturnValueOnce(false);
     await expect(f.runtime.publish(pcm, signal())).rejects.toThrow("suspended");
     permits.mockRestore();
     f.media.publish.mockImplementation(async () => { f.session.emit(MatrixRTCSessionEvent.MembershipsChanged); });
@@ -245,12 +255,14 @@ describe("production Matrix browser runtime", () => {
     await f.runtime.close();
   });
 
-  it.each(["membership", "disconnected", "encryption", "key-import"])("cleans up on SDK errors: %s", async (event) => {
+  it.each(["membership", "disconnected", "encryption", "missing-key", "invalid-key", "key-import"])("cleans up on SDK errors: %s", async (event) => {
     const f = await ready(); await f.runtime.connect("!room");
     const saved = f.session.listeners(MatrixRTCSessionEvent.MembershipManagerError)[0]!;
     if (event === "membership") f.session.emit(MatrixRTCSessionEvent.MembershipManagerError, new Error("failed"));
     if (event === "disconnected") f.media.room.emit(RoomEvent.Disconnected);
     if (event === "encryption") f.media.room.emit(RoomEvent.EncryptionError, new Error("failed"));
+    if (event === "missing-key") f.media.room.emit(RoomEvent.EncryptionError, new Error("MissingKey: unavailable"));
+    if (event === "invalid-key") f.media.room.emit(RoomEvent.EncryptionError, new Error("InvalidKey: rejected"));
     if (event === "key-import") {
       vi.spyOn(VerifiedMatrixRtcKeys.prototype, "receive").mockRejectedValueOnce(new Error("failed"));
       f.client.emit(ClientEvent.ReceivedToDeviceMessage, { message: { type: EventType.CallEncryptionKeysPrefix } });

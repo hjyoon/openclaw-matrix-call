@@ -1,5 +1,9 @@
 import { publishMatrixRtcKey, type OutboundKeySource } from "../../matrixrtc/src/outbound-key.js";
 
+export class MatrixPublicationChangedError extends Error {
+  constructor() { super("Matrix listener membership changed during key rotation"); this.name = "MatrixPublicationChangedError"; }
+}
+
 export class MatrixPublicationGuard {
   readonly #source: OutboundKeySource;
   readonly #media: Readonly<{ suspend(): void; resume(): void }>;
@@ -31,12 +35,12 @@ export class MatrixPublicationGuard {
       if (this.#controller.signal.aborted || revision !== this.#revision) return;
       if (this.#index > 255) throw new Error("Matrix media key rotation limit reached");
       const installed = await this.#publish(this.#source, this.#index++, this.#controller.signal);
-      if (!installed) throw new Error("Matrix listener membership changed during key rotation");
+      if (!installed) throw new MatrixPublicationChangedError();
       if (this.#controller.signal.aborted || revision !== this.#revision) return;
       this.#allowed = true;
       this.#media.resume();
     });
-    this.#pending = task.catch(() => this.close());
+    this.#pending = task.catch((error) => { if (!(error instanceof MatrixPublicationChangedError)) this.close(); });
     return task;
   }
 

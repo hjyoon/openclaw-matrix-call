@@ -65,14 +65,24 @@ describe("Matrix publication guard", () => {
     expect(f.publish).toHaveBeenLastCalledWith(f.source, 1, expect.any(AbortSignal));
   });
 
-  it.each([false, new Error("device unverified")])("closes permanently when authorization fails", async (result) => {
+  it("closes permanently when authorization fails", async () => {
     const f = fixture();
-    if (result instanceof Error) f.publish.mockRejectedValueOnce(result);
-    else f.publish.mockResolvedValueOnce(result);
+    f.publish.mockRejectedValueOnce(new Error("device unverified"));
     await expect(f.guard.refresh()).rejects.toThrow();
     expect(f.guard.permits(f.guard.revision)).toBe(false);
     await expect(f.guard.refresh()).rejects.toThrow("closed");
     expect(f.media.resume).not.toHaveBeenCalled();
+  });
+
+  it("keeps discarded membership snapshots suspended until fresh authorization succeeds", async () => {
+    const f = fixture();
+    f.publish.mockResolvedValueOnce(false);
+    await expect(f.guard.refresh()).rejects.toThrow("membership changed");
+    expect(f.guard.permits(f.guard.revision)).toBe(false);
+    await f.guard.refresh();
+    expect(f.guard.permits(f.guard.revision)).toBe(true);
+    expect(f.publish).toHaveBeenLastCalledWith(f.source, 1, expect.any(AbortSignal));
+    f.guard.close();
   });
 
   it("does not wrap the 256-index key ring within a call", async () => {
