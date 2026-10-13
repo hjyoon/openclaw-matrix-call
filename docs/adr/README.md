@@ -15,6 +15,7 @@ Number records in order. An accepted ADR is a historical record, not a second in
 | [0005](0005-browser-matrixrtc-media.md) | Accepted | Browser MatrixRTC media with authenticated per-device keys |
 | [0006](0006-local-outbound-key-provenance.md) | Accepted | Locally generated outbound keys instead of ambiguous SDK callbacks |
 | [0007](0007-explicit-focus-authorization.md) | Accepted | Explicit trusted OpenID focus authorization without administrative signing keys |
+| [0008](0008-browser-worker-and-explicit-device-enrollment.md) | Accepted | Optional sandboxed browser worker with persistent device binding and explicit fingerprint enrollment |
 
 ## Record format
 

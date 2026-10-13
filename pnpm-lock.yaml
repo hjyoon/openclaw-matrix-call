@@ -48,6 +48,30 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/browser-worker:
+    dependencies:
+      '@matrix-call/core':
+        specifier: workspace:*
+        version: link:../core
+      '@matrix-call/matrixrtc':
+        specifier: workspace:*
+        version: link:../matrixrtc
+      '@matrix-call/worker':
+        specifier: workspace:*
+        version: link:../worker
+      livekit-client:
+        specifier: 2.22.4
+        version: 2.22.4(@types/dom-mediacapture-record@1.0.22)
+      matrix-js-sdk:
+        specifier: 43.0.0
+        version: 43.0.0
+      playwright-core:
+        specifier: 1.64.0
+        version: 1.64.0
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+
   packages/core:
     dependencies:
       zod:
