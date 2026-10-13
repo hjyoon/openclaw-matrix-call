@@ -1,0 +1,15 @@
+**
+!deployment/
+!deployment/worker.Dockerfile
+!deployment/worker-build/
+!deployment/worker-build/package.json
+!deployment/worker-build/package-lock.json
+!tsconfig.json
+!LICENSE
+!packages/
+!packages/core/
+!packages/core/src/
+!packages/core/src/**
+!packages/worker/
+!packages/worker/src/
+!packages/worker/src/**

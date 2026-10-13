@@ -6,7 +6,7 @@
   "type": "module",
   "main": "./dist/index.js",
   "exports": "./dist/index.js",
-  "files": ["dist", "openclaw.plugin.json", "README.md", "LICENSE"],
+  "files": ["dist", "openclaw.plugin.json", "README.md", "LICENSE", "THIRD_PARTY_NOTICES.md"],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/hjyoon/openclaw-matrix-call.git",

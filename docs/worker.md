@@ -12,6 +12,14 @@ Build with `pnpm build`, create a dedicated random 32-byte hexadecimal secret ou
 
 SIGINT and SIGTERM close connections and remove process signal handlers. A malformed secret or a bind failure stops startup. The worker neither creates a Matrix account nor sends Matrix messages.
 
+## Container execution
+
+`deployment/worker.Dockerfile` builds a standalone worker with only esbuild and Zod in its build dependencies. The runtime image contains the worker bundle and license notices, uses the non-root Node user, and has no OpenClaw SDK. The base image is pinned by version and multi-platform digest. Linux amd64 has been tested; other architectures require their own checks.
+
+Set `MATRIX_CALL_SECRET_FILE` to an existing absolute path outside the repository, then run `docker compose -f deployment/compose.yml up --build`. The Compose configuration mounts that file read-only as a secret, publishes the control port on host loopback, drops Linux capabilities, disables privilege escalation, and uses a read-only container filesystem. The Node user must be able to read the mounted file; file-backed Compose secrets retain host file ownership.
+
+The default control port is 19790. Set `MATRIX_CALL_CONTROL_PORT` to choose another host port. The container health check proves liveness only; `/readyz` remains unavailable. This development container does not enable Matrix calling.
+
 ## Control endpoints
 
 - `GET /healthz`: non-secret process audience, protocol version, liveness, and implemented transport list.

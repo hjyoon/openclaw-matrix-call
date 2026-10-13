@@ -4,6 +4,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+const workspace = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+const workerBuild = JSON.parse(await readFile(path.join(root, "deployment/worker-build/package.json"), "utf8"));
+const corePackage = JSON.parse(await readFile(path.join(root, "packages/core/package.json"), "utf8"));
+assert.equal(workerBuild.dependencies.esbuild, workspace.devDependencies.esbuild);
+assert.equal(workerBuild.dependencies.zod, corePackage.dependencies.zod);
+const notices = await readFile(path.join(root, "packages/openclaw-plugin/THIRD_PARTY_NOTICES.md"), "utf8");
+assert(notices.includes("Copyright (c) 2025 Colin McDonnell"));
 for (const name of ["core", "agent-http", "openclaw-plugin", "worker", "worker-api"]) {
   const metadata = JSON.parse(await readFile(path.join(root, `dist/build-metadata/${name}.json`), "utf8"));
   const imports = Object.values(metadata.outputs).flatMap((output) => output.imports);

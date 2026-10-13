@@ -1,0 +1,33 @@
+services:
+  worker:
+    build:
+      context: ..
+      dockerfile: deployment/worker.Dockerfile
+    image: matrix-call-worker:0.1.0-alpha.1
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    ports:
+      - "127.0.0.1:${MATRIX_CALL_CONTROL_PORT:-19790}:19790"
+    environment:
+      MATRIX_CALL_HOST: "0.0.0.0"
+      MATRIX_CALL_PORT: "19790"
+      MATRIX_CALL_SECRET_FILE: /run/secrets/matrix_call_secret
+    secrets:
+      - matrix_call_secret
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:19790/healthz').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+secrets:
+  matrix_call_secret:
+    file: "${MATRIX_CALL_SECRET_FILE:?Set MATRIX_CALL_SECRET_FILE to an absolute secret-file path}"
