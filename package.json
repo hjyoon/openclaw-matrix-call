@@ -9,9 +9,10 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "verify:artifacts": "node scripts/verify-artifacts.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
-    "check": "pnpm typecheck && pnpm test && pnpm build"
+    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm verify:artifacts"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

@@ -15,3 +15,7 @@ Coverage is enforced per file at 100% for statements, branches, functions, and l
 Tests must exercise security decisions, invalid inputs, cancellation, concurrency, failure recovery, and transport boundaries. Full unit coverage does not establish Element Call interoperability. The release process also requires a real encrypted call with actual audio.
 
 Build output and coverage reports are generated locally and are not committed. Explain design changes in Markdown rather than adding source comments.
+
+`pnpm build` bundles the portable core and HTTP agent adapter under `dist/` and the native plugin under `packages/openclaw-plugin/dist/`. `pnpm verify:artifacts` loads these outputs, checks native plugin metadata, and verifies that portable bundles have no OpenClaw SDK dependency or other external package requirement. The plugin leaves public OpenClaw SDK imports external so the host supplies the tested SDK.
+
+The OpenClaw adapter's runtime boundary is described in [ADR 0004](adr/0004-delegated-openclaw-ingress.md). Its current turns are delegated and tool-free. SDK registration tests do not establish model-backed execution or RTC audio support.
