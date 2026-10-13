@@ -35,6 +35,38 @@ function deferred<T>() {
 }
 
 describe("independent call lifecycle", () => {
+  it("does not reserve a call for an already canceled opening", async () => {
+    const f = setup();
+    await expect(f.calls.open(input, AbortSignal.abort(new Error("cancelled")))).rejects.toThrow("cancelled");
+    expect(f.verify).not.toHaveBeenCalled();
+    await expect(f.calls.open(input)).resolves.toMatchObject({ status: "active" });
+  });
+
+  it("rejects late verification after opening cancellation and releases capacity", async () => {
+    const f = setup({ maxCalls: 1 }); const gate = deferred<VerifiedParticipant>();
+    const controller = new AbortController(); f.verify.mockReturnValueOnce(gate.promise);
+    const pending = f.calls.open(input, controller.signal);
+    controller.abort(new Error("cancelled")); gate.resolve(verified);
+    await expect(pending).rejects.toThrow("cancelled");
+    await expect(f.calls.open(input)).resolves.toMatchObject({ status: "active" });
+  });
+
+  it("persists closed state when an opening is canceled during its initial write", async () => {
+    const storage = new MemoryConversationStore(); const writing = deferred<void>(); const gate = deferred<void>();
+    const records: ConversationRecord[] = [];
+    const f = setup({ store: { get: (id) => storage.get(id), async put(record) {
+      records.push(record);
+      if (records.length === 1) { writing.resolve(); await gate.promise; }
+      await storage.put(record);
+    } } });
+    const controller = new AbortController(); const pending = f.calls.open(input, controller.signal);
+    await writing.promise; controller.abort(new Error("cancelled")); gate.resolve();
+    await expect(pending).rejects.toThrow("cancelled");
+    expect(records.map((record) => record.status)).toEqual(["active", "closed"]);
+    expect((await storage.get(records[0]!.id))!.status).toBe("closed");
+    await expect(f.calls.turn(records[0]!.id, reference.participantId, "Late")).rejects.toThrow("unknown-call");
+  });
+
   it("uses defaults and creates a neutral UUID conversation", async () => {
     const { verify, reply, store } = setup();
     const calls = new CallCoordinator({

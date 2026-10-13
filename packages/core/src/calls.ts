@@ -51,7 +51,8 @@ export class CallCoordinator {
     this.#now = now;
   }
 
-  async open(input: unknown): Promise<ConversationRecord> {
+  async open(input: unknown, signal = new AbortController().signal): Promise<ConversationRecord> {
+    signal.throwIfAborted();
     const parsed = openSchema.safeParse(input);
     if (!parsed.success) throw new CallError("invalid-input");
     const { reference, agentId } = parsed.data;
@@ -63,10 +64,13 @@ export class CallCoordinator {
     if (this.#sessions.size >= this.#maxCalls) throw new CallError("capacity-exceeded");
     this.#sessions.add(session);
     const controller = new AbortController();
+    const openingSignal = AbortSignal.any([controller.signal, signal]);
+    let record: ConversationRecord | undefined;
     try {
-      const participant = await this.#verifier.verify(reference, controller.signal);
+      const participant = await this.#verifier.verify(reference, openingSignal);
+      openingSignal.throwIfAborted();
       authorizeParticipant(this.#policy, reference, participant, this.#now());
-      const record = parseConversation({
+      record = parseConversation({
         schemaVersion: 1,
         id: randomUUID(),
         roomId: reference.roomId,
@@ -77,10 +81,12 @@ export class CallCoordinator {
         messages: [],
       });
       await this.#store.put(record);
+      openingSignal.throwIfAborted();
       this.#calls.set(record.id, { record, controller, busy: false, write: Promise.resolve() });
       return record;
     } catch (error) {
       this.#sessions.delete(session);
+      if (record && openingSignal.aborted) await this.#store.put(parseConversation({ ...record, status: "closed" }));
       throw error;
     }
   }

@@ -63,7 +63,7 @@ describe("browser PCM media", () => {
   ])("rejects invalid or oversized PCM before playback", async (audio) => {
     const f = fixture();
     f.media.resume();
-    await expect(f.media.publish(audio as PcmAudio, new AbortController().signal)).rejects.toThrow("Invalid browser PCM audio");
+    await expect(f.media.publish(audio as PcmAudio, new AbortController().signal)).rejects.toThrow("Invalid PCM audio");
     expect(f.source.start).not.toHaveBeenCalled();
     await f.media.close();
   });
