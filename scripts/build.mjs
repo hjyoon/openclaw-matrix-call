@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const targets = [
   { name: "core", entry: "packages/core/src/index.ts", output: "dist/core/index.js", external: [] },
   { name: "agent-http", entry: "packages/agent-http/src/index.ts", output: "dist/agent-http/index.js", external: [] },
+  { name: "speech-http", entry: "packages/speech-http/src/index.ts", output: "dist/speech-http/index.js", external: [] },
   { name: "openclaw-plugin", entry: "packages/openclaw-plugin/src/index.ts", output: "packages/openclaw-plugin/dist/index.js", external: ["openclaw/*"] },
   { name: "worker", entry: "packages/worker/src/main.ts", output: "dist/worker/worker.mjs", external: [] },
   { name: "worker-api", entry: "packages/worker/src/index.ts", output: "dist/worker/index.js", external: [] },

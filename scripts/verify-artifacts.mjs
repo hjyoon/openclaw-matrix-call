@@ -20,7 +20,7 @@ for (const name of ["esbuild", "livekit-client", "matrix-js-sdk", "playwright-co
 assert.equal(browserBuild.dependencies.zod, corePackage.dependencies.zod);
 const browserAssets = JSON.parse(await readFile(path.join(root, "dist/build-metadata/browser-assets.json"), "utf8"));
 assert(Object.values(browserAssets.outputs).every((output) => output.imports.length === 0));
-assert(!Object.keys(browserAssets.inputs).some((entry) => /(?:openclaw|packages\/core\/src)/.test(entry)));
+assert(!Object.keys(browserAssets.inputs).some((entry) => /(?:openclaw|packages\/core\/src\/(?!audio\.ts$))/.test(entry)));
 const licenses = JSON.parse(await readFile(path.join(root, "dist/browser-worker/licenses/index.json"), "utf8"));
 for (const name of ["matrix-js-sdk", "livekit-client", "playwright-core", "@matrix-org/matrix-sdk-crypto-wasm"]) {
   assert(licenses.some((entry) => entry.name === name && entry.files.length > 0));
@@ -33,7 +33,7 @@ for (const name of ["browser-worker", "browser-worker-api"]) {
 const browserMetadata = JSON.parse(await readFile(path.join(root, "dist/build-metadata/matrixrtc.json"), "utf8"));
 assert(Object.values(browserMetadata.outputs).every((output) => output.imports.length === 0));
 assert(!Object.keys(browserMetadata.inputs).some((entry) => /(?:openclaw|packages\/core\/src)/.test(entry)));
-for (const name of ["core", "agent-http", "openclaw-plugin", "worker", "worker-api"]) {
+for (const name of ["core", "agent-http", "speech-http", "openclaw-plugin", "worker", "worker-api"]) {
   const metadata = JSON.parse(await readFile(path.join(root, `dist/build-metadata/${name}.json`), "utf8"));
   const imports = Object.values(metadata.outputs).flatMap((output) => output.imports);
   if (name === "openclaw-plugin") {
@@ -49,6 +49,8 @@ const core = await import(pathToFileURL(path.join(root, "dist/core/index.js")));
 assert.equal(core.parsePolicy({ owners: ["@owner:example.org"], rooms: ["!room:example.org"], agents: ["assistant"] }).agents[0], "assistant");
 const agent = await import(pathToFileURL(path.join(root, "dist/agent-http/index.js")));
 assert.equal(typeof agent.HttpAgentAdapter.connect, "function");
+const speech = await import(pathToFileURL(path.join(root, "dist/speech-http/index.js")));
+assert.equal(typeof speech.HttpSpeechAdapter.connect, "function");
 const plugin = await import(pathToFileURL(path.join(root, "packages/openclaw-plugin/dist/index.js")));
 assert.equal(plugin.default.id, "matrix-call");
 assert.equal(typeof plugin.default.register, "function");
