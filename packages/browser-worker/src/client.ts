@@ -9,6 +9,8 @@ export function createMatrixClient(credentials: MatrixCredentials): MatrixClient
 
 export async function initializeMatrixClient(client: MatrixClient, setup: BrowserSetup) {
   const { userId, deviceId } = setup.credentials;
+  const identity = await client.whoami();
+  if (identity.user_id !== userId || identity.device_id !== deviceId) throw new Error("Matrix token identity does not match configuration");
   const published = await client.downloadKeysForUsers([userId]);
   if (Object.keys(published.failures).length > 0) throw new Error("Matrix device lookup failed");
   const device = published.device_keys[userId]?.[deviceId];

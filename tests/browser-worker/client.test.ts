@@ -16,11 +16,19 @@ function fixture(expectedKeys: DeviceKeys | undefined = undefined) {
   const pin = setup.policy.devices[0]!;
   const device = new Device({ userId: pin.userId, deviceId: pin.deviceId, algorithms: [], keys: new Map([[`ed25519:${pin.deviceId}`, pin.ed25519], [`curve25519:${pin.deviceId}`, pin.curve25519]]) });
   const cryptoApi = { getOwnDeviceKeys: vi.fn(async () => keys), getUserDeviceInfo: vi.fn(async () => new Map([[pin.userId, new Map([[pin.deviceId, device]])]])), setDeviceVerified: vi.fn(async () => {}) };
-  const client = { downloadKeysForUsers: vi.fn(async () => ({ failures: {}, device_keys: {} })), initRustCrypto: vi.fn(async () => {}), getCrypto: vi.fn(() => cryptoApi), startClient: vi.fn(async () => {}), getSyncState: vi.fn(() => SyncState.Prepared), getRoom: vi.fn(() => ({ getMyMembership: () => "join", hasEncryptionStateEvent: () => true }) as Room) };
+  const client = { whoami: vi.fn(async () => ({ user_id: credentials.userId, device_id: credentials.deviceId })), downloadKeysForUsers: vi.fn(async () => ({ failures: {}, device_keys: {} })), initRustCrypto: vi.fn(async () => {}), getCrypto: vi.fn(() => cryptoApi), startClient: vi.fn(async () => {}), getSyncState: vi.fn(() => SyncState.Prepared), getRoom: vi.fn(() => ({ getMyMembership: () => "join", hasEncryptionStateEvent: () => true }) as Room) };
   return { client, sdk: client as unknown as MatrixClient, cryptoApi, setup, pin, device };
 }
 
 describe("Matrix browser device initialization", () => {
+  it.each([{ user_id: "@different:example.org", device_id: credentials.deviceId }, { user_id: credentials.userId, device_id: "OTHER" }, { user_id: credentials.userId }])("checks the authenticated token identity before creating crypto state", async (identity) => {
+    const f = fixture();
+    f.client.whoami.mockResolvedValue(identity as never);
+    await expect(initializeMatrixClient(f.sdk, f.setup)).rejects.toThrow("Matrix token identity does not match configuration");
+    expect(f.client.initRustCrypto).not.toHaveBeenCalled();
+    expect(f.client.downloadKeysForUsers).not.toHaveBeenCalled();
+  });
+
   it("creates a public SDK client with a credential-redacting logger", () => {
     createMatrixClient(credentials);
     const options = vi.mocked(createClient).mock.calls[0]![0];
