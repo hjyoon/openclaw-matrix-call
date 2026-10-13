@@ -10,6 +10,8 @@ The returned JWT must name the local backend identity and the protocol-derived S
 
 Requests and streaming responses share a bounded timeout and cancellation signal. Responses are limited to 64 KiB. Membership is checked again after credential lookup and token exchange. Public failures contain stable error codes, with no upstream response body or credential details.
 
+A temporarily missing local membership or undefined SDK-selected focus returns `membership-changed` before obtaining credentials. The browser retries that condition inside its existing connection deadline. A mismatched user/device/backend identity, unsupported slot, malformed focus, or differently scoped alias remains fatal. No configured endpoint substitutes for missing selected focus metadata.
+
 This adapter does not receive SFU signing credentials or Gateway credentials. OpenID authenticates a Matrix user and cannot verify the claimed device. The separate Matrix crypto/key admission and live-media participant verifier remain required before any agent turn.
 
 The legacy standalone endpoint does not check Matrix room membership server-side. Current SDK membership and configured call policy must therefore be enforced by the transport. The homeserver-mediated endpoint changed request shape in service 0.8.0; it and modern sticky membership remain separate compatibility work, without an automatic fallback.

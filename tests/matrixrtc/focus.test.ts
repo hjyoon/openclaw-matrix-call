@@ -105,12 +105,19 @@ describe("OpenIdFocusAuthorizer", () => {
   });
 
   it.each([
-    undefined, { ...member, userId: "@other:example.org" }, { ...member, deviceId: "OTHER" }, { ...member, participantId: "hashed-modern-identity" },
-  ])("rejects missing or unbound local membership before obtaining credentials", async (value) => {
+    { ...member, userId: "@other:example.org" }, { ...member, deviceId: "OTHER" }, { ...member, participantId: "hashed-modern-identity" },
+  ])("rejects unbound local membership before obtaining credentials", async (value) => {
     const { source, authorizer, setMember, getOpenIdToken, signal } = fixture();
     setMember(value);
     await expect(authorizer.authorize(source, signal)).rejects.toThrow("unsupported-call");
     expect(getOpenIdToken).not.toHaveBeenCalled();
+  });
+
+  it.each(["membership", "focus"])("requests fresh state when %s is temporarily unavailable", async (missing) => {
+    const f = fixture();
+    if (missing === "membership") f.setMember(undefined); else f.setFocus(undefined);
+    await expect(f.authorizer.authorize(f.source, f.signal)).rejects.toThrow("membership-changed");
+    expect(f.getOpenIdToken).not.toHaveBeenCalled(); expect(f.fetcher).not.toHaveBeenCalled();
   });
 
   it("rejects an unsupported slot", async () => {

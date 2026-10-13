@@ -123,9 +123,12 @@ export class OpenIdFocusAuthorizer implements FocusAuthorizationPort {
     const bounded = AbortSignal.any([signal, AbortSignal.timeout(this.#timeout)]);
     bounded.throwIfAborted();
     const member = source.membership();
-    if (source.slotId !== "m.call#ROOM" || !member || member.userId !== source.client.getUserId() || member.deviceId !== source.client.getDeviceId() ||
+    if (!member) throw new FocusAuthorizationError("membership-changed");
+    if (source.slotId !== "m.call#ROOM" || member.userId !== source.client.getUserId() || member.deviceId !== source.client.getDeviceId() ||
         member.participantId !== `${member.userId}:${member.deviceId}`) throw new FocusAuthorizationError("unsupported-call");
-    const focus = focusSchema.safeParse(source.focus());
+    const advertised = source.focus();
+    if (advertised === undefined) throw new FocusAuthorizationError("membership-changed");
+    const focus = focusSchema.safeParse(advertised);
     if (!focus.success || focus.data.livekit_alias !== source.roomId) throw new FocusAuthorizationError("unsupported-call");
     const focusUrl = endpoint(focus.data.livekit_service_url, false, this.#insecure);
     if (!this.#focuses.has(focusUrl)) throw new FocusAuthorizationError("untrusted-focus");
