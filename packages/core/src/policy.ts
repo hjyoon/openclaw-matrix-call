@@ -3,18 +3,22 @@ import type { CallPolicy, ParticipantReference, VerifiedParticipant } from "./co
 
 const nonempty = z.string().min(1).max(512);
 const matrixUserId = nonempty.regex(/^@[^:\s]+:[^\s]+$/);
-const matrixRoomId = nonempty.regex(/^![^:\s]+:[^\s]+$/);
+export const matrixRoomIdSchema = nonempty.regex(/^![^:\s]+:[^\s]+$/);
 
 export const policySchema = z.strictObject({
   owners: z.array(matrixUserId).min(1).max(256).readonly(),
-  rooms: z.array(matrixRoomId).min(1).max(256).readonly(),
+  rooms: z.array(matrixRoomIdSchema).min(1).max(256).readonly(),
   agents: z.array(nonempty.regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/)).min(1).max(256).readonly(),
 }).readonly();
 
-export const participantSchema = z.strictObject({
-  roomId: matrixRoomId,
+export const participantReferenceSchema = z.strictObject({
+  roomId: matrixRoomIdSchema,
   rtcSessionId: nonempty,
   participantId: nonempty,
+}).readonly();
+
+export const participantSchema = z.strictObject({
+  ...participantReferenceSchema.unwrap().shape,
   userId: matrixUserId,
   deviceId: nonempty,
   expiresAtMs: z.number().int().nonnegative(),
