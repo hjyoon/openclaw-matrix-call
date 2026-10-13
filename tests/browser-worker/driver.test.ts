@@ -4,6 +4,8 @@ import type { BrowserContext, Page } from "playwright-core";
 import { BrowserDriver } from "../../packages/browser-worker/src/driver.js";
 import { parseBrowserConfig } from "../../packages/browser-worker/src/config.js";
 import { configuration, credentials } from "../fixtures/browser.js";
+import type { BrowserUtterance } from "../../packages/browser-worker/src/inbox.js";
+import type { PcmAudio } from "../../packages/core/src/index.js";
 
 const { launch, assetFactory, profileFactory } = vi.hoisted(() => ({ launch: vi.fn(), assetFactory: vi.fn(), profileFactory: vi.fn() }));
 vi.mock("playwright-core", () => ({ chromium: { launchPersistentContext: launch } }));
@@ -16,7 +18,7 @@ function fixture() {
   const log = vi.spyOn(console, "info").mockImplementation(() => {});
   const config = parseBrowserConfig(configuration, credentials);
   const keys = { ed25519: "A".repeat(43), curve25519: "B".repeat(43) };
-  const runtime = { initialize: vi.fn(async () => keys), prepare: vi.fn(async () => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), publish: vi.fn(async () => {}), verify: vi.fn(async (reference: object) => ({ ...reference, userId: "@owner:example.org", deviceId: "OWNER", expiresAtMs: Date.now() + 10_000, deviceVerified: true, mediaEncrypted: true })), status: vi.fn(() => ({ connected: true })) };
+  const runtime = { takeAudio: vi.fn(async (): Promise<BrowserUtterance | null> => null), resumeAudio: vi.fn(async () => {}), initialize: vi.fn(async () => keys), prepare: vi.fn(async () => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), publish: vi.fn(async () => {}), verify: vi.fn(async (reference: object) => ({ ...reference, userId: "@owner:example.org", deviceId: "OWNER", expiresAtMs: Date.now() + 10_000, deviceVerified: true, mediaEncrypted: true })), status: vi.fn(() => ({ connected: true })) };
   vi.stubGlobal("window", { createMatrixCall: vi.fn(() => runtime) });
   const page = { goto: vi.fn(async () => {}), waitForFunction: vi.fn(async (fn: () => boolean) => { expect(fn()).toBe(true); }), evaluate: vi.fn(async (fn: (arg: unknown) => unknown, arg: unknown) => fn(arg)), close: vi.fn(async () => {}) };
   const spare = { close: vi.fn(async () => {}) };
@@ -31,6 +33,64 @@ const pcm = { samples: new Int16Array([-1, 0, 1]), sampleRate: 16_000, channels:
 const reference = { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: "remote" };
 
 describe("persistent production browser driver", () => {
+  it("hands only private verified PCM to one listener and resumes capture after completion", async () => {
+    const f = fixture(); const driver = await BrowserDriver.start(f.config, undefined, true);
+    expect((f.page.evaluate.mock.calls[0]![1] as { captureAudio: boolean }).captureAudio).toBe(true);
+    const received = vi.fn(async (_reference: typeof reference, audio: PcmAudio) => { expect(audio.samples).toEqual(pcm.samples); }); driver.onAudio(received);
+    await expect(async () => driver.onAudio(received)).rejects.toThrow("unavailable");
+    await driver.connect("!room", signal());
+    f.runtime.takeAudio.mockResolvedValueOnce({ reference, audio: { ...pcm, samples: [-1, 0, 1] } });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(received).toHaveBeenCalledWith(reference, { ...pcm, samples: new Int16Array(3) });
+    expect(f.runtime.resumeAudio).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(100); expect(received).toHaveBeenCalledOnce();
+    await driver.close(); expect(() => driver.onAudio(received)).toThrow("unavailable");
+    const g = fixture(); const other = await BrowserDriver.start(g.config);
+    expect(() => other.onAudio(null as never)).toThrow("unavailable"); await other.close();
+  });
+
+  it("does not overlap delivery and fences results from a previous call", async () => {
+    const f = fixture(); const driver = await BrowserDriver.start(f.config);
+    let finish!: () => void;
+    const received = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; })); driver.onAudio(received);
+    await driver.connect("!room", signal());
+    f.runtime.takeAudio.mockResolvedValueOnce({ reference, audio: { ...pcm, samples: [-1, 0, 1] } });
+    await vi.advanceTimersByTimeAsync(100); await vi.advanceTimersByTimeAsync(500);
+    expect(received).toHaveBeenCalledOnce(); expect(f.runtime.takeAudio).toHaveBeenCalledOnce();
+    await driver.disconnect(); await driver.connect("!room", signal()); finish(); await vi.advanceTimersByTimeAsync(0);
+    expect(f.runtime.resumeAudio).not.toHaveBeenCalled();
+    let result!: (utterance: BrowserUtterance | null) => void;
+    f.runtime.takeAudio.mockImplementationOnce(() => new Promise((resolve) => { result = resolve; }));
+    await vi.advanceTimersByTimeAsync(100); await driver.disconnect();
+    result({ reference, audio: { ...pcm, samples: [-1, 0, 1] } }); await vi.advanceTimersByTimeAsync(0);
+    expect(received).toHaveBeenCalledOnce();
+    await driver.connect("!room", signal());
+    f.runtime.takeAudio.mockImplementationOnce(async () => { await driver.disconnect(); await driver.connect("!room", signal()); return { reference, audio: { ...pcm, samples: [-1, 0, 1] } }; });
+    await vi.advanceTimersByTimeAsync(100); expect(received).toHaveBeenCalledOnce();
+    await driver.close();
+  });
+
+  it("does not resume capture after a listener ends or replaces its call", async () => {
+    const f = fixture(); const driver = await BrowserDriver.start(f.config);
+    const received = vi.fn(async () => { await driver.disconnect(); }); driver.onAudio(received);
+    await driver.connect("!room", signal()); f.runtime.takeAudio.mockResolvedValueOnce({ reference, audio: { ...pcm, samples: [1] } });
+    await vi.advanceTimersByTimeAsync(100); expect(f.runtime.resumeAudio).not.toHaveBeenCalled(); await driver.close();
+  });
+
+  it.each(["browser", "pcm", "listener", "resume", "cleanup"])("ends voice calls on %s failure without logging transcripts", async (stage) => {
+    const f = fixture(); const driver = await BrowserDriver.start(f.config); const ended = vi.fn(async () => {}); driver.onEnded(ended);
+    const received = vi.fn(async () => {}); driver.onAudio(received); await driver.connect("!room", signal());
+    f.runtime.takeAudio.mockResolvedValueOnce({ reference, audio: { ...pcm, samples: stage === "pcm" ? [] : [1] } });
+    const error = new Error("private transcript");
+    if (stage === "browser") f.runtime.takeAudio.mockReset().mockRejectedValueOnce(error);
+    if (stage === "listener") received.mockRejectedValueOnce(error);
+    if (stage === "resume") f.runtime.resumeAudio.mockRejectedValueOnce(error);
+    if (stage === "cleanup") { received.mockRejectedValueOnce(error); f.runtime.disconnect.mockRejectedValueOnce(error); }
+    await vi.advanceTimersByTimeAsync(100);
+    expect(ended).toHaveBeenCalledOnce(); expect(f.runtime.disconnect).toHaveBeenCalledOnce();
+    expect(JSON.stringify(f.log.mock.calls)).not.toContain("private transcript"); await driver.close();
+  });
+
   it.each([new Error("Matrix call ended: missing-key"), new Error("page.evaluate: FocusAuthorizationError: http-error"), credentials.accessToken])("logs only a bounded failure code for failed connections", async (error) => {
     const f = fixture(); const driver = await BrowserDriver.start(f.config);
     f.runtime.connect.mockRejectedValueOnce(error);

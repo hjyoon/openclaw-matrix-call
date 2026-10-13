@@ -11,6 +11,7 @@ export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
   readonly #page: Page;
   readonly #assets: Awaited<ReturnType<typeof startAssetServer>>;
   readonly #timer: ReturnType<typeof setInterval>;
+  readonly #audioTimer: ReturnType<typeof setInterval>;
   readonly deviceKeys: DeviceKeys;
   #connected = false;
   #closed = false;
@@ -20,16 +21,19 @@ export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
   #closing: Promise<void> | undefined;
   #disconnecting: Promise<void> | undefined;
   #onEnded: () => Promise<void> = async () => {};
+  #onAudio: ((reference: ParticipantReference, audio: PcmAudio) => Promise<void>) | undefined;
+  #receiving = false;
 
   private constructor(context: BrowserContext, page: Page, assets: Awaited<ReturnType<typeof startAssetServer>>, keys: DeviceKeys) {
     this.#context = context; this.#page = page; this.#assets = assets; this.deviceKeys = Object.freeze(keys);
     this.#timer = setInterval(() => { void this.#check(); }, 1000);
+    this.#audioTimer = setInterval(() => { void this.#receiveAudio(); }, 100);
     context.on("close", () => {
       if (!this.#closed) void this.close().then(() => this.#notify()).catch(() => {});
     });
   }
 
-  static async start(config: ReturnType<typeof parseBrowserConfig>, launcher: Pick<BrowserType, "launchPersistentContext"> = chromium) {
+  static async start(config: ReturnType<typeof parseBrowserConfig>, launcher: Pick<BrowserType, "launchPersistentContext"> = chromium, captureAudio = false) {
     const assets = await startAssetServer(config.assetDir, config.assetPort, config.credentials.baseUrl, config.policy);
     let context: BrowserContext | undefined;
     let stage = "profile";
@@ -48,7 +52,7 @@ export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
       const keys = await page.evaluate(async (setup) => {
         window.matrixCall = window.createMatrixCall(setup);
         return window.matrixCall.initialize();
-      }, { credentials: config.credentials, policy: config.policy, expectedKeys: profile.expectedKeys });
+      }, { credentials: config.credentials, policy: config.policy, expectedKeys: profile.expectedKeys, captureAudio });
       await profile.persist(keys);
       stage = "enrollment";
       await page.evaluate(() => window.matrixCall.prepare());
@@ -63,6 +67,30 @@ export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
   get available(): boolean { return !this.#closed; }
 
   onEnded(listener: () => Promise<void>): void { this.#onEnded = listener; }
+
+  onAudio(listener: (reference: ParticipantReference, audio: PcmAudio) => Promise<void>): void {
+    if (this.#closed || this.#onAudio || typeof listener !== "function") throw new Error("Browser audio listener is unavailable");
+    this.#onAudio = listener;
+  }
+
+  async #receiveAudio(): Promise<void> {
+    const listener = this.#onAudio;
+    if (!this.#connected || this.#receiving || !listener) return;
+    this.#receiving = true;
+    const generation = this.#generation;
+    let audio: PcmAudio | undefined;
+    try {
+      const utterance = await this.#page.evaluate(() => window.matrixCall.takeAudio());
+      if (!utterance || !this.#connected || generation !== this.#generation) return;
+      audio = { ...utterance.audio, samples: new Int16Array(utterance.audio.samples) };
+      validatePcm(audio);
+      await listener(utterance.reference, audio);
+      if (this.#connected && generation === this.#generation) await this.#page.evaluate(() => window.matrixCall.resumeAudio());
+    } catch {
+      console.info(JSON.stringify({ event: "browser-voice-failed", reason: "pipeline" }));
+      await this.disconnect().catch(() => {}); await this.#notify();
+    } finally { audio?.samples.fill(0); this.#receiving = false; }
+  }
 
   async #notify(): Promise<void> {
     try { await this.#onEnded(); }
@@ -136,7 +164,7 @@ export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
 
   close(): Promise<void> {
     if (this.#closing) return this.#closing;
-    this.#closed = true; this.#connected = false; ++this.#generation; clearInterval(this.#timer);
+    this.#closed = true; this.#connected = false; ++this.#generation; clearInterval(this.#timer); clearInterval(this.#audioTimer);
     this.#closing = this.#context.close().finally(() => this.#assets.close());
     return this.#closing;
   }
