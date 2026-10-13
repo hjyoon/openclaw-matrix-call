@@ -4,6 +4,8 @@ import {
   type PcmAudio, type RtcTransportPort, type SpeechRecognitionPort, type SpeechSynthesisPort, type VerifiedParticipant,
 } from "@matrix-call/core";
 
+export { PcmSegmenter } from "./segmenter.js";
+
 export type VoiceOptions = Readonly<{
   policy: CallPolicy;
   agentId: string;

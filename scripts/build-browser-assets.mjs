@@ -7,12 +7,13 @@ import { build } from "esbuild";
 export async function buildBrowserAssets(root, output) {
   await mkdir(output, { recursive: true });
   const result = await build({ absWorkingDir: root, entryPoints: ["packages/browser-worker/src/browser.ts"], outfile: path.join(output, "browser.js"), bundle: true, platform: "browser", format: "esm", target: "es2023", metafile: true, legalComments: "none", logLevel: "warning" });
+  const capture = await build({ absWorkingDir: root, entryPoints: ["packages/browser-worker/src/capture-worklet.ts"], outfile: path.join(output, "capture-worklet.js"), bundle: true, platform: "browser", format: "esm", target: "es2023", metafile: true, legalComments: "none", logLevel: "warning" });
   const require = createRequire(path.join(root, "package.json"));
   const matrixRequire = createRequire(require.resolve("matrix-js-sdk"));
   const wasmPackage = path.dirname(matrixRequire.resolve("@matrix-org/matrix-sdk-crypto-wasm"));
   await cp(path.join(wasmPackage, "pkg/matrix_sdk_crypto_wasm_bg.wasm"), path.join(output, "matrix_sdk_crypto_wasm_bg.wasm"));
   await cp(require.resolve("livekit-client/e2ee-worker"), path.join(output, "e2ee-worker.js"));
-  return result.metafile;
+  return { inputs: { ...result.metafile.inputs, ...capture.metafile.inputs }, outputs: { ...result.metafile.outputs, ...capture.metafile.outputs } };
 }
 
 export async function copyBrowserLicenses(root, output, metadata) {

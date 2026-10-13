@@ -20,3 +20,9 @@ The browser application uses a one-record volatile store. The general `MemoryCon
 Synthesis is limited to ten seconds per reply. A bridge must generate a response within that bound or reject it. A successfully generated text reply can appear in history even if synthesis or playback later fails; history does not claim audio delivery. Audio samples are ephemeral. Transcript retention depends on the selected conversation store and provider.
 
 See [speech protocol](speech-protocol.md) and [ADR 0009](adr/0009-bounded-portable-voice-turns.md).
+
+## Audio collection
+
+The browser worklet emits 20ms mono floating point chunks at the audio context rate. It reads the actual quantum length rather than assuming 128 samples, using the [Web Audio processing interface](https://developer.mozilla.org/en-US/docs/Web/API/AudioWorkletProcessor/process). At most one message can be pending until the main thread acknowledges it. A reset changes the capture epoch, discards partial input and rejects acknowledgments from an older epoch.
+
+The portable segmenter clips and converts finite samples to signed PCM. It keeps up to 200ms of pre-roll, requires at least 200ms of sound above RMS 0.012, and ends an utterance after 600ms of silence or ten seconds of accumulated audio. Short noises are discarded. This is an energy detector, not a speech classifier; recognition remains responsible for deciding whether the input contains words. A maximum-length utterance drops at most the remainder of its final capture chunk. Resetting capture clears the segmenter's buffers.
