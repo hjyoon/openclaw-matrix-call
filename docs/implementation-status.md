@@ -33,7 +33,7 @@ Decision rationale and changes are recorded in [ADRs](adr/README.md). This statu
 - Locally generated outbound keys distributed through the public encrypted Matrix API only after listener authorization and device verification. Local sending indices remain independent of remote rotations.
 - Real bidirectional encrypted LiveKit audio using the repository key provider in sandboxed Chromium, including wrong-key rejection with continued RTP traffic, recovery, and key rotation. This media-layer check supplies test keys directly; see [evidence and limits](media-integration.md).
 - Real MatrixRTC state membership and encrypted per-device key delivery against Synapse, followed by bidirectional encrypted audio and actual participant verification. Restart/rejoin preserves device trust while requiring fresh call keys; see [evidence and limits](matrix-integration.md).
-- An explicit OpenID focus authorization adapter with trusted endpoints, room/identity binding, grant checks, bounded streaming responses, cancellation, and membership fencing. Actual authorization-service integration is tracked separately.
+- An explicit OpenID focus authorization adapter with trusted endpoints, room/identity binding, grant checks, bounded streaming responses, cancellation, and membership fencing. The real Matrix/audio harness obtains tokens through authorization service 0.8.0 with SFU automatic room creation disabled.
 
 `pnpm check` and the worker container check pass locally. The current suite has 383 passing tests, with 100% per-file runtime coverage. Tests use isolated fixtures, temporary profiles, and local test services. GitHub Actions has also passed package installation, full coverage, image build, and container checks.
 

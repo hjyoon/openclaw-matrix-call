@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
+import { createServer as createTlsServer } from "node:https";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -10,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { build } from "esbuild";
 import { startTestSfu } from "./integration/sfu.mjs";
+import { startTestAuthorization } from "./integration/authorization.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= path.join(root, ".cache/browsers");
@@ -24,6 +26,11 @@ assert(process.getuid() !== 0, "Integration checks require a non-root user");
 let server;
 let running = false;
 let sfu;
+let authorization;
+let tlsProxy;
+let homeserver;
+const openIdStatuses = [];
+let succeeded = false;
 
 async function waitFor(predicate, label, timeout = 30_000) {
   const deadline = Date.now() + timeout;
@@ -44,13 +51,26 @@ async function api(url, method, body, accessToken) {
 }
 
 try {
-  execFileSync("docker", ["run", "--rm", "--user", dockerUser, "--env", "SYNAPSE_SERVER_NAME=matrix-call.test", "--env", "SYNAPSE_REPORT_STATS=no", "--mount", `type=bind,source=${directory},target=/data`, image, "generate"], { stdio: "pipe" });
+  const keyFile = path.join(directory, "test.key");
+  const certFile = path.join(directory, "test.crt");
+  execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", keyFile, "-out", certFile, "-days", "1", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1"], { stdio: "pipe" });
+  tlsProxy = createTlsServer({ key: await readFile(keyFile), cert: await readFile(certFile) }, async (request, reply) => {
+    try {
+      const upstream = await fetch(`${homeserver}${request.url}`, { signal: AbortSignal.timeout(5000) });
+      openIdStatuses.push(upstream.status);
+      reply.writeHead(upstream.status, { "Content-Type": "application/json" });
+      reply.end(await upstream.text());
+    } catch { reply.writeHead(502); reply.end(); }
+  });
+  await new Promise((resolve) => tlsProxy.listen(0, "127.0.0.1", resolve));
+  const serverName = `localhost:${tlsProxy.address().port}`;
+  execFileSync("docker", ["run", "--rm", "--user", dockerUser, "--env", `SYNAPSE_SERVER_NAME=${serverName}`, "--env", "SYNAPSE_REPORT_STATS=no", "--mount", `type=bind,source=${directory},target=/data`, image, "generate"], { stdio: "pipe" });
   const configFile = path.join(directory, "homeserver.yaml");
-  await writeFile(configFile, `server_name: matrix-call.test\npid_file: /data/homeserver.pid\nreport_stats: false\nlisteners:\n  - port: 8008\n    type: http\n    tls: false\n    bind_addresses: [0.0.0.0]\n    resources:\n      - names: [client]\n        compress: false\ndatabase:\n  name: sqlite3\n  args:\n    database: /data/homeserver.db\nlog_config: /data/matrix-call.test.log.config\nsigning_key_path: /data/matrix-call.test.signing.key\nmedia_store_path: /data/media_store\nregistration_shared_secret: ${registrationSecret}\nenable_registration: false\ntrusted_key_servers: []\nsuppress_key_server_warning: true\nrc_message:\n  per_second: 100\n  burst_count: 1000\nmax_event_delay_duration: 10000\n`, { mode: 0o600 });
+  await writeFile(configFile, `server_name: ${serverName}\npid_file: /data/homeserver.pid\nreport_stats: false\nlisteners:\n  - port: 8008\n    type: http\n    tls: false\n    bind_addresses: [0.0.0.0]\n    resources:\n      - names: [client, federation]\n        compress: false\ndatabase:\n  name: sqlite3\n  args:\n    database: /data/homeserver.db\nlog_config: /data/${serverName}.log.config\nsigning_key_path: /data/${serverName}.signing.key\nmedia_store_path: /data/media_store\nregistration_shared_secret: ${registrationSecret}\nenable_registration: false\ntrusted_key_servers: []\nsuppress_key_server_warning: true\nrc_message:\n  per_second: 100\n  burst_count: 1000\nmax_event_delay_duration: 10000\n`, { mode: 0o600 });
   execFileSync("docker", ["run", "--detach", "--rm", "--name", container, "--user", dockerUser, "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "768m", "--pids-limit", "128", "--publish", "127.0.0.1::8008", "--mount", `type=bind,source=${directory},target=/data`, image], { stdio: "pipe" });
   running = true;
   const port = JSON.parse(execFileSync("docker", ["inspect", "--format", "{{json .NetworkSettings.Ports}}", container], { encoding: "utf8" }))["8008/tcp"][0].HostPort;
-  const homeserver = `http://127.0.0.1:${port}`;
+  homeserver = `http://127.0.0.1:${port}`;
   await waitFor(async () => {
     try { return (await fetch(`${homeserver}/_matrix/client/versions`, { signal: AbortSignal.timeout(500) })).ok; }
     catch { return false; }
@@ -98,7 +118,9 @@ try {
     await pages[i].evaluate(({ userId, deviceId, fingerprint }) => window.matrixTest.trust(userId, deviceId, fingerprint), { ...accounts[other], fingerprint: fingerprints[other] });
   }
   const owners = accounts.map((account) => account.userId);
-  for (const page of pages) await page.evaluate(({ id, owners }) => window.matrixTest.join(id, owners), { id: room.room_id, owners });
+  sfu = await startTestSfu(directory, { autoCreate: false });
+  authorization = await startTestAuthorization(directory, sfu, serverName);
+  for (const page of pages) await page.evaluate(({ id, owners, focus }) => window.matrixTest.join(id, owners, focus), { id: room.room_id, owners, focus: authorization.url });
   for (const page of pages) {
     await waitFor(async () => (await page.evaluate((id) => window.matrixTest.status(id), "ignored")).members === 2, "MatrixRTC membership");
   }
@@ -116,10 +138,9 @@ try {
       throw new Error(`MatrixRTC key admission failed: ${JSON.stringify(status)}`);
     }
   }
-  sfu = await startTestSfu(directory);
   const identities = accounts.map((account) => `${account.userId}:${account.deviceId}`);
   for (let i = 0; i < pages.length; i++) {
-    await pages[i].evaluate(({ url, token, identity }) => window.mediaTest.connect(url, token, identity), { url: sfu.url, token: sfu.token(identities[i]), identity: identities[i] });
+    await pages[i].evaluate(({ focus, sfu }) => window.matrixTest.connectAuthorized(focus, sfu), { focus: authorization.url, sfu: sfu.url });
     await pages[i].evaluate((frequency) => window.mediaTest.publish(frequency), i === 0 ? 440 : 660);
   }
   for (let i = 0; i < pages.length; i++) {
@@ -152,12 +173,12 @@ try {
   assert.deepEqual(await page.evaluate(() => window.matrixTest.keys()), fingerprints[0]);
   assert(await page.evaluate(({ userId, deviceId }) => window.matrixTest.trusted(userId, deviceId), accounts[1]), "Device trust must persist across browser restart");
   assert.equal((await page.evaluate((id) => window.matrixTest.status(id), identities[1])).remoteKey, false, "Restart must not restore active-call key authority");
-  await page.evaluate(({ id, owners }) => window.matrixTest.join(id, owners), { id: room.room_id, owners });
+  await page.evaluate(({ id, owners, focus }) => window.matrixTest.join(id, owners, focus), { id: room.room_id, owners, focus: authorization.url });
   for (const participant of [page, pages[1]]) await waitFor(async () => (await participant.evaluate((id) => window.matrixTest.status(id), "ignored")).members === 2, "rejoined membership");
   assert(await page.evaluate(() => window.matrixTest.rotate(0)));
   assert(await pages[1].evaluate(() => window.matrixTest.rotate(1)));
   await waitFor(async () => (await page.evaluate((id) => window.matrixTest.status(id), identities[1])).remoteKey, "rejoined remote key");
-  await page.evaluate(({ url, token, identity }) => window.mediaTest.connect(url, token, identity), { url: sfu.url, token: sfu.token(identities[0]), identity: identities[0] });
+  await page.evaluate(({ focus, sfu }) => window.matrixTest.connectAuthorized(focus, sfu), { focus: authorization.url, sfu: sfu.url });
   await page.evaluate(() => window.mediaTest.publish(880));
   await waitFor(async () => {
     const measurement = await pages[1].evaluate((id) => window.mediaTest.measure(id), identities[0]);
@@ -171,11 +192,15 @@ try {
   await page.evaluate((id) => window.matrixTest.verify(id), identities[1]);
   await page.evaluate(() => window.matrixTest.leave());
   await pages[1].evaluate(() => window.matrixTest.leave());
-  console.log(JSON.stringify({ browser: restored.browser().version(), synapse: "1.162.0", matrixSdk: "43.0.0", livekit: "1.13.9", matrixRtcKeys: true, authenticatedDeviceBinding: true, plaintextRejected: true, deviceClaimRejected: true, persistentKeysAndTrust: true, matrixAudio: true, restartAndRejoin: true, focusAuthorization: false }));
+  console.log(JSON.stringify({ browser: restored.browser().version(), synapse: "1.162.0", matrixSdk: "43.0.0", livekit: "1.13.9", authorization: "0.8.0", matrixRtcKeys: true, authenticatedDeviceBinding: true, plaintextRejected: true, deviceClaimRejected: true, persistentKeysAndTrust: true, matrixAudio: true, restartAndRejoin: true, focusAuthorization: true }));
+  succeeded = true;
 } finally {
+  if (!succeeded) console.log(JSON.stringify({ openIdStatuses }));
   await Promise.allSettled(contexts.map((context) => context.close()));
   await new Promise((resolve) => server ? server.close(resolve) : resolve());
+  await new Promise((resolve) => tlsProxy ? tlsProxy.close(resolve) : resolve());
   if (running) execFileSync("docker", ["rm", "--force", container], { stdio: "pipe" });
   sfu?.close();
+  authorization?.close();
   await rm(directory, { recursive: true, force: true });
 }

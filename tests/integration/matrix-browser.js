@@ -2,6 +2,7 @@ import { createClient, ClientEvent, EventType, SyncState } from "matrix-js-sdk";
 import { VerifiedMatrixRtcKeys } from "../../packages/matrixrtc/src/verified-keys.ts";
 import { MatrixRtcParticipantVerifier, membershipSnapshot } from "../../packages/matrixrtc/src/participants.ts";
 import { publishMatrixRtcKey } from "../../packages/matrixrtc/src/outbound-key.ts";
+import { OpenIdFocusAuthorizer } from "../../packages/matrixrtc/src/focus.ts";
 import { provider, room as media } from "./livekit-browser.js";
 
 const quiet = { trace() {}, debug() {}, info() {}, warn() {}, error() {}, getChild() { return quiet; } };
@@ -38,7 +39,7 @@ window.matrixTest = {
   async trusted(userId, deviceId) {
     return (await client.getCrypto().getDeviceVerificationStatus(userId, deviceId))?.isVerified() === true;
   },
-  async join(id, owners) {
+  async join(id, owners, focusUrl) {
     roomId = id;
     session = client.matrixRTC.getRoomSession(client.getRoom(roomId));
     gate = new VerifiedMatrixRtcKeys({ roomId, owners, memberships: () => session.memberships.map(membershipSnapshot), now: Date.now }, provider);
@@ -51,10 +52,24 @@ window.matrixTest = {
     const userId = client.getUserId();
     const deviceId = client.getDeviceId();
     keySource = { roomId, owners, client, memberships: () => session.memberships.map(membershipSnapshot), isJoined: () => session.isJoined(), now: Date.now, sink: provider };
-    session.joinRTCSession({ userId, deviceId, memberId: `${userId}:${deviceId}` }, [{ type: "livekit", livekit_service_url: "http://127.0.0.1/test-focus", livekit_alias: roomId }], undefined, {
+    session.joinRTCSession({ userId, deviceId, memberId: `${userId}:${deviceId}` }, [{ type: "livekit", livekit_service_url: focusUrl, livekit_alias: roomId }], undefined, {
       manageMediaKeys: false, callIntent: "audio", membershipEventExpiryMs: 60_000,
       delayedLeaveEventDelayMs: 5_000, delayedLeaveEventRestartMs: 2_000,
     });
+  },
+  async connectAuthorized(focusUrl, sfuUrl) {
+    let httpStatus;
+    const authorizer = new OpenIdFocusAuthorizer({ focusUrls: [focusUrl], sfuUrls: [sfuUrl], allowInsecureLoopback: true,
+      fetch: async (input, options) => { const response = await fetch(input, options); httpStatus = response.status; return response; },
+    });
+    let grant;
+    try { grant = await authorizer.authorize({ roomId, slotId: session.slotId, client,
+      focus: () => { const oldest = session.getOldestMembership(); return oldest?.getTransport(oldest); },
+      membership: () => { const matches = session.memberships.filter((member) => member.userId === client.getUserId() && member.deviceId === client.getDeviceId()); return matches.length === 1 ? membershipSnapshot(matches[0]) : undefined; },
+    }, new AbortController().signal); }
+    catch (error) { throw new Error(`Focus authorization failed: ${error.code}, HTTP ${httpStatus}`); }
+    await window.mediaTest.connect(grant.url, grant.jwt, grant.identity);
+    return { connected: true, expiresAtMs: grant.expiresAtMs };
   },
   async rotate(index) {
     localKey = await publishMatrixRtcKey(keySource, index, new AbortController().signal);
