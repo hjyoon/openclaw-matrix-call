@@ -23,7 +23,7 @@ export const matrixCallChannel: ChannelPlugin<MatrixCallAccount> = {
     label: "Matrix Call",
     selectionLabel: "Matrix Call (experimental)",
     docsPath: "https://github.com/hjyoon/openclaw-matrix-call/blob/main/docs/implementation-status.md",
-    blurb: "Portable Matrix calling adapters; RTC audio is not available yet",
+    blurb: "Portable Matrix calling adapters; native call wiring is unavailable",
   },
   capabilities: { chatTypes: ["group"], media: false, nativeCommands: false },
   configSchema: { schema: {
@@ -39,7 +39,7 @@ export const matrixCallChannel: ChannelPlugin<MatrixCallAccount> = {
     resolveAccount,
     isEnabled: (account) => account.enabled,
     isConfigured: () => false,
-    unconfiguredReason: () => "RTC transport is not implemented in this development version",
+    unconfiguredReason: () => "Native call wiring is unavailable in this development version",
     resolveAllowFrom: ({ cfg }) => resolveAccount(cfg).policy?.owners.slice() ?? [],
   },
 };

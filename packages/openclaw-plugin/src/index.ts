@@ -15,7 +15,7 @@ export default defineChannelPluginEntry({
       description: "Show Matrix Call implementation status",
       acceptsArgs: false,
       requireAuth: true,
-      handler: () => ({ text: "Matrix Call is experimental. RTC audio is not implemented; no call transport is ready." }),
+      handler: () => ({ text: "Matrix Call is experimental. The standalone worker has encrypted MatrixRTC audio; native call wiring and model-backed dispatch are unavailable." }),
     });
   },
 });

@@ -10,7 +10,7 @@ manifest.channelConfigs = {
   "matrix-call": {
     schema: matrixCallChannel.configSchema.schema,
     label: "Matrix Call",
-    description: "Experimental Matrix calling policy; no RTC transport is ready",
+    description: "Experimental Matrix calling policy; native call wiring is unavailable",
     commands: { nativeCommandsAutoEnabled: false, nativeSkillsAutoEnabled: false },
   },
 };

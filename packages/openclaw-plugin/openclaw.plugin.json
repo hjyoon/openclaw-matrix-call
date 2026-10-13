@@ -2,7 +2,7 @@
   "id": "matrix-call",
   "name": "Matrix Call",
   "version": "0.1.0-alpha.1",
-  "description": "Experimental Matrix call adapters; RTC audio is not implemented yet",
+  "description": "Experimental Matrix call adapters; native call wiring is unavailable",
   "channels": [
     "matrix-call"
   ],
@@ -93,7 +93,7 @@
         ]
       },
       "label": "Matrix Call",
-      "description": "Experimental Matrix calling policy; no RTC transport is ready",
+      "description": "Experimental Matrix calling policy; native call wiring is unavailable",
       "commands": {
         "nativeCommandsAutoEnabled": false,
         "nativeSkillsAutoEnabled": false

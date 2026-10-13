@@ -21,7 +21,7 @@ describe("native SDK registration", () => {
       const command = registerCommand.mock.calls[0]![0];
       expect(command.name).toBe("matrixcall");
       expect(command.requireAuth).toBe(true);
-      expect(command.handler().text).toContain("RTC audio is not implemented");
+      expect(command.handler().text).toContain("native call wiring and model-backed dispatch are unavailable");
     } else expect(registerCommand).not.toHaveBeenCalled();
   });
 });
@@ -34,12 +34,12 @@ describe("development channel configuration", () => {
     expect(account.enabled).toBe(false);
     expect(matrixCallChannel.config.isEnabled!(account, {})).toBe(false);
     expect(await matrixCallChannel.config.isConfigured!(account, {})).toBe(false);
-    expect(matrixCallChannel.config.unconfiguredReason!(account, {})).toContain("not implemented");
+    expect(matrixCallChannel.config.unconfiguredReason!(account, {})).toContain("Native call wiring is unavailable");
     expect(matrixCallChannel.capabilities.media).toBe(false);
     expect(matrixCallChannel.configSchema!.schema).toBeDefined();
   });
 
-  it("accepts explicit policy while remaining unconfigured until RTC is implemented", async () => {
+  it("accepts explicit policy while remaining unconfigured until native calls are wired", async () => {
     const account = matrixCallChannel.config.resolveAccount(enabled, "default");
     expect(account.enabled).toBe(true);
     expect(Object.isFrozen(account)).toBe(true);
