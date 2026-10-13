@@ -14,7 +14,7 @@ Existing Matrix plugin policy is not inherited implicitly. This plugin must decl
 
 The first release accepts explicitly configured owners in explicitly configured rooms. General-user approval is a later capability and must remain unavailable until it has an end-to-end authorization test.
 
-Matrix message encryption and LiveKit media encryption are separate requirements. Device verification, key distribution, key rotation, and crypto persistence must be validated with compatible Matrix clients. Missing encryption must fail closed. The optional MatrixRTC media adapter uses public browser SDKs and a dedicated persistent browser profile; see [ADR 0005](adr/0005-browser-matrixrtc-media.md).
+Matrix message encryption and LiveKit media encryption are separate requirements. Device verification, key distribution, key rotation, and crypto persistence must be validated with compatible Matrix clients. Missing encryption must fail closed. The optional MatrixRTC media adapter uses public browser SDKs and a dedicated persistent browser profile; see [ADR 0005](adr/0005-browser-matrixrtc-media.md). Outbound keys are generated inside the adapter, with authenticated inbound admission; see [ADR 0006](adr/0006-local-outbound-key-provenance.md).
 
 The worker must reuse active LiveKit rooms. Starting the bot must not delete or reset another participant's call.
 

@@ -8,7 +8,7 @@ An OpenAI-compatible HTTP adapter describes a wire format, not a requirement to 
 
 Use portable PCM/WAV media and documented JSON contracts. Keep vendor-specific identifiers and credentials in adapter configuration. Caller authority and call identity must retain their protocol meaning across adapters.
 
-The initial MatrixRTC/LiveKit adapter remains specific to Element Call interoperability. Portability does not mean that every RTC backend is implemented at the first release. Alternative transports must prove equivalent participant identity and media encryption behavior before they can be enabled.
+The initial conference adapter implements MatrixRTC with a replaceable LiveKit media backend. It does not depend on Element UI behavior or a hosted focus. Client compatibility is recorded by tested protocol capabilities. Alternative transports must prove equivalent participant identity and media encryption behavior before they can be enabled.
 
 Publish standard package archives and OCI worker images. ClawHub is a discovery and distribution option, not a runtime dependency. Preserve supported local installation and self-hosted operation.
 
