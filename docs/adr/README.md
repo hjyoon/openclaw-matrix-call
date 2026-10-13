@@ -16,6 +16,7 @@ Number records in order. An accepted ADR is a historical record, not a second in
 | [0006](0006-local-outbound-key-provenance.md) | Accepted | Locally generated outbound keys instead of ambiguous SDK callbacks |
 | [0007](0007-explicit-focus-authorization.md) | Accepted | Explicit trusted OpenID focus authorization without administrative signing keys |
 | [0008](0008-browser-worker-and-explicit-device-enrollment.md) | Accepted | Optional sandboxed browser worker with persistent device binding and explicit fingerprint enrollment |
+| [0009](0009-bounded-portable-voice-turns.md) | Accepted | Portable half-duplex voice turns with bounded input, fresh authority checks and cancellation |
 
 ## Record format
 

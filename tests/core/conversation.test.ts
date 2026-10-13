@@ -19,6 +19,21 @@ const record: ConversationRecord = {
 };
 
 describe("portable conversation records", () => {
+  it.each([0, -1, 65537, 1.5, NaN])("rejects invalid memory limits %s", (limit) => {
+    expect(() => new MemoryConversationStore(limit)).toThrow("invalid-input");
+  });
+
+  it("bounds retained conversations while allowing updates without evicting another record", async () => {
+    const store = new MemoryConversationStore(2);
+    const second = { ...record, id: "8984692c-8219-4a05-b9df-0c1f74315ba5" };
+    const third = { ...record, id: "e8e72c61-738b-4ed3-a70d-16f7939bc46b" };
+    await store.put(record); await store.put(second); await store.put({ ...record, status: "active" });
+    expect(await store.get(second.id)).toEqual(second);
+    await store.put(third);
+    expect(await store.get(record.id)).toBeUndefined();
+    expect(await store.get(second.id)).toEqual(second); expect(await store.get(third.id)).toEqual(third);
+  });
+
   it("exports versioned JSON without host session keys or SDK objects", () => {
     const json = exportConversation(record);
     expect(JSON.parse(json)).toEqual(record);

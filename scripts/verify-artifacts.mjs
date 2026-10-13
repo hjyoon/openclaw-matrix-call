@@ -33,7 +33,7 @@ for (const name of ["browser-worker", "browser-worker-api"]) {
 const browserMetadata = JSON.parse(await readFile(path.join(root, "dist/build-metadata/matrixrtc.json"), "utf8"));
 assert(Object.values(browserMetadata.outputs).every((output) => output.imports.length === 0));
 assert(!Object.keys(browserMetadata.inputs).some((entry) => /(?:openclaw|packages\/core\/src)/.test(entry)));
-for (const name of ["core", "agent-http", "speech-http", "openclaw-plugin", "worker", "worker-api"]) {
+for (const name of ["core", "agent-http", "speech-http", "voice", "openclaw-plugin", "worker", "worker-api"]) {
   const metadata = JSON.parse(await readFile(path.join(root, `dist/build-metadata/${name}.json`), "utf8"));
   const imports = Object.values(metadata.outputs).flatMap((output) => output.imports);
   if (name === "openclaw-plugin") {
@@ -51,6 +51,8 @@ const agent = await import(pathToFileURL(path.join(root, "dist/agent-http/index.
 assert.equal(typeof agent.HttpAgentAdapter.connect, "function");
 const speech = await import(pathToFileURL(path.join(root, "dist/speech-http/index.js")));
 assert.equal(typeof speech.HttpSpeechAdapter.connect, "function");
+const voice = await import(pathToFileURL(path.join(root, "dist/voice/index.js")));
+assert.equal(typeof voice.VoiceAssistant, "function");
 const plugin = await import(pathToFileURL(path.join(root, "packages/openclaw-plugin/dist/index.js")));
 assert.equal(plugin.default.id, "matrix-call");
 assert.equal(typeof plugin.default.register, "function");

@@ -41,8 +41,15 @@ export function importConversation(json: string): ConversationRecord {
 export class MemoryConversationStore implements ConversationStore {
   readonly #records = new Map<string, ConversationRecord>();
 
+  constructor(readonly maxRecords = 1024) {
+    if (!Number.isInteger(maxRecords) || maxRecords < 1 || maxRecords > 65_536) throw new CallError("invalid-input");
+  }
+
   async put(record: ConversationRecord): Promise<void> {
     const parsed = parseConversation(record);
+    if (!this.#records.has(parsed.id) && this.#records.size >= this.maxRecords) {
+      this.#records.delete(this.#records.keys().next().value!);
+    }
     this.#records.set(parsed.id, parsed);
   }
 
