@@ -4,7 +4,7 @@ import { readWorkerConfig } from "./config.js";
 import { createWorkerServer } from "./server.js";
 import type { WorkerMediaController } from "./media.js";
 
-export async function startWorker(env: NodeJS.ProcessEnv = process.env, media?: WorkerMediaController) {
+export async function startWorker(env: NodeJS.ProcessEnv = process.env, media?: WorkerMediaController, onClose?: () => Promise<void>) {
   const config = readWorkerConfig(env);
   const secret = (await readFile(config.secretFile, "utf8")).trim();
   const { server, audience } = createWorkerServer(secret, media);
@@ -17,7 +17,7 @@ export async function startWorker(env: NodeJS.ProcessEnv = process.env, media?: 
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);
     server.closeAllConnections();
-    closing = new Promise<void>((resolve) => { server.close(() => resolve()); }).then(() => media?.shutdown());
+    closing = new Promise<void>((resolve) => { server.close(() => resolve()); }).then(() => media?.shutdown()).finally(onClose);
     return closing;
   };
   const onSignal = (): void => { void close(); };

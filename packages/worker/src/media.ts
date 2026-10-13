@@ -99,6 +99,14 @@ export class WorkerMediaController {
     await this.#cleanup(state);
   }
 
+  async endSession(): Promise<void> {
+    const state = this.#active;
+    if (!state) return;
+    state.controller.abort();
+    await state.task.catch(() => undefined);
+    await this.#cleanup(state);
+  }
+
   shutdown(): Promise<void> {
     if (this.#shutdown) return this.#shutdown;
     this.#closed = true;
