@@ -32,6 +32,14 @@ describe("engine WAV boundary", () => {
     expect(() => decodeWav(wav)).toThrow("Invalid engine WAV output");
   });
 
+  it("rejects high-bit aliases of the container markers without ASCII masking", () => {
+    for (const offset of [0, 8, 12, 36]) {
+      const wav = encodeWav(audio);
+      wav[offset] = wav[offset]! | 0x80;
+      expect(() => decodeWav(wav)).toThrow("Invalid engine WAV output");
+    }
+  });
+
   it.each([
     [16, 18, 4], [20, 3, 2], [22, 2, 2], [24, 7999, 4], [28, 1, 4],
     [32, 4, 2], [34, 32, 2], [4, 99, 4], [40, 99, 4],

@@ -21,10 +21,10 @@ export function encodeWav(audio: PcmAudio): Buffer {
 
 export function decodeWav(wav: Buffer, espeakStream = false): PcmAudio {
   if (wav.length < 46 || wav.length > 960_044 || wav.length % 2 !== 0 ||
-      wav.toString("ascii", 0, 4) !== "RIFF" || wav.toString("ascii", 8, 16) !== "WAVEfmt " ||
+      wav.toString("latin1", 0, 4) !== "RIFF" || wav.toString("latin1", 8, 16) !== "WAVEfmt " ||
       wav.readUInt32LE(16) !== 16 || wav.readUInt16LE(20) !== 1 || wav.readUInt16LE(22) !== 1 ||
       wav.readUInt32LE(28) !== wav.readUInt32LE(24) * 2 || wav.readUInt16LE(32) !== 2 ||
-      wav.readUInt16LE(34) !== 16 || wav.toString("ascii", 36, 40) !== "data") {
+      wav.readUInt16LE(34) !== 16 || wav.toString("latin1", 36, 40) !== "data") {
     throw new Error("Invalid engine WAV output");
   }
   const streaming = espeakStream && wav.readUInt32LE(4) === 0x7ffff024 && wav.readUInt32LE(40) === 0x7ffff000;
