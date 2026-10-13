@@ -1,0 +1,17 @@
+# Architecture decision records
+
+ADRs preserve decisions, context, alternatives, and consequences. `AGENTS.md` contains only current development rules, and `CLAUDE.md` points to those rules. Operational documentation describes current behavior. Implementation status records evidence and unfinished work.
+
+Number records in order. An accepted ADR is a historical record, not a second instruction file. To change a decision, add a new ADR and update the old record's status with a link to its successor. Update current instructions and operational documentation in the same change.
+
+## Index
+
+| Record | Status | Decision |
+| --- | --- | --- |
+| [0001](0001-portable-agent-and-call-boundaries.md) | Accepted | Portable core and replaceable agent/runtime boundaries |
+| [0002](0002-matrix-protocol-compatibility.md) | Accepted | Matrix protocol capabilities instead of an Element-only target |
+| [0003](0003-development-instructions-and-decision-history.md) | Accepted | Current instructions separated from decision history |
+
+## Record format
+
+Use a descriptive filename and the following sections: status, date, context, decision, alternatives considered, and consequences. State implementation limits explicitly. A decision to support a capability does not establish that the capability is implemented or tested.
