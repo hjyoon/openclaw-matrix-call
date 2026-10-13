@@ -9,6 +9,9 @@ const audio = new AudioContext({ sampleRate: 48_000 });
 const analyzers = new Map();
 let oscillator;
 let volume;
+let microphone;
+let clip;
+let observation;
 const encryptionErrors = [];
 room.on(RoomEvent.EncryptionError, (error) => encryptionErrors.push(error.name));
 
@@ -40,6 +43,7 @@ window.mediaTest = {
   },
   async publish(frequency) {
     const destination = audio.createMediaStreamDestination();
+    microphone = destination;
     const gain = audio.createGain();
     volume = gain;
     gain.gain.value = 0.25;
@@ -50,7 +54,43 @@ window.mediaTest = {
     await room.localParticipant.publishTrack(destination.stream.getAudioTracks()[0], { source: Track.Source.Microphone, dtx: false, red: false });
   },
   sound(frequency) { oscillator.frequency.value = frequency; volume.gain.value = 0.25; },
-  silence() { volume.gain.value = 0; },
+  silence() { volume.gain.value = 0; clip?.stop(); },
+  async playPcm({ samples, sampleRate }) {
+    if (!microphone || clip || !samples.length || samples.length > sampleRate * 10) throw new Error("Invalid test microphone input");
+    volume.gain.value = 0;
+    const buffer = audio.createBuffer(1, samples.length, sampleRate);
+    buffer.getChannelData(0).set(samples.map((value) => value / 32768));
+    clip = audio.createBufferSource();
+    clip.buffer = buffer;
+    clip.connect(microphone);
+    try {
+      await new Promise((resolve) => { clip.onended = resolve; clip.start(); });
+    } finally {
+      clip.disconnect(); clip.buffer = null; clip = undefined;
+      buffer.getChannelData(0).fill(0); samples.fill(0);
+    }
+  },
+  observe(identity) {
+    if (observation) throw new Error("Audio observation is already active");
+    const result = { frames: 0, activeFrames: 0, encryptedFrames: 0, peakRms: 0, firstAudioMs: null };
+    const start = performance.now();
+    const timer = setInterval(() => {
+      const measured = window.mediaTest.measure(identity);
+      result.frames++; result.peakRms = Math.max(result.peakRms, measured.rms);
+      if (measured.rms > 0.005) {
+        result.activeFrames++;
+        if (measured.encrypted) result.encryptedFrames++;
+        result.firstAudioMs ??= Math.round(performance.now() - start);
+      }
+    }, 20);
+    observation = { timer, result };
+  },
+  finishObservation() {
+    if (!observation) throw new Error("No audio observation is active");
+    clearInterval(observation.timer);
+    const result = observation.result; observation = undefined;
+    return result;
+  },
   measure(identity) {
     const entry = analyzers.get(identity);
     if (!entry) return { rms: 0, frequency: 0, encrypted: false };
@@ -91,6 +131,8 @@ window.mediaTest = {
     return packets;
   },
   async close() {
+    if (observation) window.mediaTest.finishObservation();
+    clip?.stop();
     oscillator?.stop();
     await room.disconnect();
     worker.terminate();

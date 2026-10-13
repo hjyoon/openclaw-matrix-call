@@ -104,14 +104,27 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
     return response.value.sessionId;
   }
 
-  async function utterance(frequency, label) {
-    await peer.evaluate((frequency) => window.mediaTest.sound(frequency), frequency);
-    await delay(900);
-    await peer.evaluate(() => window.mediaTest.silence());
-    await waitFor(async () => {
-      const audio = await peer.evaluate((id) => window.mediaTest.measure(id), identity);
-      return audio.encrypted && audio.rms > 0.03 && Math.abs(audio.frequency - 1320) < 35;
-    }, label);
+  async function utterance(frequency, label, pcm = false) {
+    await peer.evaluate((id) => window.mediaTest.observe(id), identity);
+    let observation;
+    try {
+      if (pcm) {
+        const samples = Array.from({ length: 43_200 }, (_, i) => Math.round(Math.sin(2 * Math.PI * frequency * i / 48_000) * 8192));
+        await peer.evaluate((samples) => window.mediaTest.playPcm({ samples, sampleRate: 48_000 }), samples);
+        samples.fill(0);
+      } else {
+        await peer.evaluate((frequency) => window.mediaTest.sound(frequency), frequency);
+        await delay(900);
+        await peer.evaluate(() => window.mediaTest.silence());
+      }
+      await waitFor(async () => {
+        const audio = await peer.evaluate((id) => window.mediaTest.measure(id), identity);
+        return audio.encrypted && audio.rms > 0.03 && Math.abs(audio.frequency - 1320) < 35;
+      }, label);
+      await delay(100);
+    } finally { observation = await peer.evaluate(() => window.mediaTest.finishObservation()); }
+    assert(observation.activeFrames > 0);
+    assert.equal(observation.encryptedFrames, observation.activeFrames);
   }
 
   try {
@@ -167,7 +180,7 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
     worker = await startBrowserWorker(env); assert(worker.voice, "Voice must be explicitly configured");
     const request = await control(`http://127.0.0.1:${worker.server.address().port}`);
     let sessionId = await connect(request);
-    await utterance(660, "encrypted audio to speech, agent and synthesized PCM");
+    await utterance(660, "encrypted audio to speech, agent and synthesized PCM", true);
     await waitFor(() => !worker.voice.busy, "first voice turn completion");
     assert.equal(voiceServices.state.turns.length, 1);
     assert(Math.abs(voiceServices.state.transcriptions[0].frequency - 660) < 45);
