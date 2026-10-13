@@ -12,6 +12,7 @@ Number records in order. An accepted ADR is a historical record, not a second in
 | [0002](0002-matrix-protocol-compatibility.md) | Accepted | Matrix protocol capabilities instead of an Element-only target |
 | [0003](0003-development-instructions-and-decision-history.md) | Accepted | Current instructions separated from decision history |
 | [0004](0004-delegated-openclaw-ingress.md) | Accepted | Delegated, tool-free OpenClaw ingress until supported owner admission exists |
+| [0005](0005-browser-matrixrtc-media.md) | Accepted | Browser MatrixRTC media with authenticated per-device keys |
 
 ## Record format
 

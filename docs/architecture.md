@@ -14,7 +14,7 @@ Existing Matrix plugin policy is not inherited implicitly. This plugin must decl
 
 The first release accepts explicitly configured owners in explicitly configured rooms. General-user approval is a later capability and must remain unavailable until it has an end-to-end authorization test.
 
-Matrix message encryption and LiveKit media encryption are separate requirements. Device verification, key distribution, key rotation, and crypto persistence must be validated with Element clients. Missing encryption must fail closed.
+Matrix message encryption and LiveKit media encryption are separate requirements. Device verification, key distribution, key rotation, and crypto persistence must be validated with compatible Matrix clients. Missing encryption must fail closed. The optional MatrixRTC media adapter uses public browser SDKs and a dedicated persistent browser profile; see [ADR 0005](adr/0005-browser-matrixrtc-media.md).
 
 The worker must reuse active LiveKit rooms. Starting the bot must not delete or reset another participant's call.
 
@@ -23,7 +23,7 @@ The worker must reuse active LiveKit rooms. Starting the bot must not delete or 
 - A native plugin package loads against the supported OpenClaw SDK.
 - Unknown callers, unknown rooms, expired memberships, and replayed requests cannot dispatch an agent turn.
 - Independent calls remain isolated during concurrency, cancellation, reconnect, and restart.
-- An encrypted Element Call can exchange actual audio in both directions.
+- A compatible encrypted MatrixRTC call can exchange actual audio in both directions, with client versions recorded.
 - Secrets, media keys, and transcripts are absent from default logs and publish artifacts.
 - A packed plugin installs in a clean supported Gateway.
 - The worker image builds and runs without root or a Docker socket.
