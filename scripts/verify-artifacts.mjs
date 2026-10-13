@@ -22,7 +22,7 @@ const browserAssets = JSON.parse(await readFile(path.join(root, "dist/build-meta
 assert(Object.values(browserAssets.outputs).every((output) => output.imports.length === 0));
 assert(!Object.keys(browserAssets.inputs).some((entry) => /(?:openclaw|packages\/core\/src\/(?!audio\.ts$))/.test(entry)));
 const licenses = JSON.parse(await readFile(path.join(root, "dist/browser-worker/licenses/index.json"), "utf8"));
-for (const name of ["matrix-js-sdk", "livekit-client", "playwright-core", "@matrix-org/matrix-sdk-crypto-wasm"]) {
+for (const name of ["matrix-js-sdk", "livekit-client", "playwright-core", "@matrix-org/matrix-sdk-crypto-wasm", "zod"]) {
   assert(licenses.some((entry) => entry.name === name && entry.files.length > 0));
 }
 for (const name of ["browser-worker", "browser-worker-api"]) {

@@ -1,6 +1,6 @@
 # Browser worker
 
-The optional browser worker connects the portable authenticated media controller to a real Matrix/LiveKit browser runtime. It implements the RTC connection/publication port and participant verification. Speech capture, STT/agent/TTS dispatch, and automatic incoming-call handling are not implemented. Assistant readiness remains `false`.
+The optional browser worker connects the portable authenticated media controller to a real Matrix/LiveKit browser runtime. It implements the RTC connection/publication port, participant verification and optional half-duplex STT/agent/TTS dispatch. Automatic incoming-call handling is not implemented. Assistant readiness remains `false` until released-client and real speech/agent integrations are verified.
 
 The control-only [worker image](worker.md) remains SDK-free. The browser image includes pinned Matrix SDK 43.0.0, LiveKit client 2.22.4, Playwright 1.64.0, Chromium 156.0.8078.4, packaged Rust crypto WASM, and the LiveKit E2EE worker. It does not need an OpenClaw installation, hosted model account, SFU signing secret, or Gateway operator token.
 
@@ -57,6 +57,32 @@ The container uses a read-only root filesystem, dropped capabilities, `no-new-pr
 The seccomp policy derives from [Moby profiles](https://github.com/moby/profiles/blob/4b8214fc4971e06172938a1f1554ccff6647ee80/seccomp/default.json), with revision/hash in `deployment/browser-seccomp.source.json` and its license alongside it. The changes permit `clone`, `setns`, `unshare`, and `chroot` for Chromium's user namespace. Linux capabilities remain dropped; allowing a syscall does not grant its host capability. The modern base retains `openat2` and the `clone3` ENOSYS fallback needed by the tested runtime. The image carries dependency license texts and an inventory under `/app/licenses`; Chromium's distributed notices remain with its binaries.
 
 The configured `768 MiB`, one CPU, and 256 process limit are a development starting point. Speech/model resources are additional. Measure the target server before increasing concurrency; the current worker allows one media session.
+
+## Enabling voice
+
+Keep voice disabled by omitting `voiceFile`. To enable it, add `"voiceFile": "/run/config/voice.json"` to the browser configuration and create an external configuration file:
+
+```json
+{
+  "agentId": "assistant",
+  "agent": {
+    "baseUrl": "https://agent.example.org/v1/agent",
+    "secretFile": "/run/secrets/voice_agent_secret"
+  },
+  "speech": {
+    "baseUrl": "https://speech.example.org/v1/speech",
+    "secretFile": "/run/secrets/voice_speech_secret"
+  },
+  "timeoutMs": 90000,
+  "requestTimeoutMs": 30000
+}
+```
+
+The agent must implement the [signed agent protocol](agent-protocol.md), and the speech bridge must implement the [signed speech protocol](speech-protocol.md). Use separate random 64-character lowercase hexadecimal secrets for control, agent and speech authentication. The worker rejects secret reuse. Both services must authenticate their capabilities before a Matrix client starts. Their model/provider credentials remain inside those services. `agentId` is a configured logical name, and voice does not accept user-selected endpoints or authority claims.
+
+For Compose, set absolute host paths in `MATRIX_CALL_VOICE_CONFIG`, `MATRIX_CALL_VOICE_AGENT_SECRET` and `MATRIX_CALL_VOICE_SPEECH_SECRET`, then run `docker compose -f deployment/browser-compose.yml -f deployment/browser-voice.compose.yml up -d`. The override mounts only the voice configuration and its dedicated secrets. The speech and agent services are supplied separately; the browser image does not contain speech models or an agent runtime. HTTPS is required by default. An explicitly configured `allowInsecureLoopback: true` permits local HTTP only; container loopback refers to that container's network namespace, so separate services need TLS or an explicitly shared local namespace.
+
+Startup logs include `voiceEnabled`. The generic readiness endpoint remains false: configured ports do not establish speech quality or released-client compatibility. See [voice pipeline](voice-pipeline.md) for utterance limits, history, cancellation and retention.
 
 ## Lifecycle and evidence
 

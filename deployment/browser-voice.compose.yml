@@ -1,0 +1,20 @@
+services:
+  browser-worker:
+    configs:
+      - source: voice_config
+        target: /run/config/voice.json
+    secrets:
+      - source: voice_agent_secret
+        target: voice_agent_secret
+      - source: voice_speech_secret
+        target: voice_speech_secret
+
+configs:
+  voice_config:
+    file: "${MATRIX_CALL_VOICE_CONFIG:?Set MATRIX_CALL_VOICE_CONFIG to an absolute voice-config path}"
+
+secrets:
+  voice_agent_secret:
+    file: "${MATRIX_CALL_VOICE_AGENT_SECRET:?Set MATRIX_CALL_VOICE_AGENT_SECRET to an absolute agent-secret path}"
+  voice_speech_secret:
+    file: "${MATRIX_CALL_VOICE_SPEECH_SECRET:?Set MATRIX_CALL_VOICE_SPEECH_SECRET to an absolute speech-secret path}"

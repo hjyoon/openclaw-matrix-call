@@ -19,7 +19,8 @@ export async function buildBrowserAssets(root, output) {
 export async function copyBrowserLicenses(root, output, metadata) {
   await mkdir(output, { recursive: true });
   const require = createRequire(path.join(root, "package.json"));
-  const files = [...Object.keys(metadata.inputs).filter((file) => file.includes("node_modules/")), require.resolve("playwright-core")];
+  const coreRequire = createRequire(path.join(root, "packages/core/src/index.ts"));
+  const files = [...Object.keys(metadata.inputs).filter((file) => file.includes("node_modules/")), require.resolve("playwright-core"), coreRequire.resolve("zod")];
   const packages = new Map();
   for (const file of files) {
     let dir = path.dirname(path.resolve(root, file));

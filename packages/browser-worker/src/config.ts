@@ -22,6 +22,7 @@ const configSchema = z.object({
   profileDir: absolutePath,
   assetDir: absolutePath,
   assetPort: z.number().int().min(1024).max(65_535).default(19791),
+  voiceFile: absolutePath.optional(),
   owners: z.array(mxid).min(1).max(256),
   rooms: z.array(matrixRoomIdSchema).min(1).max(256),
   focusUrls: endpoints,
@@ -60,6 +61,7 @@ export function parseBrowserConfig(value: unknown, credentials: unknown) {
   return Object.freeze({
     credentialsFile: config.credentialsFile, profileDir: config.profileDir,
     assetDir: config.assetDir, assetPort: config.assetPort, credentials: matrix, policy,
+    voiceFile: config.voiceFile,
   });
 }
 

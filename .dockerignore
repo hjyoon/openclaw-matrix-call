@@ -26,5 +26,11 @@
 !packages/voice/
 !packages/voice/src/
 !packages/voice/src/**
+!packages/agent-http/
+!packages/agent-http/src/
+!packages/agent-http/src/**
+!packages/speech-http/
+!packages/speech-http/src/
+!packages/speech-http/src/**
 !scripts/
 !scripts/build-browser-assets.mjs

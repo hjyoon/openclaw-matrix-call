@@ -50,12 +50,21 @@ importers:
 
   packages/browser-worker:
     dependencies:
+      '@matrix-call/agent-http':
+        specifier: workspace:*
+        version: link:../agent-http
       '@matrix-call/core':
         specifier: workspace:*
         version: link:../core
       '@matrix-call/matrixrtc':
         specifier: workspace:*
         version: link:../matrixrtc
+      '@matrix-call/speech-http':
+        specifier: workspace:*
+        version: link:../speech-http
+      '@matrix-call/voice':
+        specifier: workspace:*
+        version: link:../voice
       '@matrix-call/worker':
         specifier: workspace:*
         version: link:../worker
