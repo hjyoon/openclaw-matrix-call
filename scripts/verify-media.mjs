@@ -1,41 +1,21 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { build } from "esbuild";
+import { startTestSfu } from "./integration/sfu.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= path.join(root, ".cache/browsers");
 const { chromium } = await import("playwright-core");
-const image = "livekit/livekit-server:v1.13.9@sha256:d0c04791bf63ca8dcea123571827d56ba9504bd57c8d5de60ee03b5408cc3154";
 const directory = await mkdtemp(path.join(tmpdir(), "matrix-call-media-"));
-const container = `matrix-call-media-${randomUUID()}`;
-const apiKey = randomBytes(12).toString("hex");
-const apiSecret = randomBytes(32).toString("hex");
-const roomName = randomUUID();
 let browser;
 let server;
-let running = false;
-
-async function freePort() {
-  const listener = createServer();
-  await new Promise((resolve) => listener.listen(0, "127.0.0.1", resolve));
-  const port = listener.address().port;
-  await new Promise((resolve) => listener.close(resolve));
-  return port;
-}
-
-function token(identity) {
-  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
-  const timestamp = Math.floor(Date.now() / 1000);
-  const message = `${encode({ alg: "HS256", typ: "JWT" })}.${encode({ iss: apiKey, sub: identity, nbf: timestamp - 5, exp: timestamp + 300, video: { room: roomName, roomJoin: true, canPublish: true, canSubscribe: true } })}`;
-  return `${message}.${createHmac("sha256", apiSecret).update(message).digest("base64url")}`;
-}
+let sfu;
 
 async function waitFor(predicate, label, timeout = 15_000) {
   const deadline = Date.now() + timeout;
@@ -60,16 +40,7 @@ async function expectTone(page, identity, frequency) {
 }
 
 try {
-  const ports = [await freePort(), await freePort(), await freePort()];
-  assert.equal(new Set(ports).size, 3);
-  const configFile = path.join(directory, "livekit.yaml");
-  await writeFile(configFile, `port: ${ports[0]}\nbind_addresses: [127.0.0.1]\nrtc:\n  node_ip: 127.0.0.1\n  tcp_port: ${ports[1]}\n  udp_port: ${ports[2]}\n  use_external_ip: false\n  enable_loopback_candidate: true\n  interfaces:\n    includes: [lo]\nkeys:\n  ${apiKey}: ${apiSecret}\nlogging:\n  level: error\n`, { mode: 0o644 });
-  execFileSync("docker", ["run", "--detach", "--rm", "--name", container, "--network", "host", "--user", "1000:1000", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "512m", "--pids-limit", "128", "--mount", `type=bind,source=${configFile},target=/test/livekit.yaml,readonly`, image, "--config", "/test/livekit.yaml"], { stdio: "pipe" });
-  running = true;
-  await waitFor(async () => {
-    try { return (await fetch(`http://127.0.0.1:${ports[0]}/`, { signal: AbortSignal.timeout(500) })).ok; }
-    catch { return false; }
-  }, "isolated SFU startup");
+  sfu = await startTestSfu(directory);
   const bundle = await build({ absWorkingDir: root, entryPoints: ["tests/integration/livekit-browser.js"], bundle: true, platform: "browser", format: "esm", target: "es2023", write: false, legalComments: "none", logLevel: "silent" });
   const worker = await readFile(fileURLToPath(import.meta.resolve("livekit-client/e2ee-worker")));
   server = createServer((request, response) => {
@@ -89,15 +60,15 @@ try {
   }
   const aliceKey = [...randomBytes(16)];
   const bobKey = [...randomBytes(16)];
-  const sfuUrl = `ws://127.0.0.1:${ports[0]}`;
+  const sfuUrl = sfu.url;
   for (const page of [alice, bob]) {
     await page.evaluate(async ({ aliceKey, bobKey }) => {
       await window.mediaTest.key("alice", aliceKey, 0);
       await window.mediaTest.key("bob", bobKey, 0);
     }, { aliceKey, bobKey });
   }
-  await alice.evaluate(({ url, token }) => window.mediaTest.connect(url, token, "alice"), { url: sfuUrl, token: token("alice") });
-  await bob.evaluate(({ url, token }) => window.mediaTest.connect(url, token, "bob"), { url: sfuUrl, token: token("bob") });
+  await alice.evaluate(({ url, token }) => window.mediaTest.connect(url, token, "alice"), { url: sfuUrl, token: sfu.token("alice") });
+  await bob.evaluate(({ url, token }) => window.mediaTest.connect(url, token, "bob"), { url: sfuUrl, token: sfu.token("bob") });
   await alice.evaluate(() => window.mediaTest.publish(440));
   await bob.evaluate(() => window.mediaTest.publish(660));
   await expectTone(bob, "alice", 440);
@@ -122,6 +93,6 @@ try {
 } finally {
   await browser?.close();
   await new Promise((resolve) => server ? server.close(resolve) : resolve());
-  if (running) execFileSync("docker", ["rm", "--force", container], { stdio: "pipe" });
+  sfu?.close();
   await rm(directory, { recursive: true, force: true });
 }

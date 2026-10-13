@@ -8,7 +8,7 @@ Matrix messaging support does not imply that a client implements a compatible ca
 
 | Protocol | Adapter responsibility | Current implementation |
 | --- | --- | --- |
-| MatrixRTC | Membership, focus discovery, authenticated participant binding, conference media, encryption keys | Planned; no audio interoperability claim |
+| MatrixRTC | Membership, focus discovery, authenticated participant binding, conference media, encryption keys | Key/identity components implemented; synthetic state-membership SDK peers pass encrypted audio; focus authorization and client interoperability pending |
 | Matrix VoIP | `m.call.*` signaling, SDP/ICE negotiation, party identifiers, direct WebRTC audio | Planned; no audio interoperability claim |
 
 MatrixRTC and legacy Matrix VoIP are separate transports. A client implementing only legacy VoIP must not be treated as a MatrixRTC client, and a legacy invite must not be converted into a conference without an explicit supported negotiation path.
@@ -23,7 +23,7 @@ Both transports must expose the same core participant-verification and audio int
 
 Before a release claims support, record the client and version, homeserver and version, transport protocol, encryption mode, verification flow, and audio results. Include at least one non-Element client where an appropriate implementation exists. Check bidirectional audio, leave/rejoin, key rotation, network interruption, and independent simultaneous calls.
 
-No client has passed this repository's audio interoperability tests yet. This document describes the implementation target and release criteria.
+Synthetic SDK peers pass real state-membership MatrixRTC key distribution, encrypted bidirectional audio, device persistence, and restart/rejoin; see [Matrix integration evidence](matrix-integration.md). No released Matrix client application has passed interoperability testing yet. Sticky membership and legacy VoIP remain unverified against real clients.
 
 ## Sources
 

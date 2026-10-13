@@ -32,15 +32,17 @@ Decision rationale and changes are recorded in [ADRs](adr/README.md). This statu
 - A participant verifier binding public SDK membership identities to connected encrypted LiveKit audio, with fresh device-trust checks and bounded core proofs.
 - Locally generated outbound keys distributed through the public encrypted Matrix API only after listener authorization and device verification. Local sending indices remain independent of remote rotations.
 - Real bidirectional encrypted LiveKit audio using the repository key provider in sandboxed Chromium, including wrong-key rejection with continued RTP traffic, recovery, and key rotation. This media-layer check supplies test keys directly; see [evidence and limits](media-integration.md).
+- Real MatrixRTC state membership and encrypted per-device key delivery against Synapse, followed by bidirectional encrypted audio and actual participant verification. Restart/rejoin preserves device trust while requiring fresh call keys; see [evidence and limits](matrix-integration.md).
 
 `pnpm check` and the worker container check pass locally. The current suite has 314 passing tests, with 100% per-file runtime coverage. Tests use isolated fixtures, temporary profiles, and local test services. GitHub Actions has also passed package installation, full coverage, image build, and container checks.
 
 ## Remaining release work
 
-- MatrixRTC and legacy VoIP transport implementations, verified device state, and media encryption.
-- Speech provider adapters and bidirectional audio integration.
+- MatrixRTC focus discovery/authorization, production device enrollment and worker wiring, automated membership-driven publication suspension/key rotation, modern sticky membership, and the browser-worker image.
+- Legacy VoIP transport implementation.
+- Speech provider adapters and the complete STT/agent/TTS audio pipeline.
 - Model-backed OpenClaw dispatch and a supported privileged execution/approval path. The pinned SDK does not allow a community plugin to admit owner authority; see [ADR 0004](adr/0004-delegated-openclaw-ingress.md).
 - Real encrypted audio interoperability with documented client versions, including a non-Element client where compatible calling support exists.
 - Marketplace validation, source provenance, release assets, and publication setup.
 
-No Matrix client has passed a real audio call test yet. The repository is a development baseline, not a deployable calling release.
+Synthetic Matrix SDK peers have passed real encrypted audio tests. No released Matrix client application has passed interoperability testing yet. The worker still reports `ready: false`; the repository is a development baseline, not a deployable calling release.

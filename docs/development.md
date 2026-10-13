@@ -27,3 +27,5 @@ When changing the native channel configuration shape, run `pnpm schema:sync` and
 To check the container, build `deployment/worker.Dockerfile` with the `matrix-call-worker:0.1.0-alpha.1` tag and run `pnpm verify:container`. It uses a temporary secret and removes its test container afterward. GitHub Actions runs these same standard commands; local development and other CI hosts do not require GitHub APIs or marketplace access.
 
 For actual encrypted WebRTC audio, run `pnpm browser:install` and `pnpm verify:media`. This separate integration check starts temporary local infrastructure and sandboxed browsers; see [media integration](media-integration.md) for its evidence and scope.
+
+Run `pnpm verify:matrix` to add a disposable Synapse homeserver, persistent device trust, encrypted MatrixRTC key delivery, actual participant verification, and audio across restart/rejoin. See [Matrix integration](matrix-integration.md) for the tested protocol mode and remaining production gaps.

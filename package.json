@@ -14,6 +14,7 @@
     "verify:plugin": "node scripts/verify-plugin.mjs",
     "verify:container": "node scripts/verify-container.mjs",
     "verify:media": "node scripts/verify-media.mjs",
+    "verify:matrix": "node scripts/verify-matrix.mjs",
     "browser:install": "PLAYWRIGHT_BROWSERS_PATH=.cache/browsers playwright-core install chromium",
     "schema:sync": "pnpm build && node scripts/sync-manifest.mjs",
     "typecheck": "tsc --noEmit",

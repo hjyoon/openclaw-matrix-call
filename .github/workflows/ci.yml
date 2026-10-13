@@ -42,3 +42,4 @@ jobs:
       - run: PLAYWRIGHT_BROWSERS_PATH=.cache/browsers pnpm exec playwright-core install --with-deps chromium
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: pnpm verify:media
+      - run: pnpm verify:matrix
