@@ -107,7 +107,7 @@ export class OpenIdFocusAuthorizer implements FocusAuthorizationPort {
   readonly #now: () => number;
   readonly #fetch: typeof globalThis.fetch;
 
-  constructor({ focusUrls, sfuUrls, allowInsecureLoopback = false, timeoutMs = 30_000, now = Date.now, fetch: fetcher = globalThis.fetch }: OpenIdFocusOptions) {
+  constructor({ focusUrls, sfuUrls, allowInsecureLoopback = false, timeoutMs = 30_000, now = Date.now, fetch: fetcher = globalThis.fetch.bind(globalThis) }: OpenIdFocusOptions) {
     if (focusUrls.length < 1 || focusUrls.length > 32 || sfuUrls.length < 1 || sfuUrls.length > 32 || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000) {
       throw new FocusAuthorizationError("invalid-config");
     }

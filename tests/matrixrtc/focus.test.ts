@@ -34,6 +34,22 @@ function fixture() {
 }
 
 describe("OpenIdFocusAuthorizer", () => {
+  it("binds the native browser fetch to its global receiver", async () => {
+    const f = fixture();
+    const { fetch: _fetch, ...options } = f.options;
+    const browserFetch = vi.fn(function (this: unknown) {
+      if (this !== globalThis) throw new TypeError("Illegal invocation");
+      return Promise.resolve(response());
+    });
+    vi.stubGlobal("fetch", browserFetch);
+    try {
+      const authorizer = new OpenIdFocusAuthorizer(options);
+      expect((await authorizer.authorize(f.source, f.signal)).identity).toBe(member.participantId);
+      expect(browserFetch).toHaveBeenCalledOnce();
+      expect(() => browserFetch.call({})).toThrow("Illegal invocation");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("exchanges only the local OpenID token with a configured focus and binds the returned grant", async () => {
     const { source, authorizer, fetcher, signal } = fixture();
     const grant = await authorizer.authorize(source, signal);
