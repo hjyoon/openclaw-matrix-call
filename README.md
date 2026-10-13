@@ -8,4 +8,6 @@ Agent runtimes, model providers, speech services, and persistence use replaceabl
 
 Current development rules live in [AGENTS.md](AGENTS.md). Architectural decisions and changes are recorded in [ADRs](docs/adr/README.md).
 
-This repository is under active development. A working encrypted call is a release requirement, not an assumed capability.
+This repository is under active development. The portable core, agent adapters, native plugin registration, worker control plane, package checks, and container baseline are implemented. MatrixRTC/VoIP audio and speech integration remain unfinished; no calling release is ready. See [Implementation status](docs/implementation-status.md).
+
+Use Node.js 24.16.0 and pnpm 10.28.2, then run `pnpm install --frozen-lockfile` and `pnpm check`. Runtime coverage is enforced at 100% per file. See [Development](docs/development.md) for container checks and [Worker](docs/worker.md) for the development control plane.
