@@ -76,13 +76,28 @@ describe("publishMatrixRtcKey", () => {
   });
 
   it.each([
-    [], [remote], [local, local],
+    [local, local],
     [local, { ...remote, participantId: local.participantId }],
     [local, ...Array.from({ length: 64 }, (_, i) => ({ ...remote, participantId: `remote-${i}` }))],
   ].map((members) => ({ members })))("requires unique bounded local membership", async ({ members }) => {
     const { source, setMembers, signal } = fixture();
     setMembers(members);
     await expect(publishMatrixRtcKey(source, 0, signal)).rejects.toThrow("local membership is unavailable");
+  });
+
+  it.each([[], [remote]].map((members) => ({ members })))("sends no keys while a joined local membership is temporarily absent %#", async ({ members }) => {
+    const f = fixture(); f.setMembers(members);
+    expect(await publishMatrixRtcKey(f.source, 0, f.signal)).toBe(false);
+    expect(f.source.client.encryptAndSendToDevice).not.toHaveBeenCalled(); expect(f.provider.getKeys()).toEqual([]);
+    f.setMembers([local, remote]); expect(await publishMatrixRtcKey(f.source, 1, f.signal)).toBe(true);
+  });
+
+  it("still rejects unknown and unverified listeners while local membership is pending", async () => {
+    const f = fixture(); f.setMembers([{ ...remote, userId: "@unknown:example.org" }]);
+    await expect(publishMatrixRtcKey(f.source, 0, f.signal)).rejects.toThrow("listener is not authorized");
+    f.setMembers([remote]); f.getDeviceVerificationStatus.mockResolvedValueOnce(new DeviceVerificationStatus({ localVerified: false }));
+    await expect(publishMatrixRtcKey(f.source, 1, f.signal)).rejects.toThrow("listener device is not verified");
+    expect(f.source.client.encryptAndSendToDevice).not.toHaveBeenCalled();
   });
 
   it("requires a joined local session", async () => {

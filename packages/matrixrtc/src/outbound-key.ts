@@ -20,11 +20,11 @@ export async function publishMatrixRtcKey(source: OutboundKeySource, index: numb
   const own = members.filter((member) => member.userId === userId && member.deviceId === deviceId);
   const now = source.now();
   if (!Number.isSafeInteger(now) || now < 0) throw new Error("Invalid MatrixRTC clock");
-  if (!source.isJoined() || own.length !== 1 || members.length > 64 ||
+  if (!source.isJoined() || own.length > 1 || members.length > 64 ||
       new Set(members.map((member) => member.participantId)).size !== members.length) {
     throw new Error("MatrixRTC local membership is unavailable");
   }
-  const local = own[0]!;
+  const local = own[0];
   for (const member of members) {
     if ((member !== local && !source.owners.includes(member.userId)) || !Number.isSafeInteger(member.createdAtMs) || member.createdAtMs < 0 || member.createdAtMs > now ||
         (member.expiresAtMs !== undefined && (!Number.isSafeInteger(member.expiresAtMs) || member.expiresAtMs <= now))) {
@@ -40,6 +40,7 @@ export async function publishMatrixRtcKey(source: OutboundKeySource, index: numb
     signal.throwIfAborted();
     if (!status?.isVerified()) throw new Error("MatrixRTC listener device is not verified");
   }
+  if (!local) return false;
   const current = () => {
     const currentNow = source.now();
     return !signal.aborted && source.isJoined() && JSON.stringify(source.memberships()) === snapshot &&

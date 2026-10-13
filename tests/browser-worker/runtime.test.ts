@@ -5,9 +5,10 @@ import { DeviceVerificationStatus } from "matrix-js-sdk/lib/crypto-api/index.js"
 import { Device } from "matrix-js-sdk/lib/models/device.js";
 import { MatrixRTCSessionEvent, type CallMembership } from "matrix-js-sdk/lib/matrixrtc/index.js";
 import { ConnectionState, RoomEvent, Track } from "livekit-client";
-import { BrowserMatrixRuntime, waitUntil, refreshPublication, authorizeFocus } from "../../packages/browser-worker/src/runtime.js";
+import { BrowserMatrixRuntime, waitUntil, refreshPublication, authorizeFocus, publicationFailure } from "../../packages/browser-worker/src/runtime.js";
 import { MatrixPublicationGuard, MatrixPublicationChangedError } from "../../packages/browser-worker/src/guard.js";
 import { VerifiedMatrixRtcKeys } from "../../packages/matrixrtc/src/verified-keys.js";
+import { MatrixRtcParticipantVerifier } from "../../packages/matrixrtc/src/participants.js";
 import { parseBrowserConfig } from "../../packages/browser-worker/src/config.js";
 import type { BrowserMedia } from "../../packages/browser-worker/src/media.js";
 import { FocusAuthorizationError, type FocusAuthorizationSource } from "../../packages/matrixrtc/src/focus.js";
@@ -58,6 +59,64 @@ async function admit(f: Awaited<ReturnType<typeof ready>>) {
 }
 
 describe("production Matrix browser runtime", () => {
+  it.each([
+    [new Error("MatrixRTC local membership is unavailable"), "local-membership"],
+    [new Error("MatrixRTC listener is not authorized"), "listener-policy"],
+    [new Error("MatrixRTC listener device is not verified"), "listener-trust"],
+    [new Error("MatrixRTC crypto is unavailable"), "crypto"],
+    [new Error("private information"), "listeners"], ["private information", "listeners"],
+  ])("reports only fixed publication failure categories %#", (error, expected) => {
+    expect(publicationFailure(error)).toBe(expected);
+  });
+
+  it.each(["missing", "duplicate", "left", "invalid-created", "negative-created", "future-created", "invalid-expiry", "expired", "finite-expiry"])
+    ("gates inbound audio on the service's own current membership: %s", async (state) => {
+      const f = await ready(fixture(true)); await f.runtime.connect("!room"); await admit(f);
+      const reference = { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: f.remote.rtcBackendIdentity };
+      const [receive, permitted] = f.media.startCapture.mock.calls[0]!;
+      if (state === "missing") f.session.memberships = [f.remote];
+      else if (state === "duplicate") f.session.memberships = [f.local, f.local, f.remote];
+      else if (state === "left") f.session.isJoined.mockReturnValue(false);
+      else if (state.includes("created")) f.session.memberships = [{ ...f.local, createdTs: () => state === "invalid-created" ? NaN : state === "negative-created" ? -1 : Date.now() + 1000 } as CallMembership, f.remote];
+      else f.session.memberships = [{ ...f.local, getAbsoluteExpiry: () => state === "invalid-expiry" ? NaN : state === "expired" ? Date.now() : Date.now() + 10000 } as CallMembership, f.remote];
+      if (state === "finite-expiry") {
+        expect(permitted(f.remote.rtcBackendIdentity)).toBe(true); await expect(f.runtime.verify(reference, signal())).resolves.toMatchObject({ deviceVerified: true });
+      } else {
+        expect(permitted(f.remote.rtcBackendIdentity)).toBe(false);
+        await expect(f.runtime.verify(reference, signal())).rejects.toThrow("unavailable");
+        receive(f.remote.rtcBackendIdentity, { ...pcm, samples: pcm.samples.slice() }); expect(f.runtime.takeAudio()).toBeNull();
+      }
+      await f.runtime.close();
+    });
+
+  it("suspends publication while delayed leave temporarily removes the local member and reauthorizes before resuming", async () => {
+    vi.useFakeTimers(); const f = await ready(); await f.runtime.connect("!room");
+    f.session.memberships = [f.remote]; f.session.emit(MatrixRTCSessionEvent.MembershipsChanged);
+    await vi.advanceTimersByTimeAsync(200); expect(f.runtime.status().connected).toBe(true);
+    expect(f.media.resume.mock.invocationCallOrder.at(-1)!).toBeLessThan(f.media.suspend.mock.invocationCallOrder.at(-1)!);
+    f.session.memberships = [f.local, f.remote]; f.session.emit(MatrixRTCSessionEvent.MembershipsChanged);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(f.media.resume.mock.invocationCallOrder.at(-1)!).toBeGreaterThan(f.media.suspend.mock.invocationCallOrder.at(-1)!);
+    await f.runtime.close();
+  });
+
+  it.each(["membership", "closed", "closing", "reconnected"])("rejects verification that completes after local state becomes %s", async (changed) => {
+    const f = await ready(); await f.runtime.connect("!room"); await admit(f);
+    const reference = { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: f.remote.rtcBackendIdentity };
+    const proof = await f.runtime.verify(reference, signal());
+    if (changed === "membership") f.cryptoApi.getDeviceVerificationStatus.mockImplementationOnce(async () => {
+      f.session.memberships = [f.remote]; return new DeviceVerificationStatus({ localVerified: true });
+    });
+    else vi.spyOn(MatrixRtcParticipantVerifier.prototype, "verify").mockImplementationOnce(async () => {
+      const closing = f.runtime.disconnect();
+      if (changed !== "closing") await closing;
+      if (changed === "reconnected") await f.runtime.connect("!room");
+      return proof;
+    });
+    await expect(f.runtime.verify(reference, signal())).rejects.toThrow("unavailable");
+    await f.runtime.close();
+  });
+
   it("exposes only verified current call PCM over the private browser interface", async () => {
     const f = await ready(fixture(true));
     expect(f.runtime.takeAudio()).toBeNull(); f.runtime.resumeAudio();

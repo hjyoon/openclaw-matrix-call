@@ -58,6 +58,16 @@ export async function authorizeFocus(authorizer: FocusAuthorizationPort, source:
   }
 }
 
+export function publicationFailure(error: unknown): string {
+  const reasons: readonly (readonly [string, string])[] = [
+    ["MatrixRTC local membership is unavailable", "local-membership"],
+    ["MatrixRTC listener is not authorized", "listener-policy"],
+    ["MatrixRTC listener device is not verified", "listener-trust"],
+    ["MatrixRTC crypto is unavailable", "crypto"],
+  ];
+  return error instanceof Error ? reasons.find(([message]) => error.message === message)?.[1] ?? "listeners" : "listeners";
+}
+
 export class BrowserMatrixRuntime {
   readonly #setup: BrowserSetup;
   readonly #client: MatrixClient;
@@ -134,11 +144,11 @@ export class BrowserMatrixRuntime {
     const refresh = (): void => {
       media.suspend();
       subscribe();
-      if (call.connected) void refreshPublication(guard, AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)])).catch(() => fail("listeners"));
+      if (call.connected) void refreshPublication(guard, AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)])).catch((error) => fail(publicationFailure(error)));
     };
     const changed = (): void => { call.input.reset(); refresh(); };
     const input = new VerifiedAudioInbox({ verify: (reference, signal) => this.verify(reference, signal) },
-      (reference) => this.#call === call && call.connected && !controller.signal.aborted && keys.hasCurrentKey(reference.participantId),
+      (reference) => this.#call === call && call.connected && !controller.signal.aborted && this.#localMembership(call) && keys.hasCurrentKey(reference.participantId),
       () => media.resetCapture());
     const call: ActiveCall = { roomId, session, media, keys, guard, controller, connected: false, receive, changed, stateFailed, mediaFailed, encryptionFailed, subscribe, timer: undefined, closing: undefined, input, playing: false };
     this.#call = call;
@@ -153,7 +163,7 @@ export class BrowserMatrixRuntime {
     try {
       if (this.#setup.captureAudio) await media.startCapture((identity, audio) => {
         void input.accept({ roomId, rtcSessionId: slotId, participantId: identity }, audio).catch(() => fail("capture"));
-      }, (identity) => input.listening && call.connected && !controller.signal.aborted && keys.hasCurrentKey(identity), () => fail("capture"));
+      }, (identity) => input.listening && call.connected && !controller.signal.aborted && this.#localMembership(call) && keys.hasCurrentKey(identity), () => fail("capture"));
       session.joinRTCSession({ userId, deviceId, memberId: `${userId}:${deviceId}` }, [
         { type: "livekit", livekit_service_url: this.#setup.policy.focusUrls[0]!, livekit_alias: roomId },
       ], undefined, { manageMediaKeys: false, callIntent: "audio", membershipEventExpiryMs: 60_000, delayedLeaveEventDelayMs: 5_000, delayedLeaveEventRestartMs: 2_000 });
@@ -194,9 +204,20 @@ export class BrowserMatrixRuntime {
 
   async verify(reference: ParticipantReference, signal: AbortSignal) {
     const call = this.#call;
-    if (!call?.connected || call.controller.signal.aborted) throw new Error("Matrix media is unavailable");
-    return new MatrixRtcParticipantVerifier({ roomId: call.roomId, client: this.#client, session: call.session,
+    if (!call?.connected || call.controller.signal.aborted || !this.#localMembership(call)) throw new Error("Matrix media is unavailable");
+    const proof = await new MatrixRtcParticipantVerifier({ roomId: call.roomId, client: this.#client, session: call.session,
       media: call.media.room, keys: call.keys, now: Date.now }).verify(reference, signal);
+    if (this.#call !== call || call.controller.signal.aborted || !this.#localMembership(call)) throw new Error("Matrix media is unavailable");
+    return proof;
+  }
+
+  #localMembership(call: ActiveCall): boolean {
+    const { userId, deviceId } = this.#setup.credentials;
+    const members = call.session.memberships.filter((member) => member.userId === userId && member.deviceId === deviceId);
+    if (!call.session.isJoined() || members.length !== 1) return false;
+    const member = membershipSnapshot(members[0]!); const now = Date.now();
+    return Number.isSafeInteger(member.createdAtMs) && member.createdAtMs >= 0 && member.createdAtMs <= now &&
+      (member.expiresAtMs === undefined || (Number.isSafeInteger(member.expiresAtMs) && member.expiresAtMs > now));
   }
 
   takeAudio() { return this.#call?.input.take() ?? null; }
