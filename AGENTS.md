@@ -10,6 +10,8 @@ Maintain 100% statement, branch, function, and line coverage for every runtime s
 
 Use public SDK interfaces and explicit version compatibility. Never treat a display name, transcript, or caller-supplied role as proof of identity.
 
+Keep the core and worker independent of OpenClaw and hosted vendors. Isolate agent, speech, RTC, identity-verification, and persistence integrations behind documented ports and adapters. No hosted vendor account may be mandatory for the portable core.
+
 Keep credentials and runtime state outside the repository. Use isolated test accounts and infrastructure for integration tests.
 
 Document implementation status accurately. An encrypted call must pass an interoperability test before the package claims Element Call support.

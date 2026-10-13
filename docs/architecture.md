@@ -4,6 +4,8 @@ The repository contains an OpenClaw channel plugin, an isolated RTC worker, and 
 
 The plugin owns agent dispatch, call session routing, and caller policy. The worker owns Matrix device state, MatrixRTC membership, LiveKit audio, and media encryption. Speech recognition and synthesis use explicitly configured external providers.
 
+The core and worker are host-independent. OpenClaw, MatrixRTC, LiveKit, speech, and persistence integrations use replaceable adapters as described in [Portability](portability.md).
+
 Each call receives a new random identifier. A room identifier and an agent identifier do not define a call session. Concurrent calls must not share history or mutable active-agent state.
 
 The worker-to-plugin boundary uses a dedicated secret and authenticated messages. The worker does not receive the Gateway operator token. Caller identity must come from verified Matrix membership and the corresponding LiveKit participant, not from speech, display names, or HTTP payload assertions alone.
