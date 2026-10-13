@@ -43,7 +43,7 @@ Decision rationale and changes are recorded in [ADRs](adr/README.md). This statu
 - Production-driver encrypted PCM publication and participant verification against real isolated infrastructure, including preserved device keys, fresh worker sessions, and restart/rejoin. See [Browser worker](browser-worker.md) for configuration and remaining limits.
 - The production browser image restoring the same device profile, exchanging authenticated Matrix keys, connecting through the actual authorization service, retaining extra PID/seccomp isolation, and shutting down without an OOM or nonzero exit.
 
-`pnpm check` and the worker container check pass locally. The current suite has 531 passing tests, with 100% per-file runtime coverage across 31 non-empty files. Tests use isolated fixtures, temporary profiles, and local test services. GitHub Actions checks package installation, full coverage, image builds, and container behavior.
+`pnpm check` and the worker container check pass locally. The current suite has 532 passing tests, with 100% per-file runtime coverage across 31 non-empty files. Tests use isolated fixtures, temporary profiles, and local test services. GitHub Actions has passed package installation, full coverage, both image builds, Chromium sandbox checks, and production-driver/container behavior.
 
 ## Remaining release work
 
