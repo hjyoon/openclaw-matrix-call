@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated: 2026-10-13. This is the current development baseline; earlier server setup and the community voice-plugin audit are background, not deployment instructions for this repository.
+Updated: 2026-10-14. This is the current development baseline; earlier server setup and the community voice-plugin audit are background, not deployment instructions for this repository.
 
 ## Current scope
 
@@ -49,14 +49,21 @@ Decision rationale and changes are recorded in [ADRs](adr/README.md). This statu
 - Optional external voice configuration and Compose mounts, with distinct control, agent and speech secrets and authenticated capability checks before Matrix starts.
 - A complete production-driver voice path using real encrypted input, signed STT/agent/TTS protocol fixtures and measured encrypted synthesized PCM output. Two turns preserve the call's history; session end aborts a real pending STT HTTP request.
 - The same voice path inside the production browser image after restoring its profile, with a fresh conversation UUID and empty history while retaining device keys and renderer isolation.
+- An optional standalone signed speech service with one active operation, strict UTF-8/request limits, dedicated secret-file configuration, model integrity checks, deadlines, disconnect cancellation and graceful shutdown.
+- Replaceable local whisper.cpp/eSpeak adapters with private WAV inputs, owned PCM conversion, band-limited recognition resampling, no-shell execution, bounded output and actual child termination on cancellation.
+- A pinned non-root CPU speech image with upstream CPU feature selection, read-only model mounts, explicit CPU/RAM/PID limits, source archives, license files and a corresponding build recipe.
+- Real Korean and English public speech clips through the speech service and portable voice coordinator using both multilingual `base` and `small` models. Signed agent dispatch is a deterministic fixture; identity and output transport are fixtures. Both models produce expected words but make Korean transcription errors; see [speech evidence](speech-integration.md).
+- Non-silent Korean/English 22,050 Hz synthesis, actual recognition cancellation and temporary-file removal, signed concurrent-work rejection, and a subsequent successful synthesis in the same service.
+- Independent peer-container loopback access with separate model/credential mounts and rejected unauthenticated execution, plus a checked three-file Compose configuration with speech health before browser startup and no published speech port.
+- Real encrypted 22,050 Hz fixture PCM publication through the existing Matrix/browser-driver integration, matching the local synthesis engine's output rate.
 
-The current suite has 719 passing tests, with 100% per-file runtime coverage across 40 non-empty files. Tests use isolated fixtures, temporary profiles, and local test services. Full package/worker/plugin checks and the updated production-driver/browser-image integration pass locally. The voice fixtures analyze actual audio tones and generate deterministic text/PCM; no speech or language model is evaluated by those checks. GitHub Actions runs the same package, image, sandbox and encrypted integration commands.
+The current suite has 870 passing tests, with 100% per-file runtime coverage across 47 non-empty files. Tests use isolated fixtures, temporary profiles, and local test services. Full package/worker/plugin checks, the updated Matrix/browser-driver integration, and both real speech model image checks pass locally. The Matrix voice fixtures analyze tones and generate deterministic text/PCM; they do not run a speech or language model. The separate speech image check runs actual recognition/synthesis engines with fixture authority, agent and output transport. GitHub Actions runs the package, image, sandbox, encrypted integration and both speech model checks.
 
 ## Remaining release work
 
 - Homeserver-mediated MatrixRTC focus discovery/authorization, modern sticky membership, SAS enrollment UI, and target-server deployment/resource measurements.
 - Legacy VoIP transport implementation.
-- Real speech model/provider integration, recognition quality/language checks and voice latency/resource measurements; streaming and interruption remain separate design work.
+- Complete Matrix voice turns with the real speech service, broader recognition accuracy, human pronunciation evaluation and target-server latency/resource measurements. Streaming and interruption remain separate design work.
 - Model-backed OpenClaw dispatch and a supported privileged execution/approval path. The pinned SDK does not allow a community plugin to admit owner authority; see [ADR 0004](adr/0004-delegated-openclaw-ingress.md).
 - Real encrypted audio interoperability with documented client versions, including a non-Element client where compatible calling support exists.
 - Marketplace validation, source provenance, release assets, and publication setup.

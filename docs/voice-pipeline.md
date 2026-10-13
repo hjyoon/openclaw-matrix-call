@@ -21,6 +21,8 @@ Synthesis is limited to ten seconds per reply. A bridge must generate a response
 
 See [speech protocol](speech-protocol.md) and [ADR 0009](adr/0009-bounded-portable-voice-turns.md).
 
+An optional [local speech worker](speech-worker.md) supplies these ports using pinned CPU engines through the same signed protocol. Its [real-model checks](speech-integration.md) use Korean/English public clips and fixture identity, agent and output transport. The Matrix fixture check separately validates encrypted 22,050 Hz output. A complete Matrix voice turn with the real engines still needs its own interoperability evidence.
+
 ## Audio collection
 
 The browser worklet emits 20ms mono floating point chunks at the audio context rate. It reads the actual quantum length rather than assuming 128 samples, using the [Web Audio processing interface](https://developer.mozilla.org/en-US/docs/Web/API/AudioWorkletProcessor/process). At most one message can be pending until the main thread acknowledges it. A reset changes the capture epoch, discards partial input and rejects acknowledgments from an older epoch.
