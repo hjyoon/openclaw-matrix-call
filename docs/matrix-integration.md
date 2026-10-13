@@ -1,6 +1,6 @@
 # MatrixRTC integration evidence
 
-Run `pnpm browser:install` once, then `pnpm verify:matrix`. The check uses disposable local Synapse and LiveKit containers, test accounts, and separate persistent sandboxed Chromium profiles. It does not access production Matrix accounts or services. The Synapse container runs with the invoking non-root user's UID/GID so its private temporary data remains readable only to that user.
+Run `pnpm build`, install Chromium once with `pnpm browser:install`, then run `pnpm verify:matrix`. The check uses disposable local Synapse and LiveKit containers, test accounts, and separate persistent sandboxed Chromium profiles. It does not access production Matrix accounts or services. The Synapse container runs with the invoking non-root user's UID/GID so its private temporary data remains readable only to that user.
 
 ## Tested stack
 
@@ -21,15 +21,18 @@ The tested MatrixRTC mode uses `m.call.member` state membership, room slot `m.ca
 - The same admitted keys decrypt actual 440 Hz and 660 Hz audio in both directions through the SFU.
 - The actual participant verifier matches the Matrix user/device to a connected, subscribed, encrypted audio track and obtains fresh device trust.
 - Leaving removes the old remote key's authority. Restarting preserves device fingerprints and trust while restoring no active-call key proof.
-- Rejoining generates new local media keys. One peer rotates to index 1 while the restarted peer sends at index 0; both directions still work, including a distinct 880 Hz rejoined stream.
+- Rejoining generates new local media keys with independent sending indices. Discarded snapshots consume indices instead of reusing them; both directions still work, including a distinct 880 Hz rejoined stream.
 - Rejoining through a fresh worker control instance produces a new media session ID. Media leave cleans up the Matrix session and audio resources, and the other peer loses the departed membership's key authority.
 - Caller verification succeeds again after rejoin using the actual new membership and live media.
+- The production browser package validates a new service device, enrolls explicitly pinned owner keys, and executes the same signed worker control protocol.
+- The production driver sends real 880 Hz and 1100 Hz PCM through encrypted media and verifies the owner's actual inbound track. Its persistent profile survives restart with the same device keys and fresh call/session state.
+- The optional image restores that device profile, completes real authorization and encrypted Matrix key exchange, retains non-root execution and additional Chromium PID/seccomp isolation, and exits cleanly after signed media leave.
 
 The separate [media check](media-integration.md) also verifies that wrong-key receivers remain silent while receiving RTP packets, followed by recovery and key rotation.
 
 ## Limits
 
-The tested focus mode is the explicit standalone OpenID endpoint. Homeserver-mediated MSC4195 discovery/authorization is not covered. The worker uses an injected test browser driver; production browser-driver packaging/configuration, automatic membership-driven publication suspension/rotation, production device enrollment, a browser-worker image, STT/TTS, and model-backed call dispatch remain unfinished.
+The tested focus mode is the explicit standalone OpenID endpoint. Homeserver-mediated MSC4195 discovery/authorization is not covered. The harness first uses injected test peers, then the actual production browser driver and explicit fingerprint enrollment. The optional image check restores the same private device profile inside Docker. Speech capture, STT/TTS, SAS enrollment UI, and model-backed call dispatch remain unfinished.
 
 The authorization service reaches the real Synapse OpenID userinfo endpoint through a temporary loopback HTTPS proxy. That proxy has a disposable self-signed test certificate, so certificate verification is disabled only inside this isolated test authorization-service container. Production clients retain the TLS requirement; no insecure setting is added to the worker deployment.
 

@@ -10,11 +10,13 @@ The connection deadline applies only to opening media. Completing an HTTP operat
 
 Backend drivers must honor the connection abort signal and release their browser/media resources when disconnected. A driver must create new media/key resources for a new call while preserving only its private Matrix crypto profile. A transport that never settles after cancellation cannot be safely reused; the controller retains its reservation.
 
+Adapters can call `endSession()` when the backend ends a call. It shares the existing cancellation and cleanup path and releases the active reservation without treating a status message as caller authority. `startWorker` accepts an optional close hook for idle backend resources and invokes it even when media cleanup fails.
+
 The control layer does not create, reset, or delete an SFU room. It delegates connection to the configured transport. Agent ingress, STT/TTS, speaker authorization, and listener-aware publication/key rotation remain separate runtime responsibilities.
 
 ## Authenticated API
 
-Inject the controller into `createWorkerServer(secret, media)` or `startWorker(env, media)`. The standalone CLI has no browser driver configured yet and continues to report unavailable media. The injected driver can be replaced without importing its SDK into the portable worker.
+Inject the controller into `createWorkerServer(secret, media)` or `startWorker(env, media)`. The control-only CLI reports unavailable media. The optional [browser worker](browser-worker.md) supplies a production driver; another driver can be substituted without importing its SDK into the portable worker.
 
 | POST path | Strict request body | Success |
 | --- | --- | --- |

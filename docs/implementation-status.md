@@ -37,14 +37,19 @@ Decision rationale and changes are recorded in [ADRs](adr/README.md). This statu
 - A portable worker media controller with configured room access, independent session IDs, capacity reservation, cancellation/timeouts, late-completion fencing, and idempotent backend cleanup.
 - Authenticated media status/join/leave HTTP endpoints with signed results and errors, replay/path binding, request-disconnect cancellation, and injected transport shutdown. Assistant readiness remains unavailable.
 - Real worker media-control HTTP requests driving the encrypted Matrix/LiveKit browser harness, including configured-room rejection, signed session responses, leave, and fresh sessions after restart.
+- An optional production browser package with strict external credential configuration, actual token/user/device binding before crypto initialization, explicit fingerprint pinning, persistent device-key manifests, stable loopback origins, and exclusive private profiles.
+- Fresh MatrixRTC/media resources per call, authenticated-key admission before remote audio subscription, immediate playback suspension on membership changes, serialized listener verification/key rotation, and bounded reauthorization of discarded membership snapshots.
+- A pinned browser-worker image and Compose example retaining Chromium's namespace and Seccomp-BPF sandboxes with non-root execution, a read-only root, dropped capabilities, a private data volume, and a documented Moby-derived seccomp policy.
+- Production-driver encrypted PCM publication and participant verification against real isolated infrastructure, including preserved device keys, fresh worker sessions, and restart/rejoin. See [Browser worker](browser-worker.md) for configuration and remaining limits.
+- The production browser image restoring the same device profile, exchanging authenticated Matrix keys, connecting through the actual authorization service, retaining extra PID/seccomp isolation, and shutting down without an OOM or nonzero exit.
 
-`pnpm check` and the worker container check pass locally. The current suite has 414 passing tests, with 100% per-file runtime coverage. Tests use isolated fixtures, temporary profiles, and local test services. GitHub Actions has also passed package installation, full coverage, image build, and container checks.
+`pnpm check` and the worker container check pass locally. The current suite has 531 passing tests, with 100% per-file runtime coverage across 31 non-empty files. Tests use isolated fixtures, temporary profiles, and local test services. GitHub Actions checks package installation, full coverage, image builds, and container behavior.
 
 ## Remaining release work
 
-- Homeserver-mediated MatrixRTC focus discovery/authorization, production browser-driver packaging/configuration and device enrollment, automated membership-driven publication suspension/key rotation, modern sticky membership, and the browser-worker image.
+- Homeserver-mediated MatrixRTC focus discovery/authorization, modern sticky membership, SAS enrollment UI, and target-server deployment/resource measurements.
 - Legacy VoIP transport implementation.
-- Speech provider adapters and the complete STT/agent/TTS audio pipeline.
+- Speech capture/provider adapters and the complete STT/agent/TTS audio pipeline.
 - Model-backed OpenClaw dispatch and a supported privileged execution/approval path. The pinned SDK does not allow a community plugin to admit owner authority; see [ADR 0004](adr/0004-delegated-openclaw-ingress.md).
 - Real encrypted audio interoperability with documented client versions, including a non-Element client where compatible calling support exists.
 - Marketplace validation, source provenance, release assets, and publication setup.
