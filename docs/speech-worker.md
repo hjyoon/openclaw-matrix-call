@@ -23,3 +23,5 @@ After building artifacts, `pnpm speech:model` downloads or verifies the pinned m
 The dedicated image uses Node 24.16.0, whisper.cpp 1.9.4 and eSpeak NG 1.52.0 with pinned source archive hashes. Upstream GGML chooses a compatible CPU variant at runtime, with no build-host-specific instruction requirement. Linux amd64 is the checked image platform; other architectures are not certified by this evidence. The runtime contains no OpenClaw, Matrix or Playwright dependency, no compiler and no model download tool. Both engines' license files, complete unmodified source archives, source pins and the image build recipe are included under `/app/licenses` and `/app/sources`. eSpeak NG is GPL-3.0-or-later; its source and build recipe accompany the executable.
 
 See [real speech integration evidence](speech-integration.md) for fixture provenance, cancellation checks and measured limits.
+
+See [optional local speech deployment](local-speech-deployment.md) for private configuration files, shared-loopback Compose networking and service restart behavior.

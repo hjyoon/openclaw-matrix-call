@@ -14,6 +14,7 @@
     "verify:plugin": "node scripts/verify-plugin.mjs",
     "verify:container": "node scripts/verify-container.mjs",
     "verify:speech": "node scripts/verify-speech.mjs",
+    "verify:speech-compose": "node scripts/verify-speech-compose.mjs",
     "speech:model": "node scripts/download-speech-model.mjs",
     "verify:media": "node scripts/verify-media.mjs",
     "verify:matrix": "node scripts/verify-matrix.mjs",

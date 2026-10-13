@@ -1,0 +1,55 @@
+services:
+  browser-worker:
+    network_mode: service:speech-worker
+    ports: !reset []
+    depends_on:
+      speech-worker:
+        condition: service_healthy
+        restart: true
+
+  speech-worker:
+    build:
+      context: ..
+      dockerfile: deployment/speech-worker.Dockerfile
+    image: matrix-call-speech-worker:0.1.0-alpha.1
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 1536m
+    memswap_limit: 1536m
+    cpus: 2.0
+    stop_grace_period: 5s
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    ports:
+      - "127.0.0.1:${MATRIX_CALL_CONTROL_PORT:-19790}:19790"
+    environment:
+      MATRIX_CALL_SPEECH_CONFIG: /run/config/speech.json
+    configs:
+      - source: speech_config
+        target: /run/config/speech.json
+    secrets:
+      - source: voice_speech_secret
+        target: voice_speech_secret
+    volumes:
+      - type: bind
+        source: "${MATRIX_CALL_SPEECH_MODEL:?Set MATRIX_CALL_SPEECH_MODEL to an absolute verified model-file path}"
+        target: /models/model.bin
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:19792/healthz').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+configs:
+  speech_config:
+    file: "${MATRIX_CALL_SPEECH_CONFIG:?Set MATRIX_CALL_SPEECH_CONFIG to an absolute speech-config path}"

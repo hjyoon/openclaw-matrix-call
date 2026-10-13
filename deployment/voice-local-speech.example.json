@@ -1,0 +1,14 @@
+{
+  "agentId": "assistant",
+  "agent": {
+    "baseUrl": "https://agent.example.org",
+    "secretFile": "/run/secrets/voice_agent_secret"
+  },
+  "speech": {
+    "baseUrl": "http://127.0.0.1:19792",
+    "secretFile": "/run/secrets/voice_speech_secret"
+  },
+  "requestTimeoutMs": 70000,
+  "timeoutMs": 120000,
+  "allowInsecureLoopback": true
+}
