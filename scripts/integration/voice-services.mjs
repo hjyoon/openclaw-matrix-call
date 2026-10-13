@@ -5,7 +5,7 @@ import { once } from "node:events";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-export async function startTestVoiceServices(root) {
+export async function startTestVoiceServices(root, { agentReply = () => "Fixture agent response" } = {}) {
   const { RequestAuthenticator, parseAgentRequest } = await import(pathToFileURL(path.join(root, "dist/core/index.js")));
   const { decodePcm, encodePcm, transcriptionRequestSchema, synthesisRequestSchema } = await import(pathToFileURL(path.join(root, "dist/speech-http/index.js")));
   const agentSecret = randomBytes(32).toString("hex"); const speechSecret = randomBytes(32).toString("hex");
@@ -53,13 +53,13 @@ export async function startTestVoiceServices(root) {
         } else send(payload);
       } else if (url === "/agent/turns") {
         const input = parseAgentRequest(parsed); state.turns.push(input);
-        send({ protocolVersion: 1, conversationId: input.conversationId, turnId: input.turnId, text: "Fixture agent response" });
+        send({ protocolVersion: 1, conversationId: input.conversationId, turnId: input.turnId, text: agentReply(input) });
       } else {
         assert.equal(url, "/speech/syntheses"); const input = synthesisRequestSchema.parse(parsed);
         assert.equal(input.text, "Fixture agent response"); state.syntheses++;
-        const samples = new Int16Array(96_000);
-        for (let i = 0; i < samples.length; i++) samples[i] = Math.round(Math.sin(2 * Math.PI * 1320 * i / 48000) * 8192);
-        send({ protocolVersion: 1, requestId: input.requestId, audio: encodePcm({ samples, sampleRate: 48000, channels: 1 }) });
+        const samples = new Int16Array(44_100);
+        for (let i = 0; i < samples.length; i++) samples[i] = Math.round(Math.sin(2 * Math.PI * 1320 * i / 22050) * 8192);
+        send({ protocolVersion: 1, requestId: input.requestId, audio: encodePcm({ samples, sampleRate: 22050, channels: 1 }) });
       }
     } catch { state.invalidRequests++; response.writeHead(500).end(); }
   });

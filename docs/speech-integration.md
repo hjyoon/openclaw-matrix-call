@@ -1,0 +1,14 @@
+# Local speech integration evidence
+
+Checked: 2026-10-14.
+
+Build artifacts with `pnpm build` and build `deployment/speech-worker.Dockerfile` as `matrix-call-speech-worker:0.1.0-alpha.1` before running these checks.
+
+`pnpm verify:speech` starts a disposable non-root image with a read-only root, all capabilities dropped, no privilege gain, 1,536 MiB RAM, no additional swap, two CPUs and 128 PIDs. It uses the [public Korean and English fixtures](../tests/fixtures/speech/README.md), real signed speech requests and a signed deterministic agent fixture. Both turns pass through the portable voice coordinator, preserve one call's history and produce non-silent 22,050 Hz PCM. Identity and output transport are fixtures; this is not a released-client or complete Matrix speech-call test. The existing Matrix integration also checks encrypted publication of 22,050 Hz fixture audio through the production browser driver.
+
+The check rejects a concurrent authenticated operation, aborts an actual recognition request, confirms the child exits and its input WAV is removed, then verifies another synthesis can run. It checks graceful shutdown, source/license availability, and absence of Matrix, browser or OpenClaw dependencies. Reports are written under `.cache/speech/integration-result-<model>.json` and contain timings and counts rather than transcripts. To select the larger model, run `MATRIX_CALL_SPEECH_TEST_MODEL=small pnpm verify:speech`.
+
+Across the serial and concurrent development-host checks, each service used the stated two-CPU limit. The Korean 4.68-second clip and English eight-second clip took 9.3–14.4 and 10.4–12.8 seconds with `base`, compared with 30.8–44.1 and 28.5–35.7 seconds with `small`. Synthesis requests took 26–101 ms and generated approximately 1.30 seconds of Korean and 2.02 seconds of English speech. These are single-run service timings, not a benchmark or measurements from the target laptop. The examples therefore use `base` as the CPU baseline. Recognition checks match a few expected words; both models made Korean transcription errors. Natural pronunciation and broader recognition quality remain unvalidated.
+
+The container check also starts a separate peer in the service's network namespace. It can reach loopback health but cannot see the model or secret mounts, and an unsigned synthesis request is rejected. Sharing loopback connectivity does not share credentials or filesystems.
+

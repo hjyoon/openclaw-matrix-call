@@ -5,7 +5,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { pathToFileURL } from "node:url";
 
-export async function prepareSpeechModel(root, name = "small") {
+export async function prepareSpeechModel(root, name = "base") {
   const pins = JSON.parse(await readFile(path.join(root, "deployment/speech-engines.json"), "utf8"));
   assert(Object.hasOwn(pins.models, name), "Unknown pinned speech model");
   const pin = pins.models[name];
