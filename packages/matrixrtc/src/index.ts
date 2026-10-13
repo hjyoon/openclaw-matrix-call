@@ -5,3 +5,5 @@ export { MatrixRtcParticipantVerifier, membershipSnapshot } from "./participants
 export type { MatrixParticipantSource } from "./participants.js";
 export { publishMatrixRtcKey } from "./outbound-key.js";
 export type { OutboundKeySource } from "./outbound-key.js";
+export { FocusAuthorizationError, OpenIdFocusAuthorizer } from "./focus.js";
+export type { FocusAuthorizationPort, FocusAuthorizationSource, FocusGrant, OpenIdFocusOptions } from "./focus.js";
