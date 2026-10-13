@@ -12,3 +12,8 @@ Across the serial and concurrent development-host checks, each service used the 
 
 The container check also starts a separate peer in the service's network namespace. It can reach loopback health but cannot see the model or secret mounts, and an unsigned synthesis request is rejected. Sharing loopback connectivity does not share credentials or filesystems.
 
+## Combined encrypted Matrix check
+
+`pnpm verify:matrix-speech` uses the same speech image with `base` and the production browser image. Korean and English public clips travel through an encrypted Matrix microphone, real capture and participant verification, actual recognition/synthesis engines and encrypted output. The agent service remains a deterministic fixture; Matrix identity and transport are real. Both the native driver and restored image pass two-turn history, fresh conversation state, child cancellation on leave, input-file removal and shutdown checks.
+
+Playback is peak-normalized and the English input is the continuous three-second phrase at seconds 5–8 of the original fixture. This differs from the full eight-second standalone recognition input. The [Matrix evidence](matrix-integration.md#real-speech-through-matrix) records timing, diagnostic instrumentation and unresolved stability/quality limits. This establishes the speech-service connection to the Matrix path, not native Gateway model dispatch or released-client support.

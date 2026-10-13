@@ -4,7 +4,7 @@ Run `pnpm build`, install Chromium once with `pnpm browser:install`, then run `p
 
 ## Tested stack
 
-On 2026-10-13, the check passed with Synapse 1.162.0, room version 12, `matrix-js-sdk` 43.0.0, Rust crypto WASM 18.9.0 from the lockfile, LiveKit 1.13.9, authorization service 0.8.0, `livekit-client` 2.22.4, Playwright 1.64.0, and Chromium 156.0.8078.4. All server images are pinned by digest in the harness. The peers are SDK test clients, not Element or another released client application.
+On 2026-10-14, the check passed with Synapse 1.162.0, room version 12, `matrix-js-sdk` 43.0.0, Rust crypto WASM 18.9.0 from the lockfile, LiveKit 1.13.9, authorization service 0.8.0, `livekit-client` 2.22.4, Playwright 1.64.0, and Chromium 156.0.8078.4. All server images are pinned by digest in the harness. The peers are SDK test clients, not Element or another released client application.
 
 The tested MatrixRTC mode uses `m.call.member` state membership, room slot `m.call#ROOM`, and per-participant media keys sent over encrypted to-device messages. This is the older MatrixRTC membership representation, not legacy one-to-one `m.call.*` VoIP signaling. Sticky membership is parsed in unit tests but is not covered by this real server check.
 
@@ -36,12 +36,24 @@ The synthetic peers wait for joined, unique current membership before attempting
 
 The separate [media check](media-integration.md) also verifies that wrong-key receivers remain silent while receiving RTP packets, followed by recovery and key rotation.
 
+## Real speech through Matrix
+
+Build both browser and speech images with the documented `0.1.0-alpha.1` development tags, then run `pnpm verify:matrix-speech`. This extends the existing protocol-fixture checks with the actual CPU speech image and multilingual `base` model. Public speech is played through the peer's encrypted microphone track; the production capture worklet and verifier admit it before recognition. The signed agent fixture receives the actual Matrix owner/device, recognized text and call history. Real eSpeak synthesis returns through encrypted media to the peer.
+
+The check peak-normalizes playback to 0.8 full scale. It uses the complete 4.68-second Korean clip and seconds 5–8 of the English clip, a continuous phrase selected for the half-duplex endpointer. It checks Korean fixture keywords and the English word `country`, not an exact transcript. File hashes and original attribution remain unchanged. Quiet-input and arbitrary-pause robustness are not established by this controlled playback.
+
+Each worker mode completes two language turns in one conversation. Restoring the image starts a fresh conversation with empty history and unchanged device keys. A third utterance starts an actual recognition child; signed media leave must terminate it, remove its input WAV and prevent another agent turn. The image retains renderer PID/seccomp isolation and exits without an OOM or nonzero status. The speech service also shuts down cleanly.
+
+The native test launcher adds a passive worklet-message probe that counts chunks, acknowledgements, resets and signal energy without retaining PCM. The production container runs without that probe. Results under `.cache/speech/matrix-integration-result.json` contain scalar observations and image/model identifiers rather than transcripts. The first non-silent replies in the recorded development run arrived approximately 14.5–19.6 seconds after starting input playback, including the input duration and deterministic agent fixture; these are not target-laptop measurements or a model-response benchmark.
+
 ## Limits
 
-The tested focus mode is the explicit standalone OpenID endpoint. Homeserver-mediated MSC4195 discovery/authorization is not covered. The harness first uses injected test peers, then the actual production browser driver and explicit fingerprint enrollment. The optional image check restores the same private device profile inside Docker. Voice uses signed protocol fixtures, not real speech or language models, and now checks 22,050 Hz synthesized PCM. Separate [speech image checks](speech-integration.md) cover real Korean/English engines; this harness does not establish their complete Matrix call integration. Broader recognition quality, target-server latency, SAS enrollment UI and model-backed call dispatch remain unfinished.
+The tested focus mode is the explicit standalone OpenID endpoint. Homeserver-mediated MSC4195 discovery/authorization is not covered. The default check uses signed speech/agent protocol fixtures and 22,050 Hz synthesized PCM. The extended check runs real speech engines with actual Matrix identity and encrypted transport; its agent remains a deterministic fixture. Separate [speech image checks](speech-integration.md) cover both model sizes. Broader recognition quality, target-server latency, SAS enrollment UI and model-backed call dispatch remain unfinished.
+
+Intermittent cold enrollment and later-input timeouts occurred in development runs. The successful controlled-clip check does not establish that those stability cases are resolved; sustained calls, membership renewal, quiet speech and arbitrary pauses still need investigation.
 
 The authorization service reaches the real Synapse OpenID userinfo endpoint through a temporary loopback HTTPS proxy. That proxy has a disposable self-signed test certificate, so certificate verification is disabled only inside this isolated test authorization-service container. Production clients retain the TLS requirement; no insecure setting is added to the worker deployment.
 
 No released Matrix client application has an interoperability claim yet. Future checks must cover modern sticky membership, supported client versions, network interruption, concurrent calls, and actual spoken input/output through the complete agent pipeline.
 
-GitHub Actions runs both integration commands in an isolated runner. Local development uses the same commands without a GitHub or hosted-vendor account. Test credentials, crypto stores, databases, profiles, and containers are removed afterward.
+GitHub Actions runs media, Matrix protocol-fixture and extended real speech checks in isolated runners. Local development uses the same commands without a GitHub or hosted-vendor account. Test credentials, crypto stores, databases, profiles, and containers are removed afterward. Test containers share host loopback to reach disposable services; production deployment uses the separately checked shared-network-namespace Compose configuration, without host networking.

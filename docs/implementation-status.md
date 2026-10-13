@@ -56,16 +56,20 @@ Decision rationale and changes are recorded in [ADRs](adr/README.md). This statu
 - Non-silent Korean/English 22,050 Hz synthesis, actual recognition cancellation and temporary-file removal, signed concurrent-work rejection, and a subsequent successful synthesis in the same service.
 - Independent peer-container loopback access with separate model/credential mounts and rejected unauthenticated execution, plus a checked three-file Compose configuration with speech health before browser startup and no published speech port.
 - Real encrypted 22,050 Hz fixture PCM publication through the existing Matrix/browser-driver integration, matching the local synthesis engine's output rate.
+- Real Korean/English recognition and synthesis through encrypted Matrix microphones, actual participant verification, the production browser driver and the restored production image. Two turns preserve history; the image starts a fresh conversation while retaining device keys.
+- Signed media leave during actual recognition terminates the engine child, removes its temporary WAV and prevents a late agent turn in both worker modes. The real speech path retains image sandboxing and clean shutdown.
 
-The current suite has 870 passing tests, with 100% per-file runtime coverage across 47 non-empty files. Tests use isolated fixtures, temporary profiles, and local test services. Full package/worker/plugin checks, the updated Matrix/browser-driver integration, and both real speech model image checks pass locally. The Matrix voice fixtures analyze tones and generate deterministic text/PCM; they do not run a speech or language model. The separate speech image check runs actual recognition/synthesis engines with fixture authority, agent and output transport. GitHub Actions runs the package, image, sandbox, encrypted integration and both speech model checks.
+The current suite has 870 passing tests, with 100% per-file runtime coverage across 47 non-empty files. Full package/worker/plugin checks and the combined real Matrix speech image check pass locally. The original Matrix voice fixtures use deterministic text/PCM. Separate speech image checks run actual engines with fixture authority, agent and output transport. The combined check runs actual engines with real Matrix identity and encrypted transport; only agent dispatch remains a fixture. Its controlled clip gain/selection does not establish arbitrary-speech or long-call reliability. GitHub Actions runs package, image, sandbox, encrypted integration, both separate speech models and the combined `base`-model check.
 
 ## Remaining release work
 
 - Homeserver-mediated MatrixRTC focus discovery/authorization, modern sticky membership, SAS enrollment UI, and target-server deployment/resource measurements.
 - Legacy VoIP transport implementation.
-- Complete Matrix voice turns with the real speech service, broader recognition accuracy, human pronunciation evaluation and target-server latency/resource measurements. Streaming and interruption remain separate design work.
+- Broader recognition accuracy, quiet-input/pausing behavior, human pronunciation evaluation and target-server latency/resource measurements. Cold enrollment and later-input timeouts occurred during development and remain a stability investigation. Streaming and interruption remain separate design work.
 - Model-backed OpenClaw dispatch and a supported privileged execution/approval path. The pinned SDK does not allow a community plugin to admit owner authority; see [ADR 0004](adr/0004-delegated-openclaw-ingress.md).
 - Real encrypted audio interoperability with documented client versions, including a non-Element client where compatible calling support exists.
 - Marketplace validation, source provenance, release assets, and publication setup.
+
+Native agent-service registration, worker control integration and a clean operator setup flow remain missing. See [public release readiness](release-readiness.md) for the implementation order and evidence gates.
 
 Synthetic Matrix SDK peers have passed real encrypted audio tests. No released Matrix client application has passed interoperability testing yet. The worker still reports `ready: false`; the repository is a development baseline, not a deployable calling release.

@@ -8,7 +8,7 @@ Matrix messaging support does not imply that a client implements a compatible ca
 
 | Protocol | Adapter responsibility | Current implementation |
 | --- | --- | --- |
-| MatrixRTC | Membership, focus discovery, authenticated participant binding, conference media, encryption keys | Key/identity components implemented; synthetic state-membership SDK peers pass encrypted audio; focus authorization and client interoperability pending |
+| MatrixRTC | Membership, focus discovery, authenticated participant binding, conference media, encryption keys | State-membership SDK peers pass encrypted audio, real speech and explicit OpenID focus authorization; homeserver-mediated discovery, sticky-mode integration and released-client interoperability pending |
 | Matrix VoIP | `m.call.*` signaling, SDP/ICE negotiation, party identifiers, direct WebRTC audio | Planned; no audio interoperability claim |
 
 MatrixRTC and legacy Matrix VoIP are separate transports. A client implementing only legacy VoIP must not be treated as a MatrixRTC client, and a legacy invite must not be converted into a conference without an explicit supported negotiation path.
