@@ -5,12 +5,12 @@ import { DeviceVerificationStatus } from "matrix-js-sdk/lib/crypto-api/index.js"
 import { Device } from "matrix-js-sdk/lib/models/device.js";
 import { MatrixRTCSessionEvent, type CallMembership } from "matrix-js-sdk/lib/matrixrtc/index.js";
 import { ConnectionState, RoomEvent, Track } from "livekit-client";
-import { BrowserMatrixRuntime, waitUntil, refreshPublication } from "../../packages/browser-worker/src/runtime.js";
+import { BrowserMatrixRuntime, waitUntil, refreshPublication, authorizeFocus } from "../../packages/browser-worker/src/runtime.js";
 import { MatrixPublicationGuard, MatrixPublicationChangedError } from "../../packages/browser-worker/src/guard.js";
 import { VerifiedMatrixRtcKeys } from "../../packages/matrixrtc/src/verified-keys.js";
 import { parseBrowserConfig } from "../../packages/browser-worker/src/config.js";
 import type { BrowserMedia } from "../../packages/browser-worker/src/media.js";
-import type { FocusAuthorizationSource } from "../../packages/matrixrtc/src/focus.js";
+import { FocusAuthorizationError, type FocusAuthorizationSource } from "../../packages/matrixrtc/src/focus.js";
 import type { BrowserSetup } from "../../packages/browser-worker/src/types.js";
 import { configuration, credentials } from "../fixtures/browser.js";
 
@@ -50,6 +50,19 @@ const pcm = { samples: new Int16Array([1]), sampleRate: 16_000, channels: 1 as c
 const signal = () => new AbortController().signal;
 
 describe("production Matrix browser runtime", () => {
+  it("reauthorizes a changed focus membership and preserves fatal errors and cancellation", async () => {
+    vi.useFakeTimers();
+    const f = await ready();
+    f.authorizer.authorize.mockRejectedValueOnce(new FocusAuthorizationError("membership-changed"));
+    const connecting = f.runtime.connect("!room");
+    await vi.advanceTimersByTimeAsync(100); await connecting;
+    expect(f.authorizer.authorize).toHaveBeenCalledTimes(2);
+    await f.runtime.close();
+    const source = {} as FocusAuthorizationSource;
+    await expect(authorizeFocus(f.authorizer, source, AbortSignal.abort(new Error("cancelled")))).rejects.toThrow("cancelled");
+    f.authorizer.authorize.mockRejectedValueOnce(new FocusAuthorizationError("untrusted-focus"));
+    await expect(authorizeFocus(f.authorizer, source, signal())).rejects.toThrow("untrusted-focus");
+  });
   it("retries discarded and superseded rotations without weakening listener checks", async () => {
     vi.useFakeTimers();
     const f = await ready();

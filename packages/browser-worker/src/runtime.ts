@@ -2,7 +2,7 @@ import { ClientEvent, EventType, type MatrixClient, type ReceivedToDeviceMessage
 import { MatrixRTCSessionEvent, type MatrixRTCSession } from "matrix-js-sdk/lib/matrixrtc/index.js";
 import { RoomEvent, Track } from "livekit-client";
 import type { ParticipantReference, PcmAudio } from "@matrix-call/core";
-import { MatrixMediaKeyProvider, VerifiedMatrixRtcKeys, MatrixRtcParticipantVerifier, membershipSnapshot, OpenIdFocusAuthorizer, type FocusAuthorizationPort, type OutboundKeySource } from "../../matrixrtc/src/index.js";
+import { MatrixMediaKeyProvider, VerifiedMatrixRtcKeys, MatrixRtcParticipantVerifier, membershipSnapshot, OpenIdFocusAuthorizer, FocusAuthorizationError, type FocusAuthorizationPort, type FocusAuthorizationSource, type OutboundKeySource } from "../../matrixrtc/src/index.js";
 import { createMatrixClient, enrollPinnedDevices, initializeMatrixClient, joinedEncryptedRoom } from "./client.js";
 import { createBrowserMedia, type BrowserMedia } from "./media.js";
 import { MatrixPublicationGuard, MatrixPublicationChangedError } from "./guard.js";
@@ -42,6 +42,15 @@ export async function refreshPublication(guard: MatrixPublicationGuard, signal: 
       signal.throwIfAborted();
       if (guard.permits(guard.revision)) return;
     } catch (error) { if (!(error instanceof MatrixPublicationChangedError)) throw error; }
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+export async function authorizeFocus(authorizer: FocusAuthorizationPort, source: FocusAuthorizationSource, signal: AbortSignal) {
+  for (;;) {
+    signal.throwIfAborted();
+    try { return await authorizer.authorize(source, signal); }
+    catch (error) { if (!(error instanceof FocusAuthorizationError) || error.code !== "membership-changed") throw error; }
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
   }
 }
@@ -140,7 +149,7 @@ export class BrowserMatrixRuntime {
       ], undefined, { manageMediaKeys: false, callIntent: "audio", membershipEventExpiryMs: 60_000, delayedLeaveEventDelayMs: 5_000, delayedLeaveEventRestartMs: 2_000 });
       await waitUntil(() => session.isJoined() && own().length === 1, signal);
       await refreshPublication(guard, signal);
-      const grant = await this.#authorizer.authorize({ roomId, slotId, client: this.#client,
+      const grant = await authorizeFocus(this.#authorizer, { roomId, slotId, client: this.#client,
         focus: () => { const oldest = session.getOldestMembership(); return oldest?.getTransport(oldest); },
         membership: () => { const matches = own(); return matches.length === 1 ? matches[0] : undefined; },
       }, signal);
