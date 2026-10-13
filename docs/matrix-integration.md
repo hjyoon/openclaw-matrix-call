@@ -15,19 +15,21 @@ The tested MatrixRTC mode uses `m.call.member` state membership, room slot `m.ca
 - The repository generates local outbound keys and distributes them through the public encrypted Matrix API, with the SDK's own media-key management disabled.
 - Remote key admission uses Rust crypto's authenticated and verified sender/device metadata and the current SDK membership.
 - The configured focus exchanges actual homeserver OpenID tokens through authorization service 0.8.0. The browser receives no SFU signing key. The adapter checks the token's identity, room alias, media grants, and SFU endpoint before connecting.
+- Real worker HTTP media-control endpoints start and stop each browser transport. Requests and responses use the dedicated HMAC protocol and per-worker audience. An unconfigured room is rejected before transport dispatch. The control layer exposes no SFU signing credential or Gateway token.
 - LiveKit automatic room creation is disabled. The authorization service creates the permitted room, and the actual SFU accepts its signed join tokens.
 - Plaintext key messages and encrypted messages claiming a different device are rejected.
 - The same admitted keys decrypt actual 440 Hz and 660 Hz audio in both directions through the SFU.
 - The actual participant verifier matches the Matrix user/device to a connected, subscribed, encrypted audio track and obtains fresh device trust.
 - Leaving removes the old remote key's authority. Restarting preserves device fingerprints and trust while restoring no active-call key proof.
 - Rejoining generates new local media keys. One peer rotates to index 1 while the restarted peer sends at index 0; both directions still work, including a distinct 880 Hz rejoined stream.
+- Rejoining through a fresh worker control instance produces a new media session ID. Media leave cleans up the Matrix session and audio resources, and the other peer loses the departed membership's key authority.
 - Caller verification succeeds again after rejoin using the actual new membership and live media.
 
 The separate [media check](media-integration.md) also verifies that wrong-key receivers remain silent while receiving RTP packets, followed by recovery and key rotation.
 
 ## Limits
 
-The tested focus mode is the explicit standalone OpenID endpoint. Homeserver-mediated MSC4195 discovery/authorization is not covered. A configured production transport, automatic membership-driven publication suspension/rotation, production device enrollment, a browser-worker image, STT/TTS, and model-backed call dispatch remain unfinished.
+The tested focus mode is the explicit standalone OpenID endpoint. Homeserver-mediated MSC4195 discovery/authorization is not covered. The worker uses an injected test browser driver; production browser-driver packaging/configuration, automatic membership-driven publication suspension/rotation, production device enrollment, a browser-worker image, STT/TTS, and model-backed call dispatch remain unfinished.
 
 The authorization service reaches the real Synapse OpenID userinfo endpoint through a temporary loopback HTTPS proxy. That proxy has a disposable self-signed test certificate, so certificate verification is disabled only inside this isolated test authorization-service container. Production clients retain the TLS requirement; no insecure setting is added to the worker deployment.
 

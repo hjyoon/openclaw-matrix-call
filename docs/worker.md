@@ -1,5 +1,7 @@
 # Development worker
 
+The optional [media-control API](worker-media-control.md) accepts an injected portable transport. The standalone CLI has no browser driver configured and retains the development behavior described below.
+
 The current worker implements an authenticated control plane and process lifecycle. It does not implement MatrixRTC or legacy VoIP media. Its liveness endpoint returns HTTP 200, readiness returns HTTP 503, and an authenticated call request returns HTTP 501. These results prevent a container health check from being mistaken for a working call.
 
 The worker bundles standard Node.js and portable core code. It has no OpenClaw SDK, hosted AI account, Gateway operator token, or Matrix device state. Agent and transport integrations will be configured explicitly when implemented.

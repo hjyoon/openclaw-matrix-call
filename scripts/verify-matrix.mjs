@@ -12,6 +12,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { build } from "esbuild";
 import { startTestSfu } from "./integration/sfu.mjs";
 import { startTestAuthorization } from "./integration/authorization.mjs";
+import { loadTestControl } from "./integration/control.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= path.join(root, ".cache/browsers");
@@ -21,6 +22,7 @@ const directory = await mkdtemp(path.join(tmpdir(), "matrix-call-crypto-"));
 const container = `matrix-call-crypto-${randomUUID()}`;
 const registrationSecret = randomBytes(32).toString("hex");
 const contexts = [];
+const controls = [];
 const dockerUser = `${process.getuid()}:${process.getgid()}`;
 assert(process.getuid() !== 0, "Integration checks require a non-root user");
 let server;
@@ -139,8 +141,17 @@ try {
     }
   }
   const identities = accounts.map((account) => `${account.userId}:${account.deviceId}`);
+  const createControl = await loadTestControl(root, directory);
+  const sessions = [];
   for (let i = 0; i < pages.length; i++) {
-    await pages[i].evaluate(({ focus, sfu }) => window.matrixTest.connectAuthorized(focus, sfu), { focus: authorization.url, sfu: sfu.url });
+    const control = await createControl({ page: pages[i], roomId: room.room_id, focusUrl: authorization.url, sfuUrl: sfu.url });
+    controls.push(control);
+    const rejected = await control.request("/v1/media/join", { roomId: "!unconfigured" });
+    assert.equal(rejected.status, 403);
+    const connected = await control.request("/v1/media/join", { roomId: room.room_id });
+    assert.equal(connected.status, 200);
+    sessions.push(connected.value.sessionId);
+    assert.equal((await control.request("/v1/media/status", {})).value.session.state, "connected");
     await pages[i].evaluate((frequency) => window.mediaTest.publish(frequency), i === 0 ? 440 : 660);
   }
   for (let i = 0; i < pages.length; i++) {
@@ -160,7 +171,7 @@ try {
   const afterMismatch = await pages[1].evaluate((id) => window.matrixTest.status(id), "ignored");
   await pages[0].evaluate(({ target, id, claim }) => window.matrixTest.sendKey(target.userId, target.deviceId, id, claim, true), { target: accounts[1], id: room.room_id, claim: accounts[0].deviceId });
   await waitFor(async () => (await pages[1].evaluate((id) => window.matrixTest.status(id), "ignored")).rejected > afterMismatch.rejected, "plaintext key rejection");
-  await pages[0].evaluate(() => window.matrixTest.leave());
+  assert.equal((await controls[0].request("/v1/media/leave", { sessionId: sessions[0] })).status, 200);
   await contexts[0].close();
   await waitFor(async () => !(await pages[1].evaluate((id) => window.matrixTest.status(id), identities[0])).remoteKey, "departed key invalidation");
   const restored = await chromium.launchPersistentContext(path.join(directory, "profile-0"), { headless: true, chromiumSandbox: true, args: ["--autoplay-policy=no-user-gesture-required"] });
@@ -178,7 +189,11 @@ try {
   assert(await page.evaluate(() => window.matrixTest.rotate(0)));
   assert(await pages[1].evaluate(() => window.matrixTest.rotate(1)));
   await waitFor(async () => (await page.evaluate((id) => window.matrixTest.status(id), identities[1])).remoteKey, "rejoined remote key");
-  await page.evaluate(({ focus, sfu }) => window.matrixTest.connectAuthorized(focus, sfu), { focus: authorization.url, sfu: sfu.url });
+  const restoredControl = await createControl({ page, roomId: room.room_id, focusUrl: authorization.url, sfuUrl: sfu.url });
+  controls.push(restoredControl);
+  const restoredSession = await restoredControl.request("/v1/media/join", { roomId: room.room_id });
+  assert.equal(restoredSession.status, 200);
+  assert.notEqual(restoredSession.value.sessionId, sessions[0]);
   await page.evaluate(() => window.mediaTest.publish(880));
   await waitFor(async () => {
     const measurement = await pages[1].evaluate((id) => window.mediaTest.measure(id), identities[0]);
@@ -190,12 +205,13 @@ try {
   }, "rotated remote audio after rejoin");
   await pages[1].evaluate((id) => window.matrixTest.verify(id), identities[0]);
   await page.evaluate((id) => window.matrixTest.verify(id), identities[1]);
-  await page.evaluate(() => window.matrixTest.leave());
-  await pages[1].evaluate(() => window.matrixTest.leave());
-  console.log(JSON.stringify({ browser: restored.browser().version(), synapse: "1.162.0", matrixSdk: "43.0.0", livekit: "1.13.9", authorization: "0.8.0", matrixRtcKeys: true, authenticatedDeviceBinding: true, plaintextRejected: true, deviceClaimRejected: true, persistentKeysAndTrust: true, matrixAudio: true, restartAndRejoin: true, focusAuthorization: true }));
+  assert.equal((await restoredControl.request("/v1/media/leave", { sessionId: restoredSession.value.sessionId })).status, 200);
+  assert.equal((await controls[1].request("/v1/media/leave", { sessionId: sessions[1] })).status, 200);
+  console.log(JSON.stringify({ browser: restored.browser().version(), synapse: "1.162.0", matrixSdk: "43.0.0", livekit: "1.13.9", authorization: "0.8.0", matrixRtcKeys: true, authenticatedDeviceBinding: true, plaintextRejected: true, deviceClaimRejected: true, persistentKeysAndTrust: true, matrixAudio: true, restartAndRejoin: true, focusAuthorization: true, authenticatedWorkerControl: true }));
   succeeded = true;
 } finally {
   if (!succeeded) console.log(JSON.stringify({ openIdStatuses }));
+  await Promise.allSettled(controls.map((control) => control.shutdown()));
   await Promise.allSettled(contexts.map((context) => context.close()));
   await new Promise((resolve) => server ? server.close(resolve) : resolve());
   await new Promise((resolve) => tlsProxy ? tlsProxy.close(resolve) : resolve());
