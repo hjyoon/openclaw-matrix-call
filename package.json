@@ -18,6 +18,7 @@
     "speech:model": "node scripts/download-speech-model.mjs",
     "verify:media": "node scripts/verify-media.mjs",
     "verify:matrix": "node scripts/verify-matrix.mjs",
+    "verify:matrix-speech": "MATRIX_CALL_MATRIX_SPEECH_IMAGE=matrix-call-speech-worker:0.1.0-alpha.1 MATRIX_CALL_BROWSER_IMAGE=matrix-call-browser-worker:0.1.0-alpha.1 node scripts/verify-matrix.mjs",
     "verify:browser-sandbox": "node scripts/verify-browser-sandbox.mjs",
     "verify:browser-container": "MATRIX_CALL_BROWSER_IMAGE=matrix-call-browser-worker:0.1.0-alpha.1 node scripts/verify-matrix.mjs",
     "browser:install": "PLAYWRIGHT_BROWSERS_PATH=.cache/browsers playwright-core install chromium",
