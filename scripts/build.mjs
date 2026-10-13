@@ -10,6 +10,7 @@ const targets = [
   { name: "openclaw-plugin", entry: "packages/openclaw-plugin/src/index.ts", output: "packages/openclaw-plugin/dist/index.js", external: ["openclaw/*"] },
   { name: "worker", entry: "packages/worker/src/main.ts", output: "dist/worker/worker.mjs", external: [] },
   { name: "worker-api", entry: "packages/worker/src/index.ts", output: "dist/worker/index.js", external: [] },
+  { name: "matrixrtc", entry: "packages/matrixrtc/src/index.ts", output: "dist/matrixrtc/index.js", external: [], platform: "browser" },
 ];
 
 await mkdir(path.join(root, "dist/build-metadata"), { recursive: true });
@@ -23,9 +24,9 @@ for (const target of targets) {
     entryPoints: [target.entry],
     outfile,
     bundle: true,
-    platform: "node",
+    platform: target.platform ?? "node",
     format: "esm",
-    target: "node24",
+    target: target.platform === "browser" ? "es2023" : "node24",
     external: target.external,
     sourcemap: true,
     metafile: true,

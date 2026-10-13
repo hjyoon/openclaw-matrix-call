@@ -27,8 +27,9 @@ Decision rationale and changes are recorded in [ADRs](adr/README.md). This statu
 - An authenticated worker control plane, secret-file configuration, cancellation-safe shutdown, and standalone process checks.
 - A pinned worker image tested with a non-root user, read-only filesystem, dropped Linux capabilities, and no OpenClaw SDK.
 - GitHub Actions checks using the same local build, coverage, installation, and container commands.
+- A browser-safe MatrixRTC package with pinned public Matrix/LiveKit SDKs and a per-participant WebCrypto key provider. Imports that finish after call or membership invalidation are discarded.
 
-`pnpm check` and the worker container check pass locally. The current suite has 206 passing tests, with 100% per-file runtime coverage. Tests use isolated fixtures, temporary profiles, and local test services. GitHub Actions has also passed package installation, full coverage, image build, and container checks.
+`pnpm check` and the worker container check pass locally. The current suite has 217 passing tests, with 100% per-file runtime coverage. Tests use isolated fixtures, temporary profiles, and local test services. GitHub Actions has also passed package installation, full coverage, image build, and container checks.
 
 ## Remaining release work
 
