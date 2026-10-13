@@ -40,5 +40,5 @@ assert.deepEqual(speech.secrets.map((secret) => secret.source), ["voice_speech_s
 assert.equal(speech.volumes.length, 1);
 assert.equal(speech.volumes[0].target, "/models/model.bin");
 assert.equal(speech.volumes[0].read_only, true);
-assert.equal(speech.volumes[0].bind.create_host_path, false);
+assert.equal(speech.volumes[0].bind?.create_host_path ?? false, false);
 console.log("Local speech Compose namespace, credential separation and resource limits verified.");
