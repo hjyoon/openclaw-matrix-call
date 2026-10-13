@@ -82,6 +82,8 @@ The agent must implement the [signed agent protocol](agent-protocol.md), and the
 
 For Compose, set absolute host paths in `MATRIX_CALL_VOICE_CONFIG`, `MATRIX_CALL_VOICE_AGENT_SECRET` and `MATRIX_CALL_VOICE_SPEECH_SECRET`, then run `docker compose -f deployment/browser-compose.yml -f deployment/browser-voice.compose.yml up -d`. The override mounts only the voice configuration and its dedicated secrets. The speech and agent services are supplied separately; the browser image does not contain speech models or an agent runtime. HTTPS is required by default. An explicitly configured `allowInsecureLoopback: true` permits local HTTP only; container loopback refers to that container's network namespace, so separate services need TLS or an explicitly shared local namespace.
 
+The optional [local speech deployment](local-speech-deployment.md) supplies the speech service in its own image and a third Compose override for shared loopback networking. It retains separate credentials, filesystems, process namespaces and resource limits. Real speech engines are checked separately from this document's Matrix protocol-fixture evidence.
+
 Startup logs include `voiceEnabled`. The generic readiness endpoint remains false: configured ports do not establish speech quality or released-client compatibility. See [voice pipeline](voice-pipeline.md) for utterance limits, history, cancellation and retention.
 
 ## Lifecycle and evidence

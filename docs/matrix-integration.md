@@ -38,7 +38,7 @@ The separate [media check](media-integration.md) also verifies that wrong-key re
 
 ## Limits
 
-The tested focus mode is the explicit standalone OpenID endpoint. Homeserver-mediated MSC4195 discovery/authorization is not covered. The harness first uses injected test peers, then the actual production browser driver and explicit fingerprint enrollment. The optional image check restores the same private device profile inside Docker. Voice uses signed protocol fixtures, not real speech or language models. Speech recognition quality, languages, provider latency, SAS enrollment UI, and model-backed call dispatch remain unfinished.
+The tested focus mode is the explicit standalone OpenID endpoint. Homeserver-mediated MSC4195 discovery/authorization is not covered. The harness first uses injected test peers, then the actual production browser driver and explicit fingerprint enrollment. The optional image check restores the same private device profile inside Docker. Voice uses signed protocol fixtures, not real speech or language models, and now checks 22,050 Hz synthesized PCM. Separate [speech image checks](speech-integration.md) cover real Korean/English engines; this harness does not establish their complete Matrix call integration. Broader recognition quality, target-server latency, SAS enrollment UI and model-backed call dispatch remain unfinished.
 
 The authorization service reaches the real Synapse OpenID userinfo endpoint through a temporary loopback HTTPS proxy. That proxy has a disposable self-signed test certificate, so certificate verification is disabled only inside this isolated test authorization-service container. Production clients retain the TLS requirement; no insecure setting is added to the worker deployment.
 
