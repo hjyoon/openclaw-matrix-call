@@ -64,5 +64,13 @@ try {
   await writeFile(file, JSON.stringify({ ...fake, credential: { ...fake.credential, refresh: "fake-refresh-must-not-copy" } }));
   await assert.rejects(prepare(), (error) => error.code === 1 && error.stdout === ""
     && error.stderr.trim() === "Private live-model credentials could not be prepared");
+  const matrixCheck = (patch) => exec(process.execPath, [path.join(root, "scripts/verify-matrix.mjs")],
+    { cwd: root, env: { ...env, MATRIX_CALL_LIVE_MODEL_REQUIRED: "1", ...patch }, timeout: 30_000 });
+  await assert.rejects(matrixCheck({}), (error) => error.code === 1
+    && error.stderr.includes("Set MATRIX_CALL_LIVE_MODEL_FILE to private access-only model settings") && !error.stderr.includes(fake.credential.access));
+  await assert.rejects(matrixCheck({ MATRIX_CALL_LIVE_MODEL_FILE: file }), (error) => error.code === 1
+    && error.stderr.includes("Live model checks require the installed native Gateway") && !error.stderr.includes(fake.credential.access));
+  await assert.rejects(matrixCheck({ MATRIX_CALL_LIVE_MODEL_FILE: file, MATRIX_CALL_NATIVE_GATEWAY: "1", MATRIX_CALL_MATRIX_SPEECH_IMAGE: "test-image" }),
+    (error) => error.code === 1 && error.stderr.includes("Private live-model configuration is invalid or expired") && !error.stderr.includes(fake.credential.access));
   console.log("Private access-only model settings, isolated storage and redacted failures verified");
 } finally { await rm(directory, { recursive: true, force: true }); }

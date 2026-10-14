@@ -14,8 +14,15 @@ import { startTestSfu } from "./integration/sfu.mjs";
 import { startTestAuthorization } from "./integration/authorization.mjs";
 import { loadTestControl } from "./integration/control.mjs";
 import { verifyBrowserDriver } from "./integration/browser-driver.mjs";
+import { readLiveModel } from "./integration/live-model.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+if (process.env.MATRIX_CALL_LIVE_MODEL_REQUIRED === "1") assert(process.env.MATRIX_CALL_LIVE_MODEL_FILE, "Set MATRIX_CALL_LIVE_MODEL_FILE to private access-only model settings");
+if (process.env.MATRIX_CALL_LIVE_MODEL_FILE) {
+  assert.equal(process.env.MATRIX_CALL_NATIVE_GATEWAY, "1", "Live model checks require the installed native Gateway");
+  assert(process.env.MATRIX_CALL_MATRIX_SPEECH_IMAGE, "Live model checks require actual speech engines");
+  readLiveModel(process.env.MATRIX_CALL_LIVE_MODEL_FILE);
+}
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= path.join(root, ".cache/browsers");
 const { chromium } = await import("playwright-core");
 const image = "ghcr.io/element-hq/synapse:v1.162.0@sha256:6b84a7bbac36f080b2d2e51e0289cf1b08b349598ea44a558df38d558f2c2311";

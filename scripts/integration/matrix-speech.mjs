@@ -22,7 +22,10 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
   let selected;
   let gateway;
   const nativeGateway = process.env.MATRIX_CALL_NATIVE_GATEWAY === "1";
+  const liveModelFile = process.env.MATRIX_CALL_LIVE_MODEL_FILE;
+  assert(!liveModelFile || nativeGateway, "Live model checks require the installed native Gateway");
   const results = [];
+  const modelEvidence = [];
   const reference = { roomId: config.rooms[0], rtcSessionId: "m.call#ROOM", participantId: `${owner.userId}:${owner.deviceId}` };
 
   async function prepareInput() {
@@ -77,7 +80,7 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
       if (nativeGateway) {
         gateway = await startMatrixGateway({ root, directory: path.join(directory, `gateway-${runtime}`),
           policy: { owners: [owner.userId], rooms: config.rooms, agents: ["main"] }, workerUrl: `http://127.0.0.1:${workerPort}`,
-          controlSecretFile: env.MATRIX_CALL_SECRET_FILE, reply: () => manifest[selected].reply, freePort, waitFor, observations: services?.state });
+          controlSecretFile: env.MATRIX_CALL_SECRET_FILE, reply: () => manifest[selected].reply, freePort, waitFor, observations: services?.state, liveModelFile });
         services = gateway;
       }
       await writeFile(agentSecretFile, services.agentSecret, { mode: 0o600 });
@@ -128,7 +131,7 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
         try {
           seconds = await play(language);
           await waitFor(() => services.state.turns.length === before + 1, `${language} real Matrix recognition and agent dispatch`, 90_000);
-          await waitFor(async () => (await peer.evaluate((id) => window.mediaTest.measure(id), identity)).rms > 0.005, `${language} real Matrix synthesis and publication`, 30_000);
+          await waitFor(async () => (await peer.evaluate((id) => window.mediaTest.measure(id), identity)).rms > 0.005, `${language} real Matrix synthesis and publication`, liveModelFile ? 100_000 : 30_000);
           let quietSince;
           await waitFor(async () => {
             const measured = await peer.evaluate((id) => window.mediaTest.measure(id), identity);
@@ -151,15 +154,29 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
         assert.equal(observation.encryptedFrames, observation.activeFrames);
         assert.equal(services.state.turns.length, before + 1);
         if (nativeGateway) {
-          const provider = services.state.providerRequests[before];
           assert.equal(turn.agentId, "main"); assert.equal(turn.messages.length, before === firstTurn ? 1 : 3);
-          assert(provider.tools === undefined || provider.tools.length === 0);
-          assert(JSON.stringify(provider.messages).includes(turn.messages[0].text));
-          if (before > firstTurn) {
-            assert(JSON.stringify(provider.messages).includes(services.state.turns[firstTurn].messages[0].text));
-            assert(JSON.stringify(provider.messages).includes(manifest.ko.reply));
-            assert.equal(provider.messages.filter((message) => message.role === "user" && JSON.stringify(message.content).includes(services.state.turns[firstTurn].messages[0].text)).length, 1);
-          } else if (firstTurn) assert(!JSON.stringify(provider.messages).includes(services.state.turns[firstTurn - 1].messages[0].text));
+          const reply = services.state.replies[before];
+          assert.equal(reply.conversationId, turn.conversationId); assert.equal(reply.turnId, turn.turnId);
+          if (before > firstTurn) assert.equal(turn.messages[1].text, services.state.replies[firstTurn].text);
+          if (liveModelFile) {
+            assert.equal(services.state.providerRequests.length, 0);
+            assert(language === "ko" ? /[가-힣]/.test(reply.text) : /[a-zA-Z]/.test(reply.text), "Actual model must reply in the input language");
+            const evidence = await gateway.conversationEvidence(turn.conversationId);
+            assert.equal(evidence.userTurns, before - firstTurn + 1);
+            const sessions = (await gateway.modelEvidence()).sessions;
+            assert.equal(sessions.length, 1, "Disposable Gateway must not inherit an earlier call");
+            modelEvidence.push({ runtime, language, replyCharacters: reply.text.length,
+              replySha256: createHash("sha256").update(reply.text).digest("hex"), ...evidence });
+          } else {
+            const provider = services.state.providerRequests[before];
+            assert(provider.tools === undefined || provider.tools.length === 0);
+            assert(JSON.stringify(provider.messages).includes(turn.messages[0].text));
+            if (before > firstTurn) {
+              assert(JSON.stringify(provider.messages).includes(services.state.turns[firstTurn].messages[0].text));
+              assert(JSON.stringify(provider.messages).includes(manifest.ko.reply));
+              assert.equal(provider.messages.filter((message) => message.role === "user" && JSON.stringify(message.content).includes(services.state.turns[firstTurn].messages[0].text)).length, 1);
+            } else if (firstTurn) assert(!JSON.stringify(provider.messages).includes(services.state.turns[firstTurn - 1].messages[0].text));
+          }
         }
         results.push({ runtime, language, inputStartSeconds: language === "en" ? 5 : 0, inputSeconds: seconds, peakNormalized: true, ...observation });
         console.log(JSON.stringify({ event: "matrix-speech-turn-passed", ...results.at(-1) }));
@@ -188,13 +205,15 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
       await waitFor(async () => (await peer.evaluate((id) => window.matrixTest.status(id), identity)).members === 1, "real speech worker departure");
     }
     assert.equal(services.state.invalidRequests, 0); assert.equal(services.state.transcriptions.length, 0); assert.equal(services.state.syntheses, 0);
-    const report = { model: speech.model, modelSha256: speech.modelSha256, imageId: speech.imageId, results,
+    if (liveModelFile) { assert.equal(modelEvidence.length, results.length); assert.equal(services.state.replies.length, services.state.turns.length); }
+    const report = { model: speech.model, modelSha256: speech.modelSha256, imageId: speech.imageId, results, modelEvidence,
       verifiedMatrixCaller: true, encryptedInput: true, encryptedOutput: true, canceledRecognitionOnLeave: true,
       restoredBrowserProfile: results.some((result) => result.runtime === "container"),
-      agentRuntime: nativeGateway ? "installed OpenClaw public SDK with deterministic provider" : "signed deterministic fixture",
-      nativeGatewayControl: nativeGateway, modelInference: false, releasedClient: false };
+      agentRuntime: liveModelFile ? "installed OpenClaw public SDK with operator-configured live model"
+        : nativeGateway ? "installed OpenClaw public SDK with deterministic provider" : "signed deterministic fixture",
+      nativeGatewayControl: nativeGateway, modelInference: Boolean(liveModelFile), releasedClient: false };
     await mkdir(path.join(root, ".cache/speech"), { recursive: true });
-    await writeFile(path.join(root, ".cache/speech/matrix-integration-result.json"), JSON.stringify(report, null, 2));
+    await writeFile(path.join(root, liveModelFile ? ".cache/speech/matrix-live-integration-result.json" : ".cache/speech/matrix-integration-result.json"), JSON.stringify(report, null, 2));
     return report;
   } finally {
     if (worker) console.log(JSON.stringify({ event: "matrix-capture-final-probe", nodes: await getDriverPage().evaluate(() => window.matrixCaptureProbe).catch(() => []) }));

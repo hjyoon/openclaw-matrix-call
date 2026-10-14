@@ -41,7 +41,38 @@ The check installs the packed plugin into a fresh Gateway, sends Korean and Engl
 
 A transparent observer verifies original signed requests and replies without constructing identity evidence or re-signing traffic. Public Gateway `sessions.list` results must identify the configured model/provider with generated output tokens. Public `chat.history` results must contain exactly the expected user and assistant turns in order. The fixture provider must receive no requests. Logs contain reply hashes/lengths, timings and safe model metadata rather than full replies or credentials. Test Gateway profiles are removed on completion; delete the input snapshot after use.
 
-The local check used `openai/gpt-6.1-sol`, the existing `openclaw` runtime and `high` thinking. Actual greetings and cross-turn code recall passed. This is evidence of model-backed text dispatch, not yet a spoken-call or released-client result.
+The local check used `openai/gpt-6.1-sol`, the existing `openclaw` runtime and `high` thinking. Actual greetings, cross-turn code recall and both isolated session histories passed.
+
+## Actual model through encrypted Matrix speech
+
+Prepare the images and test Chromium as described in [native Matrix integration](native-matrix-integration.md), then run:
+
+```sh
+MATRIX_CALL_LIVE_MODEL_FILE=/absolute/private/model.json pnpm verify:matrix-live
+```
+
+This command requires valid private settings before starting infrastructure. Missing credentials fail instead of selecting a fixture. The ordinary `verify:matrix-gateway` mode remains deterministic and requires no hosted account.
+
+The local live run passed four actual model-backed speech turns: Korean and English in the production driver, then both languages in the restored browser image. Each turn used real encrypted input, current Matrix owner/device verification, whisper.cpp recognition, the installed signed native agent service, public SDK model dispatch, eSpeak synthesis and encrypted output. Required fixture keywords and audio/encryption assertions remain unchanged.
+
+Signed replies matched their original conversation/turn IDs. The second portable transcript contained the actual first model reply. Public Gateway history contained exactly one user/reply pair after the first turn and two after the second, in order. Each fresh Gateway contained only the current call's session, while the browser image retained its Matrix device keys. All four session observations identified `openai/gpt-6.1-sol` with generated output tokens, and the deterministic provider received zero requests.
+
+| Runtime | Korean first output | English first output |
+| --- | --- | --- |
+| Native browser driver | 22.48 s | 13.16 s |
+| Restored browser image | 28.04 s | 13.80 s |
+
+Times start at input playback and include input duration, recognition, actual model inference and synthesis. They describe one development-host run with `base` recognition and `high` thinking; they are not target-server measurements or a latency guarantee. Every observed active output frame was encrypted. Replies were 30/97 characters in the native driver and 43/98 in the image. The workspace requests one concise sentence; unrestricted answer lengths are not established.
+
+Native leave canceled an actual recognition child and removed its private WAV. Gateway SIGTERM during image recognition closed the exact owned call, canceled recognition and removed its input without another agent turn. The browser/speech containers exited successfully with no OOM, and the browser retained renderer PID/seccomp isolation.
+
+The separate ignored report `.cache/speech/matrix-live-integration-result.json` records timings, reply hashes/lengths, safe model metadata and `modelInference: true`. It leaves `releasedClient: false`: peers are Matrix SDK fixtures rather than released applications. This report does not overwrite deterministic evidence. Initial enrollment failed in an earlier attempt and remains an investigation recorded in [Matrix evidence](matrix-integration.md).
+
+## Limits
+
+The operator's source login and production configuration remain unchanged. Snapshot state is temporary, has no refresh owner and is removed on completion; the operator removes the input snapshot after testing. No production Matrix messages, calls or plugin deployment are part of this workflow.
+
+The native adapter still uses delegated, tool-free ingress. Real-model abort/failure handling, responses beyond the current ten-second PCM bound, sustained calls, human pronunciation quality, target-server resources, operator enrollment and released-client interoperability remain release work. See [release readiness](release-readiness.md).
 
 ## Ordinary checks
 
