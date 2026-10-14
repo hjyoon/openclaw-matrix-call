@@ -2,7 +2,7 @@
   "id": "matrix-call",
   "name": "Matrix Call",
   "version": "0.1.0-alpha.1",
-  "description": "Experimental Matrix call adapters; native call wiring is unavailable",
+  "description": "Experimental MatrixRTC media control and delegated agent service",
   "channels": [
     "matrix-call"
   ],
@@ -104,6 +104,37 @@
               "secretFile"
             ],
             "additionalProperties": false
+          },
+          "workerControl": {
+            "readOnly": true,
+            "type": "object",
+            "properties": {
+              "baseUrl": {
+                "type": "string",
+                "maxLength": 4096,
+                "format": "uri"
+              },
+              "secretFile": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "timeoutMs": {
+                "default": 35000,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 300000
+              },
+              "allowInsecureLoopback": {
+                "default": false,
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "baseUrl",
+              "secretFile"
+            ],
+            "additionalProperties": false
           }
         },
         "additionalProperties": false,
@@ -128,7 +159,7 @@
         ]
       },
       "label": "Matrix Call",
-      "description": "Experimental Matrix calling policy; native call wiring is unavailable",
+      "description": "Experimental Matrix calling policy and authenticated media control",
       "commands": {
         "nativeCommandsAutoEnabled": false,
         "nativeSkillsAutoEnabled": false

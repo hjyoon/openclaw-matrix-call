@@ -1,16 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig, OpenClawPluginApi } from "openclaw/plugin-sdk/channel-core";
+import { once } from "node:events";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import type { OpenClawConfig, OpenClawPluginApi, PluginCommandContext } from "openclaw/plugin-sdk/channel-core";
+import type { OpenClawPluginService, OpenClawPluginServiceContext } from "openclaw/plugin-sdk/plugin-entry";
+import { createWorkerServer, WorkerMediaController } from "../../packages/worker/src/index.js";
 import plugin, { matrixCallChannel } from "../../packages/openclaw-plugin/src/index.js";
 
 const policy = { owners: ["@owner:example.org"], rooms: ["!room:example.org"], agents: ["assistant"] };
 const enabled = { channels: { "matrix-call": { enabled: true, policy } } } satisfies OpenClawConfig;
 
 describe("native SDK registration", () => {
-  it.each(["full", "discovery", "cli-metadata", "tool-discovery"])("loads through the real channel SDK in %s mode", (registrationMode) => {
+  it.each(["full", "discovery", "cli-metadata", "tool-discovery"])("loads through the real channel SDK in %s mode", async (registrationMode) => {
     const registerChannel = vi.fn();
     const registerCommand = vi.fn();
     const registerService = vi.fn();
-    const api = { registrationMode, registerChannel, registerCommand, registerService } as unknown as OpenClawPluginApi;
+    const registerGatewayMethod = vi.fn();
+    const api = { registrationMode, registerChannel, registerCommand, registerService, registerGatewayMethod, lifecycle: {} } as unknown as OpenClawPluginApi;
     plugin.register(api);
     expect(plugin.id).toBe("matrix-call");
     expect(plugin.channelPlugin).toBe(matrixCallChannel);
@@ -22,10 +30,67 @@ describe("native SDK registration", () => {
       const command = registerCommand.mock.calls[0]![0];
       expect(command.name).toBe("matrixcall");
       expect(command.requireAuth).toBe(true);
-      expect(command.handler().text).toContain("Worker control and native call entry remain unavailable");
+      expect(command.channels).toEqual(["matrix"]);
+      const result = await command.handler({ channel: "matrix", isAuthorizedSender: true, senderId: policy.owners[0] } as PluginCommandContext);
+      expect(result.text).toContain("forbidden");
     } else expect(registerCommand).not.toHaveBeenCalled();
-    if (registrationMode === "full") expect(registerService.mock.calls[0]![0].id).toBe("matrix-call-agent");
-    else expect(registerService).not.toHaveBeenCalled();
+    if (registrationMode === "full") {
+      expect(registerService.mock.calls.map(([service]) => service.id)).toEqual(["matrix-call-agent", "matrix-call-worker"]);
+      expect(registerGatewayMethod).toHaveBeenCalledWith("matrixcall.control", expect.any(Function), { scope: "operator.admin", profileAccess: "independent" });
+    } else { expect(registerService).not.toHaveBeenCalled(); expect(registerGatewayMethod).not.toHaveBeenCalled(); }
+  });
+
+  it.each([
+    [undefined, "forbidden"], [(): boolean => false, "forbidden"], [(): boolean => true, "worker-unavailable"],
+    [(): boolean => { throw new Error("private transport error"); }, "control-failed"],
+  ] as const)("requires current Gateway authority and redacts transport errors %#", async (authority, reason) => {
+    const registerGatewayMethod = vi.fn();
+    plugin.register({ registrationMode: "full", registerChannel: vi.fn(), registerCommand: vi.fn(), registerService: vi.fn(), registerGatewayMethod, lifecycle: {} } as unknown as OpenClawPluginApi);
+    const handler = registerGatewayMethod.mock.calls[0]![1];
+    const respond = vi.fn();
+    await handler({ params: { operation: "status" }, respond, hasCurrentClientAuthority: authority });
+    expect(respond).toHaveBeenCalledWith(false, undefined, { code: "UNAVAILABLE", message: `Matrix Call control unavailable: ${reason}` });
+  });
+
+  it("registers a live admin RPC with successful controls and a final authority check", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "matrix-call-rpc-test-"));
+    const secret = "ab".repeat(32);
+    const secretFile = path.join(directory, "control.secret");
+    await writeFile(secretFile, secret, { mode: 0o600 });
+    const media = new WorkerMediaController({ rooms: policy.rooms, transport: { connect: async () => {}, disconnect: async () => {} } });
+    const { server } = createWorkerServer(secret, media);
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const context: OpenClawPluginServiceContext = {
+      config: { channels: { "matrix-call": { enabled: true, policy, workerControl: { baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, secretFile, allowInsecureLoopback: true } } } },
+      stateDir: directory, logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    };
+    const registerService = vi.fn<OpenClawPluginApi["registerService"]>();
+    const registerGatewayMethod = vi.fn<OpenClawPluginApi["registerGatewayMethod"]>();
+    const runInBackgroundContext = <T>(operation: () => T): T => operation();
+    plugin.register({ registrationMode: "full", registerChannel: vi.fn(), registerCommand: vi.fn(), registerService, registerGatewayMethod, lifecycle: { runInBackgroundContext } } as unknown as OpenClawPluginApi);
+    const service = registerService.mock.calls[1]![0] as OpenClawPluginService;
+    const handler = registerGatewayMethod.mock.calls[0]![1];
+    const respond = vi.fn();
+    const invoke = (params: Record<string, unknown>, authority = () => true) => handler({ params, respond, hasCurrentClientAuthority: authority } as unknown as Parameters<typeof handler>[0]);
+    try {
+      await service.start(context);
+      await invoke({ operation: "status" });
+      expect(respond).toHaveBeenLastCalledWith(true, { available: true, session: null });
+      await invoke({ operation: "join", roomId: policy.rooms[0] });
+      expect(respond).toHaveBeenLastCalledWith(true, expect.objectContaining({ roomId: policy.rooms[0], state: "connected" }));
+      await invoke({ operation: "join", roomId: policy.rooms[0] });
+      expect(respond).toHaveBeenLastCalledWith(false, undefined, { code: "UNAVAILABLE", message: "Matrix Call control unavailable: busy" });
+      let checks = 0;
+      await invoke({ operation: "status" }, () => ++checks < 4);
+      expect(respond).toHaveBeenLastCalledWith(false, undefined, { code: "UNAVAILABLE", message: "Matrix Call control unavailable: forbidden" });
+    } finally {
+      await service.stop!(context);
+      await media.shutdown();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });
 
@@ -37,7 +102,7 @@ describe("development channel configuration", () => {
     expect(account.enabled).toBe(false);
     expect(matrixCallChannel.config.isEnabled!(account, {})).toBe(false);
     expect(await matrixCallChannel.config.isConfigured!(account, {})).toBe(false);
-    expect(matrixCallChannel.config.unconfiguredReason!(account, {})).toContain("Native call wiring is unavailable");
+    expect(matrixCallChannel.config.unconfiguredReason!(account, {})).toContain("Assistant readiness");
     expect(matrixCallChannel.capabilities.media).toBe(false);
     expect(matrixCallChannel.configSchema!.schema).toBeDefined();
   });
@@ -62,6 +127,13 @@ describe("development channel configuration", () => {
       { secretFile: "/secret", timeoutMs: 0 }, { secretFile: "/secret", timeoutMs: 300001 },
       { secretFile: "/secret", secret: "inline" },
     ].map((agentService) => ({ channels: { "matrix-call": { enabled: true, policy, agentService } } })),
+    ...[
+      { baseUrl: "invalid", secretFile: "/secret" }, { baseUrl: "https://worker", secretFile: "relative" },
+      { baseUrl: "https://worker", secretFile: "/secret", timeoutMs: 0 },
+      { baseUrl: "https://worker", secretFile: "/secret", timeoutMs: 300001 },
+      { baseUrl: "https://worker", secretFile: "/secret", allowInsecureLoopback: "yes" },
+      { baseUrl: "https://worker", secretFile: "/secret", secret: "inline" },
+    ].map((workerControl) => ({ channels: { "matrix-call": { enabled: true, policy, workerControl } } })),
   ])("rejects invalid or incomplete configuration %#", (cfg) => {
     expect(() => matrixCallChannel.config.resolveAccount(cfg)).toThrow("invalid-input");
   });
@@ -74,5 +146,11 @@ describe("development channel configuration", () => {
     const account = matrixCallChannel.config.resolveAccount({ channels: { "matrix-call": { enabled: true, policy, agentService: { secretFile: "/private/secret" } } } });
     expect(account.agentService).toEqual({ secretFile: "/private/secret", host: "127.0.0.1", port: 19793, timeoutMs: 30000 });
     expect(Object.isFrozen(account.agentService)).toBe(true);
+  });
+
+  it("defaults worker control to encrypted transport and bounded operations", () => {
+    const account = matrixCallChannel.config.resolveAccount({ channels: { "matrix-call": { enabled: true, policy, workerControl: { baseUrl: "https://worker.example.org", secretFile: "/private/control.secret" } } } });
+    expect(account.workerControl).toEqual({ baseUrl: "https://worker.example.org", secretFile: "/private/control.secret", timeoutMs: 35000, allowInsecureLoopback: false });
+    expect(Object.isFrozen(account.workerControl)).toBe(true);
   });
 });

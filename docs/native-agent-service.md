@@ -1,6 +1,6 @@
 # Native OpenClaw agent service
 
-The experimental native package can expose the portable [agent HTTP protocol](agent-protocol.md) from OpenClaw 2026.10.2. The Gateway owns its start, stop and channel-configuration reload through the public `registerService` API. This connects signed text turns to the exported delegated ingress adapter; it does not start a Matrix worker, join a call or implement a user call command.
+The experimental native package can expose the portable [agent HTTP protocol](agent-protocol.md) from OpenClaw 2026.10.2. The Gateway owns its start, stop and channel-configuration reload through the public `registerService` API. This service connects signed text turns to the exported delegated ingress adapter. Separately configured [native worker control](native-worker-control.md) supplies owner/admin media entry without launching or enrolling a worker.
 
 ## Configuration
 
@@ -31,7 +31,7 @@ Merge the following channel section into the supported Gateway configuration. Re
 
 The channel defaults to disabled. An enabled channel requires an explicit policy. The service starts only when `agentService` is also present. Its host accepts only `127.0.0.1` or `::1`; it does not bind a public interface. Port defaults to `19793` and timeout to 30 seconds. Inline secrets, unknown configuration keys and invalid limits are rejected by both the runtime schema and cold plugin metadata.
 
-The standalone browser worker's external voice configuration can use `agent.baseUrl` set to `http://127.0.0.1:19793` and `agent.secretFile` set to its private copy of that same agent key. A container needs an explicitly configured network route to the Gateway loopback endpoint; an unrelated container's `127.0.0.1` refers to itself. Existing isolated Compose networking is described in [browser worker](browser-worker.md). Native worker control, enrollment and a complete operator setup flow still require implementation.
+The standalone browser worker's external voice configuration can use `agent.baseUrl` set to `http://127.0.0.1:19793` and `agent.secretFile` set to its private copy of that same agent key. A container needs an explicitly configured network route to the Gateway loopback endpoint; an unrelated container's `127.0.0.1` refers to itself. Existing isolated Compose networking is described in [browser worker](browser-worker.md). Coordinated replacement, enrollment and a complete operator setup flow still require implementation.
 
 After service restart or reload, reconnect the worker's agent adapter to negotiate the new audience. Do not replay prior turns while reconnecting; old adapters are intentionally rejected.
 
@@ -51,4 +51,4 @@ Listener installation and every host request use the managed instance's public `
 
 Gateway shutdown may drain active host work before disposing plugin services. Keep the supervisor's shutdown grace above the configured agent deadline plus host cleanup time; a host that ignores abort can take longer. The [installed Gateway check](agent-integration.md) verifies restart, actual configuration reload and shutdown with a held provider request. Its model endpoint is a deterministic fixture; actual AI inference and a complete spoken call still require separate validation.
 
-The native channel continues to report unconfigured call support and `media: false` because worker control and call entry are unfinished. Signed text ingress alone does not establish voice readiness or released Matrix client interoperability.
+The native channel continues to report unconfigured call support and `media: false` because assistant readiness and released Matrix client interoperability remain unverified. Signed text ingress and media control alone do not establish those capabilities.

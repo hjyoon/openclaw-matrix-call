@@ -12,6 +12,12 @@ const accountSchema = z.strictObject({
     port: z.number().int().min(1).max(65535).default(19793),
     timeoutMs: z.number().int().min(1).max(300_000).default(30_000),
   }).readonly().optional(),
+  workerControl: z.strictObject({
+    baseUrl: z.string().url().max(4096),
+    secretFile: z.string().min(1).max(4096).refine(isAbsolute),
+    timeoutMs: z.number().int().min(1).max(300_000).default(35_000),
+    allowInsecureLoopback: z.boolean().default(false),
+  }).readonly().optional(),
 }).refine((account) => !account.enabled || account.policy !== undefined).readonly();
 
 type MatrixCallAccount = z.infer<typeof accountSchema> & { accountId: "default" };
@@ -30,7 +36,7 @@ export const matrixCallChannel: ChannelPlugin<MatrixCallAccount> = {
     label: "Matrix Call",
     selectionLabel: "Matrix Call (experimental)",
     docsPath: "https://github.com/hjyoon/openclaw-matrix-call/blob/main/docs/implementation-status.md",
-    blurb: "Portable Matrix calling adapters; native call wiring is unavailable",
+    blurb: "Experimental MatrixRTC media control and delegated agent service",
   },
   capabilities: { chatTypes: ["group"], media: false, nativeCommands: false },
   configSchema: { schema: {
@@ -46,7 +52,7 @@ export const matrixCallChannel: ChannelPlugin<MatrixCallAccount> = {
     resolveAccount,
     isEnabled: (account) => account.enabled,
     isConfigured: () => false,
-    unconfiguredReason: () => "Native call wiring is unavailable in this development version",
+    unconfiguredReason: () => "Assistant readiness and released-client interoperability remain unverified",
     resolveAllowFrom: ({ cfg }) => resolveAccount(cfg).policy?.owners.slice() ?? [],
   },
 };

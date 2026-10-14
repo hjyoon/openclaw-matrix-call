@@ -20,6 +20,7 @@ Number records in order. An accepted ADR is a historical record, not a second in
 | [0010](0010-optional-local-speech-service.md) | Accepted | Optional bounded local speech service with pinned models and replaceable subprocess engines |
 | [0011](0011-plugin-owned-agent-service.md) | Accepted | Plugin-owned portable signed agent service with bound sessions and cancellation-safe replacement |
 | [0012](0012-owned-worker-control-sessions.md) | Accepted | Authenticated portable worker control with caller-selected session IDs and exact ownership cleanup |
+| [0013](0013-native-owner-media-control.md) | Accepted | Public native owner/admin call entry with bounded admission and exact owned-session disposal |
 
 ## Record format
 

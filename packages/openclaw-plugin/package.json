@@ -18,7 +18,7 @@
     "compat": { "pluginApi": "=2026.10.2" },
     "build": { "openclawVersion": "2026.10.2" }
   },
-  "devDependencies": { "@matrix-call/agent-http": "workspace:*", "@matrix-call/core": "workspace:*", "zod": "4.6.7" },
+  "devDependencies": { "@matrix-call/agent-http": "workspace:*", "@matrix-call/core": "workspace:*", "@matrix-call/worker": "workspace:*", "zod": "4.6.7" },
   "peerDependencies": { "openclaw": "2026.10.2" },
   "peerDependenciesMeta": { "openclaw": { "optional": true } }
 }
