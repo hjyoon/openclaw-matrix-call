@@ -4,7 +4,7 @@ Updated: 2026-10-14.
 
 `pnpm verify:plugin` packs the native package, installs and enables the archive in a disposable OpenClaw 2026.10.2 profile, then starts an actual Gateway. It uses the bundled plugin, public SDK ingress, real host session storage and a loopback HTTP model-provider fixture. It does not mock `runCommandFromIngress` in this check.
 
-The fixture returns deterministic completion text using the host's configurable `openai-completions` transport. It is not an AI model, needs no hosted account and supplies only temporary test credentials. Matrix caller evidence is synthetic and HMAC-authenticated; no Matrix homeserver or released client participates in this check. Separately, [native Matrix integration](native-matrix-integration.md) combines installed SDK dispatch and native control with genuine Matrix identity, encrypted transport and local speech engines. Its provider still returns deterministic text; actual AI inference remains unverified.
+The fixture returns deterministic completion text using the host's configurable `openai-completions` transport. It is not an AI model, needs no hosted account and supplies only temporary test credentials. Matrix caller evidence is synthetic and HMAC-authenticated; no Matrix homeserver or released client participates in this check. Separately, [native Matrix integration](native-matrix-integration.md) combines installed SDK dispatch and native control with genuine Matrix identity, encrypted transport and local speech engines using a deterministic provider. Optional [live-model integration](live-model-integration.md) verifies actual AI inference through that encrypted speech path.
 
 ## Checked behavior
 

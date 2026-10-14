@@ -32,4 +32,4 @@ A trusted client may choose the join session UUID before dispatch. This lets it 
 
 Disconnecting an HTTP client cancels only a connection still being opened. The response-close listener is removed after the operation completes, so finishing a successful request does not terminate its media session. Worker shutdown closes the injected media controller after stopping its HTTP listener.
 
-Health may advertise `media-control` when an injected controller exists. `/readyz` remains 503 and `/v1/calls` remains unavailable. The optional voice pipeline has real speech/Matrix checks, but native model dispatch and released-client calling readiness remain unverified. Media control readiness and assistant readiness are separate capabilities.
+Health may advertise `media-control` when an injected controller exists. `/readyz` remains 503 and `/v1/calls` remains unavailable. The optional voice pipeline passes real speech/Matrix checks and [actual native model dispatch](live-model-integration.md). Released-client calling readiness and the complete assistant readiness contract remain unverified. Media control readiness and assistant readiness are separate capabilities.
