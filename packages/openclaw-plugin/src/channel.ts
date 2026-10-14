@@ -51,8 +51,8 @@ export const matrixCallChannel: ChannelPlugin<MatrixCallAccount> = {
     defaultAccountId: () => "default",
     resolveAccount,
     isEnabled: (account) => account.enabled,
-    isConfigured: () => false,
-    unconfiguredReason: () => "Assistant readiness and supported deployment setup remain unverified",
+    isConfigured: (account) => Boolean(account.enabled && account.policy && account.agentService && account.workerControl),
+    unconfiguredReason: () => "Configure an enabled policy, agent service and worker control",
     resolveAllowFrom: ({ cfg }) => resolveAccount(cfg).policy?.owners.slice() ?? [],
   },
 };

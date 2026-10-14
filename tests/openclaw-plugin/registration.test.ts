@@ -95,6 +95,20 @@ describe("native SDK registration", () => {
 });
 
 describe("development channel configuration", () => {
+  it.each(["complete", "agent", "worker", "disabled", "policy"])("reports %s native calling configuration accurately", async (state) => {
+    const cfg = { channels: { "matrix-call": { enabled: true, policy,
+      agentService: { secretFile: "/private/agent.secret" },
+      workerControl: { baseUrl: "https://worker.example.org", secretFile: "/private/control.secret" } } } };
+    const complete = matrixCallChannel.config.resolveAccount(cfg);
+    const account = { ...complete,
+      ...(state === "agent" ? { agentService: undefined } : {}),
+      ...(state === "worker" ? { workerControl: undefined } : {}),
+      ...(state === "disabled" ? { enabled: false } : {}),
+      ...(state === "policy" ? { policy: undefined } : {}),
+    };
+    expect(await matrixCallChannel.config.isConfigured!(account, cfg)).toBe(state === "complete");
+  });
+
   it("describes one default account without advertising available audio", async () => {
     expect(matrixCallChannel.config.listAccountIds({})).toEqual(["default"]);
     expect(matrixCallChannel.config.defaultAccountId!({})).toBe("default");
@@ -102,7 +116,7 @@ describe("development channel configuration", () => {
     expect(account.enabled).toBe(false);
     expect(matrixCallChannel.config.isEnabled!(account, {})).toBe(false);
     expect(await matrixCallChannel.config.isConfigured!(account, {})).toBe(false);
-    expect(matrixCallChannel.config.unconfiguredReason!(account, {})).toContain("Assistant readiness");
+    expect(matrixCallChannel.config.unconfiguredReason!(account, {})).toContain("agent service");
     expect(matrixCallChannel.capabilities.media).toBe(false);
     expect(matrixCallChannel.configSchema!.schema).toBeDefined();
   });
