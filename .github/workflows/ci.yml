@@ -67,6 +67,31 @@ jobs:
       - run: pnpm build
       - run: pnpm verify:matrix-commands
 
+  marketplace:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320
+        with:
+          version: 10.28.2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm verify:marketplace
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: inspected-plugin-candidate
+          path: |
+            .cache/release/*.tgz
+            .cache/release/SHA256SUMS
+            .cache/release/release-report.json
+          include-hidden-files: true
+          if-no-files-found: error
+
   speech:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -88,4 +113,4 @@ jobs:
       - run: pnpm verify:speech
       - run: MATRIX_CALL_SPEECH_TEST_MODEL=small pnpm verify:speech
       - run: docker build -f deployment/browser-worker.Dockerfile -t matrix-call-browser-worker:0.1.0-alpha.1 .
-      - run: pnpm verify:matrix-gateway
+      - run: pnpm verify:matrix-chat-media
