@@ -5,7 +5,7 @@ export function installCaptureProbe() {
     constructor(...args) {
       super(...args);
       if (args[1] !== "matrix-call-pcm") return;
-      const state = { chunks: 0, voiced: 0, resets: 0, acknowledgements: 0, closed: false, peakRms: 0 };
+      const state = { chunks: 0, voiced: 0, resets: 0, acknowledgements: 0, closed: false, peakRms: 0, recentResets: [] };
       window.matrixCaptureProbe.push(state);
       this.port.addEventListener("message", ({ data }) => {
         if (!data.samples) return;
@@ -14,7 +14,11 @@ export function installCaptureProbe() {
       });
       const post = this.port.postMessage.bind(this.port);
       this.port.postMessage = (value, ...args) => {
-        if (value.type === "reset") state.resets++;
+        if (value.type === "reset") {
+          state.resets++;
+          state.recentResets.push({ atMs: Date.now(), voiced: state.voiced });
+          if (state.recentResets.length > 8) state.recentResets.shift();
+        }
         if (value.type === "ack") state.acknowledgements++;
         if (value.type === "close") state.closed = true;
         return post(value, ...args);

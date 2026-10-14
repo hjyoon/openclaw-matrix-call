@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import { startMatrixSpeechService } from "./matrix-speech-service.mjs";
 import { startTestVoiceServices } from "./voice-services.mjs";
 import { startMatrixGateway } from "./matrix-gateway.mjs";
-import { writeBrowserDiagnostics } from "./browser-diagnostics.mjs";
+import { writeBrowserDiagnostics, installRuntimeProbe } from "./browser-diagnostics.mjs";
 
 const exec = promisify(execFile);
 
@@ -96,6 +96,7 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
         await writeFile(env.MATRIX_CALL_BROWSER_CONFIG, JSON.stringify({ ...config, voiceFile }));
         worker = await startBrowserWorker(nativeGateway ? { ...env, MATRIX_CALL_PORT: String(workerPort) } : env);
         assert(worker.voice);
+        await getDriverPage().evaluate(installRuntimeProbe);
         const receive = worker.voice.receive.bind(worker.voice);
         worker.voice.receive = async (...args) => {
           console.log(JSON.stringify({ event: "matrix-speech-input-admitted", sampleRate: args[1].sampleRate, seconds: args[1].samples.length / args[1].sampleRate }));
@@ -137,6 +138,7 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
         let observation;
         let seconds;
         try {
+          console.log(JSON.stringify({ event: "matrix-speech-input-started", runtime, language, atMs: Date.now() }));
           seconds = await play(language);
           await waitFor(() => services.state.turns.length === before + 1, `${language} real Matrix recognition and agent dispatch`, 90_000);
           await waitFor(async () => (await peer.evaluate((id) => window.mediaTest.measure(id), identity)).rms > 0.005, `${language} real Matrix synthesis and publication`, liveModelFile ? 100_000 : 30_000);
@@ -148,6 +150,9 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
             return Date.now() - quietSince >= 700 && !worker?.voice.busy;
           }, `${language} real Matrix playback completion`, longReply && runtime === "native" ? 75_000 : 15_000);
         } catch (error) {
+          if (worker) console.log(JSON.stringify({ event: "matrix-speech-native-failed", runtime, language,
+            diagnostic: await getDriverPage().evaluate(() => ({ connected: window.matrixCall.status().connected,
+              runtime: window.matrixRuntimeProbe, capture: window.matrixCaptureProbe })).catch(() => null) }));
           if (container) {
             try {
               const status = await request("/v1/media/status", {});

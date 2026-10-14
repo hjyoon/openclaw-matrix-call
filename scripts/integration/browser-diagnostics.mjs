@@ -2,28 +2,31 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { installCaptureProbe } from "../../tests/integration/capture-probe.js";
 
-function installRuntimeProbe() {
+export function installRuntimeProbe() {
+  const wrap = (runtime) => {
+    const state = { polls: 0, inputs: 0, resumes: 0, publications: 0, finished: 0, publishing: false, failure: false, verifications: 0, verified: 0, rejected: 0 };
+    window.matrixRuntimeProbe = state;
+    const take = runtime.takeAudio.bind(runtime); const resume = runtime.resumeAudio.bind(runtime); const publish = runtime.publish.bind(runtime);
+    runtime.takeAudio = () => { state.polls++; const audio = take(); if (audio) state.inputs++; return audio; };
+    runtime.resumeAudio = () => { resume(); state.resumes++; };
+    runtime.publish = async (...values) => {
+      state.publications++; state.publishing = true;
+      try { await publish(...values); state.finished++; }
+      catch (error) { state.failure = true; throw error; }
+      finally { state.publishing = false; }
+    };
+    const verify = runtime.verify.bind(runtime);
+    runtime.verify = async (...values) => {
+      state.verifications++;
+      try { const proof = await verify(...values); state.verified++; return proof; }
+      catch (error) { state.rejected++; throw error; }
+    };
+    return runtime;
+  };
+  if (window.matrixCall) { wrap(window.matrixCall); return; }
   let factory;
-  Object.defineProperty(window, "createMatrixCall", {
-    configurable: true, get: () => factory,
-    set(original) {
-      factory = (...args) => {
-        const runtime = original(...args);
-        const state = { polls: 0, inputs: 0, resumes: 0, publications: 0, finished: 0, publishing: false, failure: false };
-        window.matrixRuntimeProbe = state;
-        const take = runtime.takeAudio.bind(runtime); const resume = runtime.resumeAudio.bind(runtime); const publish = runtime.publish.bind(runtime);
-        runtime.takeAudio = () => { state.polls++; const audio = take(); if (audio) state.inputs++; return audio; };
-        runtime.resumeAudio = () => { resume(); state.resumes++; };
-        runtime.publish = async (...values) => {
-          state.publications++; state.publishing = true;
-          try { await publish(...values); state.finished++; }
-          catch (error) { state.failure = true; throw error; }
-          finally { state.publishing = false; }
-        };
-        return runtime;
-      };
-    },
-  });
+  Object.defineProperty(window, "createMatrixCall", { configurable: true, get: () => factory,
+    set(original) { factory = (...args) => wrap(original(...args)); } });
 }
 
 export async function writeBrowserDiagnostics(directory) {
