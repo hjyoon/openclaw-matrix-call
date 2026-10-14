@@ -21,6 +21,7 @@
     "speech:model": "node scripts/download-speech-model.mjs",
     "verify:media": "node scripts/verify-media.mjs",
     "verify:matrix": "node scripts/verify-matrix.mjs",
+    "verify:matrix-commands": "node scripts/verify-matrix-commands.mjs",
     "verify:matrix-speech": "MATRIX_CALL_MATRIX_SPEECH_IMAGE=matrix-call-speech-worker:0.1.0-alpha.1 MATRIX_CALL_BROWSER_IMAGE=matrix-call-browser-worker:0.1.0-alpha.1 node scripts/verify-matrix.mjs",
     "verify:matrix-gateway": "MATRIX_CALL_NATIVE_GATEWAY=1 pnpm verify:matrix-speech",
     "verify:matrix-live": "MATRIX_CALL_NATIVE_GATEWAY=1 MATRIX_CALL_LIVE_MODEL_REQUIRED=1 pnpm verify:matrix-speech",
