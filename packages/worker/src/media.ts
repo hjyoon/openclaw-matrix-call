@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { matrixRoomIdSchema } from "@matrix-call/core";
 import type { RtcTransportPort } from "@matrix-call/core";
+import { mediaJoinSchema as joinSchema, mediaLeaveSchema as leaveSchema, mediaStatusRequestSchema as statusSchema } from "./protocol.js";
 
 export class MediaControlError extends Error {
-  constructor(readonly code: "invalid-request" | "forbidden-room" | "busy" | "not-found" | "closed" | "backend-failed") {
+  constructor(readonly code: "invalid-request" | "forbidden-room" | "busy" | "not-found" | "closed" | "backend-failed" | "session-reused" | "capacity-exceeded") {
     super(code);
     this.name = "MediaControlError";
   }
@@ -18,10 +19,6 @@ type MediaSession = {
   connected: boolean;
   cleanup?: Promise<void>;
 };
-
-const joinSchema = z.strictObject({ roomId: matrixRoomIdSchema });
-const leaveSchema = z.strictObject({ sessionId: z.uuid() });
-const statusSchema = z.strictObject({});
 
 function cancellable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   signal.throwIfAborted();
@@ -39,16 +36,20 @@ export class WorkerMediaController {
   readonly #rooms: ReadonlySet<string>;
   readonly #transport: Pick<RtcTransportPort, "connect" | "disconnect">;
   readonly #timeout: number;
+  readonly #maxSessions: number;
+  readonly #accepted = new Set<string>();
   #active: MediaSession | undefined;
   #closed = false;
   #shutdown: Promise<void> | undefined;
 
-  constructor({ rooms, transport, timeoutMs = 30_000 }: { rooms: readonly string[]; transport: Pick<RtcTransportPort, "connect" | "disconnect">; timeoutMs?: number }) {
+  constructor({ rooms, transport, timeoutMs = 30_000, maxSessions = 4096 }: { rooms: readonly string[]; transport: Pick<RtcTransportPort, "connect" | "disconnect">; timeoutMs?: number; maxSessions?: number }) {
     const parsed = z.array(matrixRoomIdSchema).min(1).max(256).safeParse(rooms);
-    if (!parsed.success || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000) throw new MediaControlError("invalid-request");
+    if (!parsed.success || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000 ||
+      !Number.isInteger(maxSessions) || maxSessions < 1 || maxSessions > 65536) throw new MediaControlError("invalid-request");
     this.#rooms = new Set(parsed.data);
     this.#transport = transport;
     this.#timeout = timeoutMs;
+    this.#maxSessions = maxSessions;
   }
 
   status(value: unknown = {}) {
@@ -65,7 +66,11 @@ export class WorkerMediaController {
     if (!this.#rooms.has(parsed.data.roomId)) throw new MediaControlError("forbidden-room");
     if (this.#closed || signal.aborted) throw new MediaControlError("closed");
     if (this.#active) throw new MediaControlError("busy");
-    const state: MediaSession = { id: randomUUID(), roomId: parsed.data.roomId, controller: new AbortController(), task: Promise.resolve(), connected: false };
+    const id = parsed.data.sessionId ?? randomUUID();
+    if (this.#accepted.has(id)) throw new MediaControlError("session-reused");
+    if (this.#accepted.size >= this.#maxSessions) throw new MediaControlError("capacity-exceeded");
+    this.#accepted.add(id);
+    const state: MediaSession = { id, roomId: parsed.data.roomId, controller: new AbortController(), task: Promise.resolve(), connected: false };
     this.#active = state;
     const abort = () => state.controller.abort();
     signal.addEventListener("abort", abort, { once: true });

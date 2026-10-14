@@ -21,10 +21,14 @@ Inject the controller into `createWorkerServer(secret, media)` or `startWorker(e
 | POST path | Strict request body | Success |
 | --- | --- | --- |
 | `/v1/media/status` | `{}` | Controller availability and current session, or `null` |
-| `/v1/media/join` | `{ "roomId": "!opaque" }` | A new session ID, exact room ID, and connected state |
+| `/v1/media/join` | `{ "roomId": "!opaque", "sessionId": "optional-uuid" }` | A reserved session ID, exact room ID, and connected state |
 | `/v1/media/leave` | `{ "sessionId": "uuid" }` | `{ "closed": true }` after cleanup |
 
 All paths require the dedicated [worker message authentication](http-authentication.md), including process audience and replay protection. Success and media-control error responses are signed against the actual HTTP status and path. Invalid requests return 400, unconfigured rooms 403, missing sessions 404, busy/closed controllers 409, and redacted backend failures 503.
+
+`GET /v1/media/capabilities` returns a signed protocol version, process audience, `mediaControl` flag and `clientSessionIds: true`. The portable `WorkerHttpClient` requires this authenticated capability exchange before any operation. It rejects redirects, credentials in URLs, implicit plaintext HTTP, unknown result fields, wrong room/session replies and unauthenticated errors. Explicit loopback HTTP is available for private local connections. Deadlines cover headers and streamed bodies; abort never waits for an uncooperative response-stream cancellation. Operations are not automatically retried or reconnected after a worker restart.
+
+A trusted client may choose the join session UUID before dispatch. This lets it close that exact session even when a success response is lost. The worker normalizes UUID case and retains accepted IDs, including failed/cancelled joins, for its entire incarnation. Reuse receives signed HTTP 409 `session-reused`. The default ledger holds 4,096 sessions, configurable up to 65,536; exhaustion returns signed HTTP 503 `capacity-exceeded` instead of evicting IDs. Old clients cannot affect a new incarnation because its audience changes. Clients that omit `sessionId` still receive a worker-generated UUID.
 
 Disconnecting an HTTP client cancels only a connection still being opened. The response-close listener is removed after the operation completes, so finishing a successful request does not terminate its media session. Worker shutdown closes the injected media controller after stopping its HTTP listener.
 

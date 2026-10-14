@@ -8,6 +8,22 @@ function fixture(timeoutMs = 30_000) {
 }
 
 describe("WorkerMediaController", () => {
+  it.each([0, 65537, 1.5])("rejects invalid session ledger limits %s", (maxSessions) => {
+    const { transport } = fixture();
+    expect(() => new WorkerMediaController({ rooms: ["!room"], transport, maxSessions })).toThrow("invalid-request");
+  });
+
+  it("retains completed IDs and refuses full capacity without eviction", async () => {
+    const { transport, signal } = fixture();
+    const controller = new WorkerMediaController({ rooms: ["!room"], transport, maxSessions: 1 });
+    const joined = await controller.join({ roomId: "!room" }, signal);
+    await controller.leave({ sessionId: joined.sessionId.toUpperCase() });
+    await expect(controller.join({ roomId: "!room", sessionId: joined.sessionId.toUpperCase() }, signal)).rejects.toThrow("session-reused");
+    await expect(controller.join({ roomId: "!room" }, signal)).rejects.toThrow("capacity-exceeded");
+    expect(transport.connect).toHaveBeenCalledOnce();
+    await controller.shutdown();
+  });
+
   it("connects only configured rooms, returns immutable IDs, and closes the exact session", async () => {
     const { transport, controller, signal } = fixture();
     expect(controller.status()).toEqual({ available: true, session: null });

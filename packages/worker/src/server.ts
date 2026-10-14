@@ -5,7 +5,7 @@ import { AuthenticationError, RequestAuthenticator } from "@matrix-call/core";
 import { MediaControlError, type WorkerMediaController } from "./media.js";
 
 const mediaPaths = new Set(["/v1/media/status", "/v1/media/join", "/v1/media/leave"]);
-const mediaErrorStatus = { "invalid-request": 400, "forbidden-room": 403, busy: 409, "not-found": 404, closed: 409, "backend-failed": 503 } as const;
+const mediaErrorStatus = { "invalid-request": 400, "forbidden-room": 403, busy: 409, "not-found": 404, closed: 409, "backend-failed": 503, "session-reused": 409, "capacity-exceeded": 503 } as const;
 
 class BodyError extends Error {
   constructor(readonly status: 400 | 413) {
@@ -41,6 +41,12 @@ export function createWorkerServer(secret: string, media?: WorkerMediaController
   const auth = new RequestAuthenticator({ secret, audience });
   const server = createServer({ requestTimeout: 10_000, headersTimeout: 5_000, maxHeaderSize: 8_192 },
     async (request, response) => {
+      if (request.method === "GET" && request.url === "/v1/media/capabilities") {
+        const value = { protocolVersion: 1, audience, mediaControl: Boolean(media), clientSessionIds: true };
+        const body = JSON.stringify(value);
+        json(response, 200, value, auth.sign({ method: "RESPONSE_200", path: request.url, body }));
+        return;
+      }
       if (request.method === "GET" && request.url === "/healthz") {
         json(response, 200, { protocolVersion: 1, status: "development", audience, ready: false, transports: media ? ["media-control"] : [] });
         return;
