@@ -115,6 +115,15 @@ describe("Matrix browser device initialization", () => {
     expect(f.cryptoApi.setDeviceVerified).not.toHaveBeenCalled();
   });
 
+  it("cancels a stalled SDK lookup without waiting for storage or granting trust", async () => {
+    const f = fixture(); const controller = new AbortController();
+    f.cryptoApi.getUserDeviceInfo.mockImplementation(() => new Promise(() => {}));
+    const enrollment = enrollPinnedDevices(f.sdk, f.setup, controller.signal);
+    controller.abort(new Error("storage lookup canceled"));
+    await expect(enrollment).rejects.toThrow("storage lookup canceled");
+    expect(f.cryptoApi.setDeviceVerified).not.toHaveBeenCalled();
+  });
+
   it("requires prepared sync and joined encrypted Matrix rooms", () => {
     const f = fixture();
     expect(joinedEncryptedRoom(f.sdk, "!room")).toBeDefined();

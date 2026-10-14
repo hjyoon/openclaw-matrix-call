@@ -1,5 +1,6 @@
 import { createClient, SyncState, type MatrixClient } from "matrix-js-sdk";
 import type { BrowserSetup, MatrixCredentials } from "./types.js";
+import { cancelable } from "../../voice/src/cancellation.js";
 
 export function createMatrixClient(credentials: MatrixCredentials): MatrixClient {
   const silent = (): void => {};
@@ -40,7 +41,7 @@ export async function enrollPinnedDevices(client: MatrixClient, setup: BrowserSe
       if (!room) throw new Error("Joined encrypted Matrix room is unavailable");
       cryptoApi.prepareToEncrypt(room);
     }
-    devices = await cryptoApi.getUserDeviceInfo([...new Set(setup.policy.devices.map((pin) => pin.userId))], false);
+    devices = await cancelable(cryptoApi.getUserDeviceInfo([...new Set(setup.policy.devices.map((pin) => pin.userId))], false), signal);
     signal.throwIfAborted();
     if (setup.policy.devices.every((pin) => devices.get(pin.userId)?.has(pin.deviceId))) break;
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
