@@ -42,3 +42,22 @@ assert.equal(speech.volumes[0].target, "/models/model.bin");
 assert.equal(speech.volumes[0].read_only, true);
 assert.equal(speech.volumes[0].bind?.create_host_path ?? false, false);
 console.log("Local speech Compose namespace, credential separation and resource limits verified.");
+
+const local = JSON.parse((await exec("docker", ["compose", "-f", path.join(root, "deployment/browser-compose.yml"),
+  "-f", path.join(root, "deployment/browser-voice.compose.yml"), "-f", path.join(root, "deployment/browser-local-speech.compose.yml"),
+  "-f", path.join(root, "deployment/browser-local-gateway.compose.yml"), "config", "--format", "json"],
+{ env: { ...env, MATRIX_CALL_CONTROL_PORT: "29890", MATRIX_CALL_SPEECH_PORT: "29892" } })).stdout).services;
+for (const service of Object.values(local)) {
+  assert.equal(service.network_mode, "host"); assert.equal((service.ports ?? []).length, 0);
+  assert.equal(service.read_only, true); assert.deepEqual(service.cap_drop, ["ALL"]);
+  assert(!service.pid && !service.ipc && !service.privileged);
+}
+assert.equal(local["browser-worker"].environment.MATRIX_CALL_HOST, "127.0.0.1");
+assert.equal(local["browser-worker"].environment.MATRIX_CALL_PORT, "29890");
+assert.equal(local["speech-worker"].environment.MATRIX_CALL_SPEECH_PORT, "29892");
+assert.equal(local["browser-worker"].depends_on["speech-worker"].condition, "service_healthy");
+assert.deepEqual(local["speech-worker"].secrets, speech.secrets);
+assert.deepEqual(local["speech-worker"].volumes, speech.volumes);
+assert.equal(local["browser-worker"].mem_limit, browser.mem_limit);
+assert.equal(local["speech-worker"].mem_limit, speech.mem_limit);
+console.log("Local Gateway Compose loopback listeners, separate mounts and unchanged resource limits verified.");

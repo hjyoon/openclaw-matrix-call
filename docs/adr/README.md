@@ -28,6 +28,7 @@ Number records in order. An accepted ADR is a historical record, not a second in
 | [0018](0018-modern-livekit-transport-config.md) | Accepted | Modern service configuration with optional legacy alias and unchanged authenticated token scope |
 | [0019](0019-offline-worker-image-candidates.md) | Accepted | Source-labelled offline worker image candidates separate from the plugin and private runtime inputs |
 | [0020](0020-capture-continuity-on-membership-renewal.md) | Accepted | Preserve bounded capture only across unchanged active membership bindings and nondecreasing lifetimes |
+| [0021](0021-local-gateway-worker-networking.md) | Accepted | Optional explicit host-loopback route for a native Linux Gateway and separately restricted Docker workers |
 
 ## Record format
 

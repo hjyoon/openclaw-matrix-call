@@ -1,0 +1,17 @@
+services:
+  browser-worker:
+    network_mode: host
+    ports: !reset []
+    environment:
+      MATRIX_CALL_HOST: "127.0.0.1"
+      MATRIX_CALL_PORT: "${MATRIX_CALL_CONTROL_PORT:-19790}"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.MATRIX_CALL_PORT+'/healthz').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
+
+  speech-worker:
+    network_mode: host
+    ports: !reset []
+    environment:
+      MATRIX_CALL_SPEECH_PORT: "${MATRIX_CALL_SPEECH_PORT:-19792}"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.MATRIX_CALL_SPEECH_PORT+'/healthz').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
