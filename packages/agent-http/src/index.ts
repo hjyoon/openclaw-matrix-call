@@ -1,3 +1,5 @@
+export { createAgentServer } from "./server.js";
+
 import {
   agentCapabilitiesSchema, agentResponseSchema, parseAgentRequest, RequestAuthenticator,
 } from "@matrix-call/core";

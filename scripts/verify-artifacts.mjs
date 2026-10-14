@@ -52,6 +52,7 @@ const core = await import(pathToFileURL(path.join(root, "dist/core/index.js")));
 assert.equal(core.parsePolicy({ owners: ["@owner:example.org"], rooms: ["!room:example.org"], agents: ["assistant"] }).agents[0], "assistant");
 const agent = await import(pathToFileURL(path.join(root, "dist/agent-http/index.js")));
 assert.equal(typeof agent.HttpAgentAdapter.connect, "function");
+assert.equal(typeof agent.createAgentServer, "function");
 const speech = await import(pathToFileURL(path.join(root, "dist/speech-http/index.js")));
 assert.equal(typeof speech.HttpSpeechAdapter.connect, "function");
 const speechWorker = await import(pathToFileURL(path.join(root, "dist/speech-worker/index.js")));
