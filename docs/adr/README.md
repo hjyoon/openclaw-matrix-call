@@ -22,6 +22,7 @@ Number records in order. An accepted ADR is a historical record, not a second in
 | [0012](0012-owned-worker-control-sessions.md) | Accepted | Authenticated portable worker control with caller-selected session IDs and exact ownership cleanup |
 | [0013](0013-native-owner-media-control.md) | Accepted | Public native owner/admin call entry with bounded admission and exact owned-session disposal |
 | [0014](0014-bounded-initial-worker-discovery.md) | Accepted | One bounded initial capability-discovery budget for refused worker connections |
+| [0015](0015-optional-live-model-evidence.md) | Accepted | Optional access-only operator login snapshots for actual model evidence |
 
 ## Record format
 

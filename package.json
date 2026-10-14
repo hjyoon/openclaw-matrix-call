@@ -12,6 +12,7 @@
     "verify:artifacts": "node scripts/verify-artifacts.mjs",
     "verify:worker": "node scripts/verify-worker.mjs",
     "verify:plugin": "node scripts/verify-plugin.mjs",
+    "verify:live-model": "node scripts/verify-live-model.mjs",
     "verify:container": "node scripts/verify-container.mjs",
     "verify:speech": "node scripts/verify-speech.mjs",
     "verify:speech-compose": "node scripts/verify-speech-compose.mjs",
@@ -26,7 +27,7 @@
     "schema:sync": "pnpm build && node scripts/sync-manifest.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
-    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm verify:artifacts && pnpm verify:worker && pnpm verify:plugin"
+    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm verify:artifacts && pnpm verify:worker && pnpm verify:plugin && pnpm verify:live-model"
   },
   "devDependencies": {
     "@types/dom-mediacapture-record": "1.0.22",
