@@ -7,8 +7,10 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
+import { GatewayClient } from "openclaw/plugin-sdk/gateway-runtime";
 import { HttpAgentAdapter } from "../../dist/agent-http/index.js";
 import { RequestAuthenticator } from "../../dist/core/index.js";
+import { createWorkerServer, WorkerMediaController } from "../../dist/worker/index.js";
 
 const exec = promisify(execFile);
 
@@ -80,6 +82,15 @@ export async function verifyInstalledAgent({ cli, directory, env }) {
   });
   provider.listen(0, "127.0.0.1");
   await once(provider, "listening");
+  let connected = 0;
+  let closed = 0;
+  const media = new WorkerMediaController({ rooms: ["!room:example.org"], transport: {
+    connect: async () => { connected += 1; }, disconnect: async () => { closed += 1; },
+  } });
+  const controlSecret = randomBytes(32).toString("hex");
+  const { server: worker } = createWorkerServer(controlSecret, media);
+  worker.listen(0, "127.0.0.1");
+  await once(worker, "listening");
   try {
     const providerPort = provider.address().port;
     const gatewayPort = await freePort();
@@ -87,14 +98,21 @@ export async function verifyInstalledAgent({ cli, directory, env }) {
     const baseUrl = `http://127.0.0.1:${agentPort}`;
     const secret = randomBytes(32).toString("hex");
     const secretFile = path.join(directory, "agent.secret");
+    const controlSecretFile = path.join(directory, "control.secret");
+    const gatewayToken = randomBytes(32).toString("hex");
     const workspace = path.join(directory, "workspace");
     await mkdir(workspace, { mode: 0o700 });
     await writeFile(secretFile, secret + "\n", { mode: 0o600 });
+    await writeFile(controlSecretFile, controlSecret + "\n", { mode: 0o600 });
     const patchFile = path.join(directory, "agent-config.patch.json");
     await writeFile(patchFile, JSON.stringify({
-      gateway: { mode: "local", port: gatewayPort, bind: "loopback", auth: { mode: "token", token: randomBytes(32).toString("hex") }, controlUi: { enabled: false } },
+      gateway: { mode: "local", port: gatewayPort, bind: "loopback", auth: { mode: "token", token: gatewayToken }, controlUi: { enabled: false } },
       plugins: { slots: { memory: "none" } },
-      channels: { "matrix-call": { enabled: true, policy: { owners: ["@owner:example.org"], rooms: ["!room:example.org"], agents: ["main"] }, agentService: { secretFile, port: agentPort, timeoutMs: 20_000 } } },
+      channels: { "matrix-call": {
+        enabled: true, policy: { owners: ["@owner:example.org"], rooms: ["!room:example.org"], agents: ["main"] },
+        agentService: { secretFile, port: agentPort, timeoutMs: 20_000 },
+        workerControl: { baseUrl: `http://127.0.0.1:${worker.address().port}`, secretFile: controlSecretFile, allowInsecureLoopback: true, timeoutMs: 2000 },
+      } },
       agents: { ownership: "explicit", defaults: { workspace, systemAgent: { agentId: "main" }, model: { primary: "matrix-call-fixture/fixture-model" }, heartbeat: { every: "0m", agentId: "main" } }, entries: { main: { workspace } } },
       models: { providers: { "matrix-call-fixture": { baseUrl: `http://127.0.0.1:${providerPort}/v1`, apiKey: "isolated-fixture-key", api: "openai-completions", models: [{ id: "fixture-model", name: "Integration fixture", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 1024 }] } } },
       cron: { enabled: false }, browser: { enabled: false },
@@ -106,6 +124,17 @@ export async function verifyInstalledAgent({ cli, directory, env }) {
     let gateway;
     let stopped;
     let output = "";
+    const control = async (params) => {
+      const result = await exec(cli, ["gateway", "call", "matrixcall.control", "--params", JSON.stringify(params), "--port", String(gatewayPort), "--json"], { cwd: directory, env, timeout: 30_000 });
+      return JSON.parse(result.stdout);
+    };
+    const rejectedControl = (params, reason) => assert.rejects(control(params), (error) => {
+      const result = JSON.parse(error.stdout);
+      assert.equal(result.ok, false);
+      assert.equal(result.error.code, "UNAVAILABLE");
+      assert.equal(result.error.message, `Matrix Call control unavailable: ${reason}`);
+      return true;
+    });
     const start = async () => {
       output = "";
       gateway = spawn(cli, ["gateway", "run", "--bind", "loopback", "--port", String(gatewayPort)], {
@@ -134,6 +163,34 @@ export async function verifyInstalledAgent({ cli, directory, env }) {
     };
     try {
       await start();
+      await poll(async () => {
+        try { return (await control({ operation: "status" })).session === null; }
+        catch { return false; }
+      }, "installed native worker control startup");
+      assert.deepEqual(await control({ operation: "status" }), { available: true, session: null });
+      let reader;
+      try {
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error("Read-scoped Gateway connection timed out")), 10_000);
+          reader = new GatewayClient({
+            url: `ws://127.0.0.1:${gatewayPort}`, token: gatewayToken, env, deviceIdentity: null,
+            clientName: "cli", mode: "cli", scopes: ["operator.read"],
+            onHelloOk: () => { clearTimeout(timeout); resolve(); },
+            onConnectError: (error) => { clearTimeout(timeout); reject(error); },
+          });
+          reader.start();
+        });
+        await assert.rejects(reader.request("matrixcall.control", { operation: "status" }), /operator.admin/);
+        assert.equal(media.status().session, null);
+      } finally { reader?.stop(); }
+      await rejectedControl({ operation: "join", roomId: "!unlisted:example.org" }, "forbidden");
+      await rejectedControl({ operation: "status", senderIsOwner: true }, "invalid-request");
+      const firstSession = await control({ operation: "join", roomId: "!room:example.org" });
+      assert.deepEqual(firstSession, media.status().session);
+      await rejectedControl({ operation: "leave", sessionId: randomUUID() }, "not-found");
+      await rejectedControl({ operation: "join", roomId: "!room:example.org" }, "busy");
+      assert.deepEqual(await control({ operation: "leave", sessionId: firstSession.sessionId }), { closed: true });
+      await control({ operation: "join", roomId: "!room:example.org" });
       const agent = await HttpAgentAdapter.connect({ baseUrl, secret });
       const capabilities = await fetch(baseUrl + "/capabilities");
       const capabilitiesBody = await capabilities.text();
@@ -186,17 +243,31 @@ export async function verifyInstalledAgent({ cli, directory, env }) {
       assert.deepEqual(await agent.reply(turn(randomUUID(), "matrix-call-fixture-recover")), { text: "Fixture reply 6" });
       await stop();
       await assert.rejects(fetch(baseUrl + "/capabilities"));
+      assert.equal(media.status().session, null);
+      assert.equal(closed, 2);
       await start();
+      await poll(async () => {
+        try { return (await control({ operation: "status" })).session === null; }
+        catch { return false; }
+      }, "worker control reauthenticated after Gateway restart");
       await assert.rejects(agent.reply(turn(randomUUID(), "old audience")), /http-error/);
       const replacement = await HttpAgentAdapter.connect({ baseUrl, secret });
       assert.deepEqual(await replacement.reply(turn(randomUUID(), "matrix-call-fixture-restart")), { text: "Fixture reply 7" });
       assert(!JSON.stringify(requests[6].messages).includes("matrix-call-fixture-first"));
       const oldAudience = (await (await fetch(baseUrl + "/capabilities")).json()).audience;
+      const beforeReload = await control({ operation: "join", roomId: "!room:example.org" });
       await exec(cli, ["config", "set", "channels.matrix-call.agentService.timeoutMs", "2000", "--strict-json"], { cwd: directory, env, timeout: 60_000 });
       await poll(async () => {
         try { return (await (await fetch(baseUrl + "/capabilities", { signal: AbortSignal.timeout(500) })).json()).audience !== oldAudience; }
         catch { return false; }
       }, "Gateway channel configuration reloaded native service");
+      await poll(() => media.status().session === null && closed === 3, "Gateway reload cleaned its owned worker session");
+      await poll(async () => {
+        try { return (await control({ operation: "status" })).session === null; }
+        catch { return false; }
+      }, "worker control authenticated after configuration reload");
+      const afterReload = await control({ operation: "join", roomId: "!room:example.org" });
+      assert.notEqual(afterReload.sessionId, beforeReload.sessionId);
       await assert.rejects(replacement.reply(turn(randomUUID(), "old reload audience")), /http-error/);
       const reloaded = await HttpAgentAdapter.connect({ baseUrl, secret });
       assert.deepEqual(await reloaded.reply(turn(randomUUID(), "matrix-call-fixture-reload")), { text: "Fixture reply 8" });
@@ -206,11 +277,15 @@ export async function verifyInstalledAgent({ cli, directory, env }) {
       await poll(() => held.size === 1, "host provider request before Gateway stop");
       await stop();
       await stopRejected;
+      assert.equal(media.status().session, null);
+      assert.equal(connected, 4);
+      assert.equal(closed, 4);
       assert.equal(disconnected, 2);
       assert.equal(requests.length, 9);
       assert(requests.every((request) => request.tools === undefined || request.tools.length === 0));
       await assert.rejects(fetch(baseUrl + "/capabilities"));
       console.log("Installed Gateway agent service: real public SDK dispatch, bound history, idempotency, tool-free requests, policy rejection, provider cancellation/failure, restart/reload audiences and active-turn shutdown passed. Model provider: deterministic HTTP fixture.");
+      console.log("Installed Gateway worker control: public admin RPC, signed capabilities/status/join/leave, strict policy and session checks, restart and owned-session cleanup on reload/shutdown passed. Media transport: deterministic fixture.");
     } catch (error) {
       throw new Error(`Installed agent integration failed: ${error.message}\n${output}`, { cause: error });
     } finally {
@@ -218,6 +293,9 @@ export async function verifyInstalledAgent({ cli, directory, env }) {
       await stop();
     }
   } finally {
+    await media.shutdown();
+    worker.closeAllConnections();
+    await new Promise((resolve) => worker.close(resolve));
     provider.closeAllConnections();
     await new Promise((resolve) => provider.close(resolve));
   }

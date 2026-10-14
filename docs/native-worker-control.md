@@ -68,4 +68,6 @@ A worker restart changes its authentication audience. This service does not sile
 
 Behavior tests use real signed worker HTTP operations and managed SDK contexts. They cover owner identity, strict arguments, room policy, exact-session leave, response loss, cancellation, admission bounds, independent sessions, policy reload and blocked replacement after cleanup failure.
 
+The [installed Gateway check](agent-integration.md) drives the packed plugin's administrator RPC against a real signed HTTP worker. It also verifies rejection of a read-scoped public SDK client, restart, configuration reload and owned-session shutdown. Its media transport is deterministic; real Matrix media is checked separately.
+
 The command handler is tested with public SDK command contexts. Actual Matrix chat command dispatch and released-client interoperability still need an isolated end-to-end check. Media connection alone does not establish verified voice input, model inference or assistant readiness. The native descriptor retains `isConfigured: false` and `media: false`; `/readyz` and automatic incoming calls remain unavailable. See [release readiness](release-readiness.md).
