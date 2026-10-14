@@ -9,7 +9,7 @@ import { startMatrixGateway } from "./matrix-gateway.mjs";
 import { startMatrixSpeechService } from "./matrix-speech-service.mjs";
 import { provisionMatrixChat } from "./matrix-chat.mjs";
 import { decodeWav } from "../../dist/speech-worker/index.js";
-import { startBrowserWorker } from "../../dist/browser-worker/index.js";
+import { startReleasedWorker } from "./released-worker.mjs";
 
 async function freePort() { const server = createServer(); server.listen(0, "127.0.0.1"); await once(server, "listening"); const port = server.address().port; await new Promise((resolve) => server.close(resolve)); return port; }
 
@@ -50,7 +50,7 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
     await writeFile(configFile, JSON.stringify({ credentialsFile, profileDir: path.join(data, "worker-profile"), assetDir: path.join(root, "dist/browser-worker/assets"),
       assetPort: await freePort(), owners: [owner.user_id], rooms: [roomId], focusUrls: [focusUrl], sfuUrls: [sfuUrl],
       devices: [{ userId: owner.user_id, deviceId: owner.device_id, ...app.keys }], allowInsecureLoopback: true, voiceFile }), { mode: 0o600 });
-    worker = await startBrowserWorker({ MATRIX_CALL_SECRET_FILE: controlSecretFile, MATRIX_CALL_PORT: String(workerPort), MATRIX_CALL_BROWSER_CONFIG: configFile });
+    worker = await startReleasedWorker({ root, data, configFile, controlSecretFile, port: workerPort, waitFor });
     await waitFor(() => app.page.evaluate(async ({ bot, keys, roomId }) => {
       const client = window.matrixclient; const crypto = client.getCrypto(); crypto.prepareToEncrypt(client.getRoom(roomId));
       const device = (await crypto.getUserDeviceInfo([bot.user_id], false)).get(bot.user_id)?.get(bot.device_id);
@@ -104,7 +104,7 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
       let peakRms = 0;
       await waitFor(async () => { const audio = await app.page.evaluate(() => window.releasedMicrophone.measure()); peakRms = Math.max(peakRms, audio.rms); return audio.rms > 0.005; }, "released-client synthesized audio", liveModelFile ? 100000 : 30000);
       const firstAudioMs = Date.now() - started;
-      await waitFor(() => !worker.voice.busy, "released-client playback completion");
+      await worker.waitForPlayback(index + 1);
       const turn = gateway.state.turns[before]; const text = turn.messages.at(-1).text.toLowerCase();
       assert((language === "en" ? ["country"] : manifest[language].keywords).every((keyword) => text.includes(keyword)));
       assert.equal(turn.caller.userId, owner.user_id); assert.equal(turn.caller.deviceId, owner.device_id); assert(turn.caller.deviceVerified && turn.caller.mediaEncrypted);
@@ -127,7 +127,8 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
     assert.equal(new Set(conversations).size, 2); assert.equal(gateway.state.turns.length, 3); assert.equal(gateway.state.providerRequests.length, liveModelFile ? 0 : 3);
     assert.equal((await gateway.modelEvidence()).sessions.filter((session) => session.key.startsWith("agent:main:matrix-call:call:")).length, 2);
     assert.deepEqual(matrixChat.evidence, { commands: 10, replies: 10, encryptedCommands: 10, encryptedReplies: 10 });
-    report = { client: app.pin.name, version: app.pin.version, artifactSha256: app.pin.sha256, mode: "standalone compatibility", perParticipantE2EE: true,
+    await worker.verifySandbox();
+    report = { client: app.pin.name, version: app.pin.version, artifactSha256: app.pin.sha256, mode: "standalone compatibility", worker: worker.evidence, perParticipantE2EE: true,
       microphone: "controlled browser MediaStream fixture", engines: "real local CPU speech",
       agent: liveModelFile ? "installed Gateway with operator-configured live model" : "installed Gateway with deterministic provider", results,
       leaveAndRejoin: true, persistentClientDevice: true, independentCallHistory: true, encryptedMatrixChat: matrixChat.evidence, modelInference: Boolean(liveModelFile) };
@@ -143,7 +144,8 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
   }
   if (failure) throw failure;
   await mkdir(path.join(root, ".cache/speech"), { recursive: true });
-  await writeFile(path.join(root, ".cache/speech", liveModelFile ? "released-client-live-result.json" : "released-client-result.json"), JSON.stringify(report, null, 2) + "\n");
+  const filename = `released-client${process.env.MATRIX_CALL_RELEASED_BROWSER_IMAGE ? "-image" : ""}${liveModelFile ? "-live" : ""}-result.json`;
+  await writeFile(path.join(root, ".cache/speech", filename), JSON.stringify(report, null, 2) + "\n");
   console.log(JSON.stringify({ event: "released-client-call-passed", ...report }));
   return report;
 }
