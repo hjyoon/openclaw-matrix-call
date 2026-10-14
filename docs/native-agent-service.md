@@ -39,7 +39,9 @@ The service checks owner, room, logical agent, verified device, encrypted media,
 
 OpenClaw receives `senderIsOwner: false`, `toolsAllow: []`, `allowModelOverride: false` and `deliver: false`. Its policy remains authoritative. Provider credentials and private session keys stay in the Gateway. See [ADR 0004](adr/0004-delegated-openclaw-ingress.md) for the unsupported privileged execution boundary.
 
-The service uses the public SDK logger-backed command runtime, which throws instead of exiting the Gateway. Command output is discarded; command errors produce a fixed log message. The HTTP response exposes only `meta.finalAssistantVisibleText`. Startup errors are fixed messages, without file paths or credentials.
+The service uses the public SDK logger-backed command runtime, which throws instead of exiting the Gateway. Command output is discarded; command errors produce a fixed log message. The HTTP response exposes only `meta.finalAssistantVisibleText`. Startup errors name only the failed phase (`configuration`, `credentials`, `runtime` or `listener`), without file paths or credentials.
+
+Apply the channel section through `openclaw config patch --file <channel-settings.json>` or the supported configuration UI. A patch should contain only operator-authored settings, excluding OpenClaw's auto-managed `meta` fields. Avoid `OPENCLAW_SKIP_CHANNELS=1` and `OPENCLAW_SKIP_PROVIDERS=1` when testing this service: the pinned host removes channel settings from its startup runtime configuration with either flag. The service requires its explicit policy and never reconstructs authority from a suppressed configuration.
 
 Start and stop transitions are serialized. Reload of `channels.matrix-call` stops the old listener and cancels its host operation before starting a fresh service audience. Shutdown waits for the operation to settle, including a host that ignores its abort signal. A hung host can therefore delay shutdown or reload; the service never clears the slot merely to admit replacement work. Timeout, disconnect, idempotency and capacity behavior follow the [portable server contract](agent-protocol.md#portable-server-implementation).
 

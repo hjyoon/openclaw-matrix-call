@@ -183,7 +183,8 @@ describe("native signed agent service lifecycle", () => {
       test.settings.secretFile = invalid;
       if (kind === "version") { test.settings.secretFile = original; test.runtime.version = "2026.10.3"; }
       if (kind === "invalid-account") test.context.config = { channels: { "matrix-call": { enabled: true } } };
-      await expect(test.service.start(test.context)).rejects.toThrow(/^Matrix Call agent service could not start$/);
+      const phase = kind === "invalid-account" ? "configuration" : ["version", "invalid-secret"].includes(kind) ? "runtime" : "credentials";
+      await expect(test.service.start(test.context)).rejects.toThrow(`Matrix Call agent service could not start (${phase})`);
       if (kind === "hardlink") await rm(invalid);
       test.settings.secretFile = original;
       test.runtime.version = "2026.10.2";
@@ -200,7 +201,7 @@ describe("native signed agent service lifecycle", () => {
     occupied.listen(test.settings.port, test.settings.host);
     await once(occupied, "listening");
     try {
-      await expect(test.service.start(test.context)).rejects.toThrow(/^Matrix Call agent service could not start$/);
+      await expect(test.service.start(test.context)).rejects.toThrow("Matrix Call agent service could not start (listener)");
       await new Promise<void>((resolve) => { occupied.close(() => resolve()); });
       await test.service.start(test.context);
       const agent = await HttpAgentAdapter.connect({ baseUrl: test.baseUrl, secret });

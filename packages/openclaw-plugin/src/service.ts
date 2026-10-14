@@ -25,11 +25,14 @@ export function createNativeAgentService(api: Pick<OpenClawPluginApi, "runtime">
     reload: { configPrefixes: ["channels.matrix-call"] },
     start: (context) => schedule(async () => {
       await close();
+      let phase = "configuration";
       try {
         const account = matrixCallChannel.config.resolveAccount(context.config);
         if (!account.enabled || !account.agentService) return;
         const settings = account.agentService;
+        phase = "credentials";
         const secret = readSecretFileSync(settings.secretFile, "Matrix Call agent secret", { maxBytes: 65, rejectSymlink: true });
+        phase = "runtime";
         const agent = new OpenClawAgentAdapter({
           runtime: api.runtime, policy: account.policy!,
           commandRuntime: createLoggerBackedRuntime({ logger: {
@@ -38,13 +41,14 @@ export function createNativeAgentService(api: Pick<OpenClawPluginApi, "runtime">
           } }),
         });
         worker = createAgentServer({ secret, agent, policy: account.policy!, timeoutMs: settings.timeoutMs });
+        phase = "listener";
         const listening = once(worker.server, "listening");
         worker.server.listen(settings.port, settings.host);
         await listening;
         context.logger.info("Matrix Call agent service started with delegated, tool-free ingress");
       } catch {
         await close();
-        throw new Error("Matrix Call agent service could not start");
+        throw new Error(`Matrix Call agent service could not start (${phase})`);
       }
     }),
     stop: () => schedule(close),
