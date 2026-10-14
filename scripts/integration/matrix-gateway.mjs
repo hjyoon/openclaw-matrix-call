@@ -12,7 +12,7 @@ import { readLiveModel } from "./live-model.mjs";
 
 const exec = promisify(execFile);
 
-export async function startMatrixGateway({ root, directory, policy, workerUrl, controlSecretFile, reply, freePort, waitFor, observations, liveModelFile }) {
+export async function startMatrixGateway({ root, directory, policy, workerUrl, controlSecretFile, reply, freePort, waitFor, observations, liveModelFile, longReply = false, onAssistant }) {
   const live = liveModelFile ? readLiveModel(liveModelFile) : undefined;
   await mkdir(directory, { mode: 0o700 });
   const env = Object.fromEntries(["PATH", "HOME", "USER", "SHELL", "TERM"].filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]]));
@@ -49,7 +49,9 @@ export async function startMatrixGateway({ root, directory, policy, workerUrl, c
   const gatewayPort = await freePort(); const agentPort = await freePort();
   const token = randomBytes(32).toString("hex");
   const workspace = path.join(directory, "workspace"); await mkdir(workspace, { mode: 0o700 });
-  if (live) await writeFile(path.join(workspace, "AGENTS.md"), "Reply to the user's speech with one short sentence in the user's language. Keep spoken replies concise. Do not use tools.\n", { mode: 0o600 });
+  if (live) await writeFile(path.join(workspace, "AGENTS.md"), longReply
+    ? "Reply in the user's language with a spoken explanation. For Korean, write 180 to 240 characters. For English, write 300 to 360 characters. Use complete short sentences. Do not use tools.\n"
+    : "Reply to the user's speech with one short sentence in the user's language. Keep spoken replies concise. Do not use tools.\n", { mode: 0o600 });
   const patchFile = path.join(directory, "config.patch.json");
   let gateway; let exited; let client; let connected; let probe; let closing; let output = "";
   const close = () => closing ??= (async () => {
@@ -129,6 +131,10 @@ export async function startMatrixGateway({ root, directory, policy, workerUrl, c
         const timeout = setTimeout(() => reject(new Error("Matrix Gateway control connection timed out")), 30_000);
         client = new GatewayClient({ url: `ws://127.0.0.1:${gatewayPort}`, token, env, deviceIdentity: null,
           clientName: "cli", mode: "cli", scopes: ["operator.admin"],
+          onEvent: (frame) => {
+            if (frame.event === "agent" && frame.payload?.stream === "assistant"
+              && (frame.payload.data?.delta || frame.payload.data?.text)) onAssistant?.({ runId: frame.payload.runId, sessionKey: frame.payload.sessionKey });
+          },
           onHelloOk: () => { clearTimeout(timeout); resolve(); }, onConnectError: (error) => { clearTimeout(timeout); reject(error); } });
         client.start();
       });
@@ -154,6 +160,7 @@ export async function startMatrixGateway({ root, directory, policy, workerUrl, c
       };
     };
     const modelEvidence = async () => { await connectClient(); return client.request("sessions.list", { limit: 20 }); };
+    const subscribe = async (id) => { await connectClient(); return client.request("sessions.messages.subscribe", { key: `agent:main:matrix-call:call:${id}` }); };
     const history = async (id) => { await connectClient(); return client.request("chat.history", { sessionKey: `agent:main:matrix-call:call:${id}`, limit: 20 }); };
     const conversationEvidence = async (id) => {
       const turns = state.turns.filter((turn) => turn.conversationId === id);
@@ -180,7 +187,7 @@ export async function startMatrixGateway({ root, directory, policy, workerUrl, c
       return { model: session.model, provider: session.modelProvider, inputTokens: session.inputTokens,
         outputTokens: session.outputTokens, agentRuntime: session.agentRuntime?.id, userTurns: users.length, assistantReplies: assistants.length };
     };
-    return { state, agentSecret, agentUrl: `http://127.0.0.1:${probe.address().port}`, control, close, modelEvidence, conversationEvidence,
+    return { state, agentSecret, agentUrl: `http://127.0.0.1:${probe.address().port}`, control, close, modelEvidence, conversationEvidence, subscribe,
       model: live?.model ?? "matrix-fixture/fixture", live: Boolean(live) };
   } catch (error) { await close(); throw new Error(`Matrix Gateway integration failed: ${error.message}\n${output}`, { cause: error }); }
 }

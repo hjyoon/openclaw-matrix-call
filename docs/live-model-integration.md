@@ -68,11 +68,25 @@ Native leave canceled an actual recognition child and removed its private WAV. G
 
 The separate ignored report `.cache/speech/matrix-live-integration-result.json` records timings, reply hashes/lengths, safe model metadata and `modelInference: true`. It leaves `releasedClient: false`: peers are Matrix SDK fixtures rather than released applications. This report does not overwrite deterministic evidence. Initial enrollment failed in an earlier attempt and remains an investigation recorded in [Matrix evidence](matrix-integration.md).
 
+## Actual model cancellation and authentication failure
+
+After building artifacts, run the opt-in failure check with the same private settings:
+
+```sh
+MATRIX_CALL_LIVE_MODEL_FILE=/absolute/private/model.json pnpm verify:agent-failures-live
+```
+
+The cancellation check subscribes through the public Gateway SDK, observes an admitted active model run, and aborts the original signed request after the first actual assistant text event. The host must settle the run, and a new independent conversation must receive a real reply. Events retain identifiers rather than generated text. This passed with the selected `openai/gpt-6.1-sol` model; it establishes host settlement after model activity, not direct observation of the provider's network connection closing.
+
+The authentication check changes only the access token in a disposable, refresh-free copy. Two explicit user attempts through the actual installed host must fail, close their portable records, clear the busy state and use distinct conversation IDs. No synthesis or publication occurs, and the voice coordinator does not resubmit either agent turn automatically. The deterministic provider receives no requests. Synthetic recognition, caller proofs and transport isolate this host-error test from the separate real Matrix checks. It does not simulate arbitrary provider outages or measure retries inside a model provider.
+
+Both local checks passed. The input login and source auth store remain unchanged, and the altered copy and Gateway profiles are removed on completion.
+
 ## Limits
 
 The operator's source login and production configuration remain unchanged. Snapshot state is temporary, has no refresh owner and is removed on completion; the operator removes the input snapshot after testing. No production Matrix messages, calls or plugin deployment are part of this workflow.
 
-The native adapter still uses delegated, tool-free ingress. Real-model abort/failure handling, responses beyond the current ten-second PCM bound, sustained calls, human pronunciation quality, target-server resources, operator enrollment and released-client interoperability remain release work. See [release readiness](release-readiness.md).
+The native adapter still uses delegated, tool-free ingress. Broader provider failures and reconnect behavior, sustained calls, human pronunciation quality, target-server resources, operator enrollment and released-client interoperability remain release work. Speech remains bounded by the piece and whole-turn limits in [ADR 0016](adr/0016-bounded-segmented-speech.md); unrestricted answer lengths are unavailable. See [release readiness](release-readiness.md).
 
 ## Ordinary checks
 
