@@ -34,6 +34,7 @@
     "check": "pnpm typecheck && pnpm test && pnpm build && pnpm verify:artifacts && pnpm verify:worker && pnpm verify:plugin && pnpm verify:live-model"
   },
   "devDependencies": {
+    "@openclaw/matrix": "2026.10.2",
     "@types/dom-mediacapture-record": "1.0.22",
     "@types/node": "24.10.1",
     "@vitest/coverage-v8": "5.0.4",

@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@openclaw/matrix':
+        specifier: 2026.10.2
+        version: 2026.10.2(openclaw@2026.10.2)
       '@types/dom-mediacapture-record':
         specifier: 1.0.22
         version: 1.0.22
@@ -846,6 +849,24 @@ packages:
   '@openclaw/fs-safe@0.24.2':
     resolution: {integrity: sha512-MEq9TssvajMJTZxXlURwrOP7Or8CSS6c9F02rdG04BEe0LLRmfQqzTtRyrDi3uaj+yxr9tw2Tpy5yrLPuO+oZg==}
     engines: {node: '>=22'}
+
+  '@openclaw/matrix@2026.10.2':
+    resolution: {integrity: sha512-5x8PxUj6wO2fZBbPkQHmJiILpqcDKgQYd7UGHc4joE3ycRyynLg+CRKd2n5Msk0Qho0uJpy84RcoAgVAW24N7Q==}
+    peerDependencies:
+      openclaw: '>=2026.10.2'
+    peerDependenciesMeta:
+      openclaw:
+        optional: true
+    bundledDependencies:
+      - '@matrix-org/matrix-sdk-crypto-nodejs'
+      - '@matrix-org/matrix-sdk-crypto-wasm'
+      - '@openclaw/fs-safe'
+      - fake-indexeddb
+      - markdown-it
+      - matrix-js-sdk
+      - music-metadata
+      - typebox
+      - zod
 
   '@opentelemetry/semantic-conventions@1.43.0':
     resolution: {integrity: sha512-eSYWTm620tTk45EKSedaUL8MFYI8hW164hIXsgIHyxu3VobUB3fFCu5t0hQby6OoWRPsG1KkKUG2M5UadiLiVg==}
@@ -3119,6 +3140,10 @@ snapshots:
       '@openclaw/fs-safe-linux-x64-musl': 0.24.2
       '@openclaw/fs-safe-win32-x64-msvc': 0.24.2
       jszip: 3.10.2
+
+  '@openclaw/matrix@2026.10.2(openclaw@2026.10.2)':
+    optionalDependencies:
+      openclaw: 2026.10.2
 
   '@opentelemetry/semantic-conventions@1.43.0': {}
 

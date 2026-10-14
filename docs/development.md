@@ -10,6 +10,8 @@ pnpm check
 
 The project tests the actual pinned OpenClaw SDK. Dependency installation permits only esbuild's build script; other dependency lifecycle scripts are not needed for source development. Runtime installation is validated separately against a supported Gateway.
 
+The pinned `@openclaw/matrix` 2026.10.2 development dependency provides the actual messaging-channel adapter for isolated chat command checks. It is not imported by portable runtime packages or worker images. Its bundled Matrix SDK is 42.4.0; the RTC worker independently uses the tested 43.0.0 SDK.
+
 Coverage is enforced per file at 100% for statements, branches, functions, and lines across the plugin, shared core, and worker runtime sources. Generated bundles, dependencies, tests, and build tooling are outside the runtime coverage scope. Build and package checks validate those artifacts separately.
 
 Tests must exercise security decisions, invalid inputs, cancellation, concurrency, failure recovery, and transport boundaries. Full unit coverage does not establish Matrix calling interoperability. The release process also requires a real encrypted call with actual audio.
