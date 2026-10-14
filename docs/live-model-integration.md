@@ -107,9 +107,9 @@ Both local checks passed. The input login and source auth store remain unchanged
 
 ## Limits
 
-The operator's source login and production configuration remain unchanged. Snapshot state is temporary, has no refresh owner and is removed on completion; the operator removes the input snapshot after testing. No production Matrix messages, calls or plugin deployment are part of this workflow.
+The operator's source login and production configuration remain unchanged. Snapshot state is temporary, has no refresh owner and is removed on completion; the operator removes the input snapshot after testing. No production Matrix messages, calls or plugin deployment are part of this workflow. The separate [released-client live mode](released-client-integration.md#optional-actual-model) also passes ten encrypted chat controls and three actual model-backed speech turns across two independent calls with the same configured model/runtime/thinking level.
 
-The native adapter still uses delegated, tool-free ingress. Broader provider failures and reconnect behavior, sustained calls, human pronunciation quality, target-server resources, operator enrollment and combining live inference with released-client entry remain release work. The separate [Element Call check](released-client-integration.md) passes actual speech and leave/rejoin with deterministic provider text. Speech remains bounded by the piece and whole-turn limits in [ADR 0016](adr/0016-bounded-segmented-speech.md); unrestricted answer lengths are unavailable. See [release readiness](release-readiness.md).
+The native adapter still uses delegated, tool-free ingress. Broader provider failures and reconnect behavior, sustained calls, human pronunciation quality, target-server resources, operator enrollment and restored-image interoperability with a released application remain release work. Speech remains bounded by the piece and whole-turn limits in [ADR 0016](adr/0016-bounded-segmented-speech.md); unrestricted answer lengths are unavailable. See [release readiness](release-readiness.md).
 
 ## Ordinary checks
 

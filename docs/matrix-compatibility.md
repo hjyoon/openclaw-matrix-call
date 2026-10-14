@@ -23,7 +23,7 @@ Both transports must expose the same core participant-verification and audio int
 
 Before a release claims support, record the client and version, homeserver and version, transport protocol, encryption mode, verification flow, and audio results. Include at least one non-Element client where an appropriate implementation exists. Check bidirectional audio, leave/rejoin, key rotation, network interruption, and independent simultaneous calls.
 
-Synthetic SDK peers pass real state-membership MatrixRTC key distribution, encrypted bidirectional audio, device persistence, and restart/rejoin; see [Matrix integration evidence](matrix-integration.md). [Element Call 0.28.0](released-client-integration.md) passes actual Korean/English speech and independent history after leave/rejoin in standalone compatibility mode with one trusted backend. Sticky membership and legacy VoIP remain unverified against real clients.
+Synthetic SDK peers pass real state-membership MatrixRTC key distribution, encrypted bidirectional audio, device persistence, and restart/rejoin; see [Matrix integration evidence](matrix-integration.md). [Element Call 0.28.0](released-client-integration.md) passes encrypted chat entry, actual Korean/English model replies and independent history after leave/rejoin in standalone compatibility mode with one trusted backend. Sticky membership and legacy VoIP remain unverified against real clients.
 
 ## Sources
 
