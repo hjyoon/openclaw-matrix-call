@@ -94,7 +94,7 @@ jobs:
 
   speech:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320
@@ -114,6 +114,10 @@ jobs:
       - run: MATRIX_CALL_SPEECH_TEST_MODEL=small pnpm verify:speech
       - run: pnpm verify:matrix-chat-media
       - run: pnpm verify:released-client
+      - run: sha256sum --check SHA256SUMS
+        working-directory: .cache/release-images
+      - run: docker load --input .cache/release-images/matrix-call-images-0.1.0-alpha.1-linux-amd64.tar.gz
+      - run: pnpm verify:released-client-image
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: inspected-worker-image-candidate
