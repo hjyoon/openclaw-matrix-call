@@ -42,6 +42,21 @@ window.matrixTest = {
   async trusted(userId, deviceId) {
     return (await client.getCrypto().getDeviceVerificationStatus(userId, deviceId))?.isVerified() === true;
   },
+  async sendCommand(id, body, botId) {
+    if (!client.getRoom(id)?.hasEncryptionStateEvent()) throw new Error("Encrypted command room is unavailable");
+    return client.sendMessage(id, { msgtype: "m.text", body, "m.mentions": { user_ids: [botId] } });
+  },
+  async commandReplies(id, botId) {
+    const replies = [];
+    for (const event of client.getRoom(id)?.getLiveTimeline().getEvents() ?? []) {
+      if (event.getSender() !== botId) continue;
+      await client.decryptEventIfNeeded(event);
+      if (event.getType() === "m.room.message" && event.getContent().body?.startsWith("Matrix Call")) {
+        replies.push({ id: event.getId(), type: event.getWireType(), algorithm: event.getWireContent().algorithm, text: event.getContent().body });
+      }
+    }
+    return replies;
+  },
   async join(id, owners, focusUrl) {
     roomId = id;
     session = client.matrixRTC.getRoomSession(client.getRoom(roomId));
