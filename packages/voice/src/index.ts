@@ -4,9 +4,11 @@ import {
   type PcmAudio, type RtcTransportPort, type SpeechRecognitionPort, type SpeechSynthesisPort, type VerifiedParticipant,
 } from "@matrix-call/core";
 import { cancelable } from "./cancellation.js";
+import { speakReply } from "./speech.js";
 
 export { PcmSegmenter } from "./segmenter.js";
 export { cancelable } from "./cancellation.js";
+export { splitSpeechText, speakReply } from "./speech.js";
 
 export type VoiceOptions = Readonly<{
   policy: CallPolicy;
@@ -73,13 +75,8 @@ export class VoiceAssistant {
         await cancelable(opening, signal);
       }
       const reply = await cancelable(this.#calls.turn(session.recordId!, ref.participantId, text), signal);
-      const output = copyPcm(await cancelable(this.#options.synthesis.synthesize(reply.text, signal), signal));
-      try {
-        await this.#verify(ref, signal);
-        signal.throwIfAborted();
-        await cancelable(this.#options.transport.publish(output, signal), signal);
-        signal.throwIfAborted();
-      } finally { output.samples.fill(0); }
+      await speakReply(reply.text, { synthesis: this.#options.synthesis, transport: this.#options.transport,
+        verify: () => this.#verify(ref, signal) }, signal);
       return "replied";
     } catch (error) { await this.endSession(); throw error; }
     finally { audio.samples.fill(0); this.#speaker = undefined; this.#busy = false; }

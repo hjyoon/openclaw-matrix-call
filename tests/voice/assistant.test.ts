@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { MemoryConversationStore, type AgentTurn, type PcmAudio, type ParticipantReference, type VerifiedParticipant } from "../../packages/core/src/index.js";
+import { MemoryConversationStore, SynthesisLimitError, type AgentTurn, type PcmAudio, type ParticipantReference, type VerifiedParticipant } from "../../packages/core/src/index.js";
 import { cancelable, VoiceAssistant, type VoiceOptions } from "../../packages/voice/src/index.js";
 
 const reference = { roomId: "!room:example.org", rtcSessionId: "m.call#ROOM", participantId: "speaker" };
@@ -27,10 +27,50 @@ function fixture(overrides: Partial<VoiceOptions> = {}) {
 }
 
 describe("portable voice turns", () => {
+  it("keeps one full agent response in history while subdividing only bounded synthesis", async () => {
+    const f = fixture(); const text = "abcdefgh".repeat(25);
+    f.reply.mockResolvedValueOnce({ text }); f.synthesize.mockRejectedValueOnce(new SynthesisLimitError());
+    expect(await f.assistant.receive(reference, pcm())).toBe("replied");
+    expect(f.reply).toHaveBeenCalledOnce(); expect(f.publish).toHaveBeenCalledTimes(5);
+    const id = f.reply.mock.calls[0]![0].conversationId;
+    expect((await f.store.get(id))!.messages.map((message) => message.text)).toEqual(["Hello", text]);
+    await f.assistant.receive(reference, pcm());
+    expect(f.reply.mock.calls[1]![0].messages.map((message) => message.text)).toEqual(["Hello", text, "Hello"]);
+    await f.assistant.endSession();
+  });
+
+  it("closes failed model work without synthesis, retries or inherited authority on the next utterance", async () => {
+    const f = fixture(); await f.assistant.receive(reference, pcm());
+    const id = f.reply.mock.calls[0]![0].conversationId;
+    f.reply.mockRejectedValueOnce(new Error("model-unavailable"));
+    await expect(f.assistant.receive(reference, pcm())).rejects.toThrow("model-unavailable");
+    expect(f.reply).toHaveBeenCalledTimes(2); expect(f.synthesize).toHaveBeenCalledOnce();
+    expect((await f.store.get(id))!.status).toBe("closed");
+    await f.assistant.receive(reference, pcm());
+    expect(f.reply.mock.calls[2]![0].conversationId).not.toBe(id);
+    expect(f.reply.mock.calls[2]![0].messages.length).toBe(1);
+    await f.assistant.endSession();
+  });
+
+  it("does not generate another part after the original speaker's device changes", async () => {
+    const f = fixture(); f.reply.mockResolvedValueOnce({ text: "x".repeat(128) });
+    f.publish.mockImplementationOnce(async () => { f.verify.mockResolvedValueOnce({ ...proof, deviceId: "OTHER" }); });
+    await expect(f.assistant.receive(reference, pcm())).rejects.toThrow("identity-mismatch");
+    expect(f.synthesize).toHaveBeenCalledOnce(); expect(f.publish).toHaveBeenCalledOnce(); expect(f.assistant.busy).toBe(false);
+    expect((await f.store.get(f.reply.mock.calls[0]![0].conversationId))!.status).toBe("closed");
+  });
+
+  it("cancels a long answer during playback without another synthesis or model dispatch", async () => {
+    const f = fixture(); f.reply.mockResolvedValueOnce({ text: "x".repeat(128) });
+    f.publish.mockImplementationOnce(async () => { await f.assistant.endSession(); });
+    await expect(f.assistant.receive(reference, pcm())).rejects.toThrow("call-closed");
+    expect(f.reply).toHaveBeenCalledOnce(); expect(f.synthesize).toHaveBeenCalledOnce(); expect(f.publish).toHaveBeenCalledOnce();
+    expect(f.publish.mock.calls[0]![0].samples.every((sample) => sample === 0)).toBe(true);
+  });
   it("verifies before speech and agent access and before publishing, while sharing call history", async () => {
     const f = fixture(); const input = pcm();
     expect(await f.assistant.receive(reference, input)).toBe("replied");
-    expect(f.events).toEqual(["verify", "recognize", "verify", "verify", "agent", "synthesize", "verify", "publish"]);
+    expect(f.events).toEqual(["verify", "recognize", "verify", "verify", "agent", "verify", "synthesize", "verify", "publish"]);
     expect(f.reply.mock.calls[0]![0].caller).toEqual(proof);
     expect(f.reply.mock.calls[0]![0].messages.map((item) => item.text)).toEqual(["Hello"]);
     expect(f.synthesize).toHaveBeenCalledWith("Response", expect.any(AbortSignal));
@@ -110,7 +150,7 @@ describe("portable voice turns", () => {
 
   it("rechecks authority after synthesis and discards audio if the speaker changes", async () => {
     const f = fixture();
-    f.verify.mockResolvedValueOnce(proof).mockResolvedValueOnce(proof).mockResolvedValueOnce(proof)
+    f.verify.mockResolvedValueOnce(proof).mockResolvedValueOnce(proof).mockResolvedValueOnce(proof).mockResolvedValueOnce(proof)
       .mockResolvedValueOnce({ ...proof, deviceId: "OTHER" });
     await expect(f.assistant.receive(reference, pcm())).rejects.toThrow("identity-mismatch");
     expect(f.synthesize).toHaveBeenCalled(); expect(f.publish).not.toHaveBeenCalled();

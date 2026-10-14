@@ -8,7 +8,7 @@ Each nonempty turn runs these steps:
 2. Transcribe through the recognition port. Silence does not create an agent conversation.
 3. Open a new neutral conversation UUID if necessary. Reverify the same user and device before agent dispatch.
 4. Send the transcript and current call history to the configured logical agent.
-5. Synthesize the bounded reply. Reverify the speaker before encrypted RTC publishing.
+5. Split the full reply into bounded text pieces. Reverify the speaker before each synthesis and encrypted RTC publication.
 6. Clear owned input and output sample arrays after completion.
 
 Only one turn can run at a time. Additional utterances return `busy` and are dropped. The total deadline defaults to 90 seconds and can be configured between 1 and 300,000 milliseconds. Providers receive the combined call cancellation and deadline signal. The coordinator returns on cancellation even if a provider is slow to honor that signal, and ignores late results. A transport must stop playback when its signal is aborted.
@@ -17,11 +17,15 @@ Only one turn can run at a time. Additional utterances return `busy` and are dro
 
 The browser application uses a one-record volatile store. The general `MemoryConversationStore` defaults to at most 1,024 records, evicting the oldest insertion when a new record exceeds its configured capacity. An injected durable store can export the neutral conversation schema independently of agent runtime. Importing history does not reopen a call.
 
-Synthesis is limited to ten seconds per reply. A bridge must generate a response within that bound or reject it. A successfully generated text reply can appear in history even if synthesis or playback later fails; history does not claim audio delivery. Audio samples are ephemeral. Transcript retention depends on the selected conversation store and provider.
+Each synthesis and publication remains limited to ten seconds. The coordinator splits text into at most 64 graphemes per piece, preferring word/punctuation boundaries and preserving Unicode graphemes. Only an explicit portable `synthesis-too-long` error causes further subdivision; a one-grapheme limit is terminal. HTTP limits require a strict signed response bound to the same request ID. Generic errors never trigger model or speech retries.
 
-See [speech protocol](speech-protocol.md) and [ADR 0009](adr/0009-bounded-portable-voice-turns.md).
+One reply may use at most 64 synthesis attempts and sixty seconds of generated audio, inside the existing total deadline. Generation and publication are sequential, with fresh same-user/device verification before both. Revocation or cancellation prevents later pieces. Transferred provider samples, playback copies and late canceled synthesis results are wiped. Excessive replies fail without silent text truncation; playback may already have delivered earlier pieces before a later failure or budget limit.
 
-An optional [local speech worker](speech-worker.md) supplies these ports using pinned CPU engines through the same signed protocol. Its [real-model checks](speech-integration.md) use Korean/English public clips and fixture identity, agent and output transport. The Matrix fixture check separately validates encrypted 22,050 Hz output. A complete Matrix voice turn with the real engines still needs its own interoperability evidence.
+One complete agent text reply remains in history even when speech is segmented or later fails. History does not claim audio delivery. Unbroken tokens may need hard splits, and synthesis providers determine pronunciation and pauses. Transcript retention depends on the selected conversation store and provider.
+
+See [speech protocol](speech-protocol.md), [ADR 0009](adr/0009-bounded-portable-voice-turns.md) and [ADR 0016](adr/0016-bounded-segmented-speech.md).
+
+An optional [local speech worker](speech-worker.md) supplies these ports using pinned CPU engines through the same signed protocol. Separate [speech checks](speech-integration.md) use public clips and fixture identity/transport. The [native Matrix check](native-matrix-integration.md) and optional [live-model check](live-model-integration.md) additionally cover real Matrix identity, engines and encrypted output. Evidence for newly segmented long replies must be recorded separately; earlier short-reply results do not establish it.
 
 ## Audio collection
 
