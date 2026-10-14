@@ -76,7 +76,9 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
         catch (error) {
           if (operation.toString().includes("window.matrixCall.prepare")) {
             const codes = ["Matrix device fingerprint does not match enrollment", "Matrix crypto is unavailable", "Matrix runtime is unavailable", "TimeoutError"];
-            console.log(JSON.stringify({ event: "matrix-enrollment-failed", reason: codes.find((code) => error.message.includes(code)) ?? "unknown" }));
+            const reason = codes.find((code) => error.message.includes(code))
+              ?? error.message.split("\n")[0].replaceAll(credentials.accessToken, "[credential]").replaceAll(owner.accessToken, "[credential]").replace(/[A-Za-z0-9_.-]{32,}/g, "[redacted]").slice(0, 180);
+            console.log(JSON.stringify({ event: "matrix-enrollment-failed", reason }));
           }
           throw error;
         }

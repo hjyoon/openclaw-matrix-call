@@ -52,6 +52,8 @@ The tested focus mode is the explicit standalone OpenID endpoint. Homeserver-med
 
 Intermittent cold enrollment and later-input timeouts occurred in development runs. The successful controlled-clip check does not establish that those stability cases are resolved; sustained calls, membership renewal, quiet speech and arbitrary pauses still need investigation.
 
+An optional live-model attempt on 2026-10-14 stopped during initial production-driver enrollment, before any model request. The next instrumented attempt passed enrollment; no specific cause was established. The disposable harness now includes a bounded credential-sanitized first error line when enrollment does not match a known diagnostic code. Production logging is unchanged, and a subsequent successful enrollment is not evidence that the original fault is fixed.
+
 The authorization service reaches the real Synapse OpenID userinfo endpoint through a temporary loopback HTTPS proxy. That proxy has a disposable self-signed test certificate, so certificate verification is disabled only inside this isolated test authorization-service container. Production clients retain the TLS requirement; no insecure setting is added to the worker deployment.
 
 No released Matrix client application has an interoperability claim yet. Future checks must cover modern sticky membership, supported client versions, network interruption, concurrent calls, and actual spoken input/output through the complete agent pipeline.
