@@ -1,6 +1,6 @@
 # Released Matrix client integration
 
-Checked locally: 2026-10-14. Element Call 0.28.0 passes encrypted Matrix command entry, actual Korean/English speech and leave/rejoin through the production native worker. This records one supported application configuration, rather than universal Matrix client support.
+Checked locally: 2026-10-14. Element Call 0.28.0 passes encrypted Matrix command entry, actual Korean/English speech and leave/rejoin through the production native worker and browser image. This records one supported application configuration, rather than universal Matrix client support.
 
 ## Reproduction
 
@@ -39,6 +39,22 @@ Ten encrypted commands and replies pass: initial status, rejection of an unconfi
 
 A physical microphone, interruptions, sustained calls and additional clients still require evidence. Multi-backend connections, Matrix 2.0 sticky/hashed identity mode, homeserver-mediated authorization and legacy VoIP remain outside the implementation.
 
+## Browser image
+
+Build clean, source-labelled candidates with `pnpm release:images`, verify their archive checksum and load it as described in [worker image distribution](worker-image-distribution.md). Then run `pnpm verify:released-client-image`. The CI speech job also checks and reloads its exact archive before this application check. Its larger overall job budget accommodates the additional check; individual admission and turn deadlines are unchanged.
+
+This path keeps the same unmodified application, separate messaging device, actual speech service and installed Gateway. A private image-only directory contains the worker's device/profile and dedicated control/agent/speech keys. Gateway profiles and provider credentials are never mounted into that image. The constrained non-root container retains the read-only root, dropped capabilities, PID limits and Chromium PID/seccomp isolation. Loopback services use host networking in this disposable integration; this is not evidence for the operator guide's separate network namespace and TLS route.
+
+The test preload observes actual runtime input/resume/publication counters and invokes the real current verifier over a nonce-bound private file exchange. It neither substitutes a proof nor changes crypto, membership, capture or publication results. Playback completion requires the real capture resume after each delivered turn. Public device fingerprints come from the actual persisted profile. The report records the inspected image ID/source label, and cleanup checks a zero exit code without OOM.
+
+The local image run passed ten encrypted commands/replies and three spoken turns, including client reload/rejoin with unchanged keys and independent second-call history. Its provider replies remain deterministic; actual inference with the released application is established separately for the native worker only. The ignored report is `.cache/speech/released-client-image-result.json`.
+
+| Call / language | First audio |
+| --- | --- |
+| First / Korean | 46.78 s |
+| First / English | 17.14 s |
+| Second / Korean | 18.61 s |
+
 ## Optional actual model
 
 Prepare private, access-only settings using [live model instructions](live-model-integration.md), then run:
@@ -59,7 +75,7 @@ The local actual-model run passed all three turns with `openai/gpt-6.1-sol`, the
 | First / English | 80 | 24.90 s |
 | Second / Korean | 26 | 29.39 s |
 
-Timings include fixture preparation/playback, recognition, actual model inference and synthesis on one development host. They are not target-server measurements or a latency guarantee. This combined path uses the production native worker; released-application interoperability with the restored worker image remains a separate unverified configuration.
+Timings include fixture preparation/playback, recognition, actual model inference and synthesis on one development host. They are not target-server measurements or a latency guarantee. This actual-model path uses the production native worker. The browser image passes the deterministic-provider application check above; the combined application/image/actual-model configuration remains unverified.
 
 ## Setup failures corrected during validation
 
