@@ -15,7 +15,7 @@ function fixture() {
   const samples = new Float32Array(3);
   let endOnStart = true;
   const source = { buffer: undefined, onended: undefined as (() => void) | undefined, connect: vi.fn(), disconnect: vi.fn(), start: vi.fn(() => { if (endOnStart) queueMicrotask(() => source.onended?.()); }), stop: vi.fn(() => { source.onended?.(); }) };
-  const audio = { audioWorklet: { addModule: vi.fn(async () => {}) }, sampleRate: 16_000, createMediaStreamDestination: () => destination, resume: vi.fn(async () => {}), close: vi.fn(async () => {}), createBuffer: vi.fn(() => ({ getChannelData: () => samples })), createBufferSource: () => source };
+  const audio = { currentTime: 0, audioWorklet: { addModule: vi.fn(async () => {}) }, sampleRate: 16_000, createMediaStreamDestination: () => destination, resume: vi.fn(async () => {}), close: vi.fn(async () => {}), createBuffer: vi.fn(() => ({ getChannelData: () => samples })), createBufferSource: () => source };
   const worker = { terminate: vi.fn() };
   const room = Object.assign(new EventEmitter(), { setE2EEEnabled: vi.fn(async () => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), localParticipant: { publishTrack: vi.fn(async () => {}) } });
   const appended = vi.fn();
@@ -57,7 +57,7 @@ describe("browser PCM media", () => {
     const f = fixture();
     f.media.resume();
     await f.media.publish(pcm, new AbortController().signal);
-    expect([...f.samples]).toEqual([-1, 0, 0.5]);
+    expect([...f.samples]).toEqual([0, 0, 0]);
     expect(f.audio.createBuffer).toHaveBeenCalledWith(1, 3, 16_000);
     expect(f.source.disconnect).toHaveBeenCalledOnce();
     await f.media.publish(pcm, new AbortController().signal);
@@ -91,15 +91,15 @@ describe("browser PCM media", () => {
     await f.media.close();
   });
 
-  it("stops pending audio on suspension or shutdown", async () => {
+  it("pauses pending audio until reauthorization and rejects it on shutdown", async () => {
     const f = fixture();
     f.media.resume(); f.holdAudio();
     const pending = f.media.publish(pcm, new AbortController().signal);
     f.media.suspend();
-    await pending;
     f.media.resume();
-    const next = f.media.publish(pcm, new AbortController().signal);
-    await f.media.close(); await next;
+    f.source.onended?.(); await pending;
+    const next = f.media.publish(pcm, new AbortController().signal); const failed = expect(next).rejects.toThrow("unavailable");
+    await f.media.close(); await failed;
     f.media.resume();
     expect(f.track.enabled).toBe(false);
     await expect(f.media.publish(pcm, new AbortController().signal)).rejects.toThrow("unavailable");

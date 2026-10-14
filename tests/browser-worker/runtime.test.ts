@@ -353,6 +353,16 @@ describe("production Matrix browser runtime", () => {
     await f.runtime.close();
   });
 
+  it("accepts completed audio after a membership update has been freshly reauthorized", async () => {
+    const f = await ready(); await f.runtime.connect("!room");
+    f.media.publish.mockImplementationOnce(async () => {
+      f.session.emit(MatrixRTCSessionEvent.MembershipsChanged);
+      await vi.waitFor(() => expect(f.media.resume.mock.invocationCallOrder.at(-1)!).toBeGreaterThan(f.media.suspend.mock.invocationCallOrder.at(-1)!));
+    });
+    await expect(f.runtime.publish(pcm, signal())).resolves.toBeUndefined();
+    await f.runtime.close();
+  });
+
   it("authenticates actual SDK key delivery before returning participant proofs", async () => {
     const f = await ready();
     const reference = { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: f.remote.rtcBackendIdentity };

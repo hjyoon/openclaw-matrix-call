@@ -1,8 +1,8 @@
 import { Room, RoomEvent, Track, setLogLevel } from "livekit-client";
 import type { PcmAudio } from "@matrix-call/core";
 import { MatrixMediaKeyProvider } from "../../matrixrtc/src/key-provider.js";
-import { validatePcm } from "./audio.js";
 import { RemoteAudioCapture } from "./capture.js";
+import { PcmPlayback } from "./playback.js";
 
 export type BrowserMedia = Readonly<{
   room: Room;
@@ -24,7 +24,7 @@ export function createBrowserMedia(provider: MatrixMediaKeyProvider): BrowserMed
   const track = destination.stream.getAudioTracks()[0]!;
   const elements = new Set<HTMLMediaElement>();
   track.enabled = false;
-  let source: AudioBufferSourceNode | undefined;
+  const playback = new PcmPlayback(context, destination);
   let closed = false;
   let capture: RemoteAudioCapture | undefined;
 
@@ -42,7 +42,7 @@ export function createBrowserMedia(provider: MatrixMediaKeyProvider): BrowserMed
 
   const suspend = (): void => {
     track.enabled = false;
-    source?.stop();
+    playback.pause();
   };
 
   return Object.freeze({
@@ -55,7 +55,7 @@ export function createBrowserMedia(provider: MatrixMediaKeyProvider): BrowserMed
       await room.localParticipant.publishTrack(track, { source: Track.Source.Microphone, dtx: false, red: false });
     },
     suspend,
-    resume() { if (!closed) track.enabled = true; },
+    resume() { if (!closed) { track.enabled = true; playback.resume(); } },
     async startCapture(onAudio, permitted, onFailure) {
       if (capture || closed) throw new Error("Audio capture is unavailable");
       capture = new RemoteAudioCapture(room, context, onAudio, permitted, onFailure);
@@ -64,34 +64,15 @@ export function createBrowserMedia(provider: MatrixMediaKeyProvider): BrowserMed
     resetCapture() { capture?.reset(); },
     async publish(audio: PcmAudio, signal: AbortSignal) {
       signal.throwIfAborted();
-      if (closed || !track.enabled || source) throw new Error("Browser audio is unavailable");
-      validatePcm(audio);
-      const buffer = context.createBuffer(1, audio.samples.length, audio.sampleRate);
-      const samples = buffer.getChannelData(0);
-      for (let i = 0; i < audio.samples.length; i++) samples[i] = audio.samples[i]! / 32_768;
-      const current = context.createBufferSource();
-      source = current;
-      current.buffer = buffer;
-      current.connect(destination);
-      const abort = (): void => { current.stop(); };
-      try {
-        await new Promise<void>((resolve) => {
-          current.onended = () => resolve();
-          signal.addEventListener("abort", abort, { once: true });
-          current.start();
-        });
-        signal.throwIfAborted();
-      } finally {
-        signal.removeEventListener("abort", abort);
-        current.disconnect();
-        source = undefined;
-      }
+      if (closed || !track.enabled) throw new Error("Browser audio is unavailable");
+      await playback.play(audio, signal);
     },
     async close() {
       if (closed) return;
       closed = true;
       capture?.close();
       suspend();
+      playback.close();
       track.stop();
       try { await room.disconnect(); }
       finally {

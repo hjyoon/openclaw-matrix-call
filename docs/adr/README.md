@@ -24,6 +24,7 @@ Number records in order. An accepted ADR is a historical record, not a second in
 | [0014](0014-bounded-initial-worker-discovery.md) | Accepted | One bounded initial capability-discovery budget for refused worker connections |
 | [0015](0015-optional-live-model-evidence.md) | Accepted | Optional access-only operator login snapshots for actual model evidence |
 | [0016](0016-bounded-segmented-speech.md) | Accepted | Sequential bounded speech with authenticated length subdivision and per-piece revocation |
+| [0017](0017-reauthorized-playback-resume.md) | Accepted | Paused bounded PCM resumes only after fresh membership and key authorization |
 
 ## Record format
 

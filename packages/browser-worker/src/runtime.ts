@@ -199,7 +199,7 @@ export class BrowserMatrixRuntime {
     try { await call.media.publish(audio, AbortSignal.any([signal, call.controller.signal])); }
     finally { call.playing = false; if (listening) call.input.resume(); }
     signal.throwIfAborted();
-    if (!call.guard.permits(revision)) throw new Error("Matrix publication changed during playback");
+    if (!call.guard.permits(call.guard.revision)) throw new Error("Matrix publication changed during playback");
   }
 
   async verify(reference: ParticipantReference, signal: AbortSignal) {
