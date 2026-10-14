@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import type { OpenClawPluginApi, PluginCommandContext } from "openclaw/plugin-sdk/channel-core";
 import type { OpenClawPluginService } from "openclaw/plugin-sdk/plugin-entry";
@@ -67,7 +68,17 @@ export function createNativeWorkerControl(api: Pick<OpenClawPluginApi, "lifecycl
         const background = api.lifecycle.runInBackgroundContext;
         if (!background) throw new Error("Managed plugin context required");
         const controller = new AbortController();
-        const client = await background(() => WorkerHttpClient.connect({ ...settings, secret, signal: controller.signal }));
+        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(settings.timeoutMs)]);
+        const client = await background(async () => {
+          for (;;) {
+            try { return await WorkerHttpClient.connect({ ...settings, secret, signal }); }
+            catch (error) {
+              signal.throwIfAborted();
+              if (!(error instanceof TypeError) || !(error.cause instanceof Error) || !("code" in error.cause) || error.cause.code !== "ECONNREFUSED") throw error;
+              await delay(100, undefined, { signal });
+            }
+          }
+        });
         state = { client, policy: account.policy!, controller, timeoutMs: settings.timeoutMs, pending: new Set(), owned: new Set() };
         context.logger.info("Matrix Call worker control authenticated");
       } catch { throw new Error("Matrix Call worker control could not start"); }

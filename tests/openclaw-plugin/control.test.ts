@@ -114,6 +114,48 @@ describe("native worker control", () => {
     } finally { await test.cleanup(); }
   });
 
+  it("waits for an initially refused worker port within one startup budget", async () => {
+    const test = await fixture();
+    const port = (test.server.address() as AddressInfo).port;
+    await new Promise<void>((resolve) => test.server.close(() => resolve()));
+    const connect = vi.spyOn(WorkerHttpClient, "connect");
+    try {
+      const opening = test.control.service.start(test.context);
+      await vi.waitFor(() => expect(connect.mock.calls.length).toBeGreaterThanOrEqual(2));
+      expect(test.transport.connect).not.toHaveBeenCalled();
+      test.server.listen(port, "127.0.0.1");
+      await once(test.server, "listening");
+      await opening;
+      expect(await test.control.execute({ operation: "status" }, authorized)).toEqual({ available: true, session: null });
+    } finally { connect.mockRestore(); await test.cleanup(); }
+  });
+
+  it("expires the entire initial discovery budget without admitting media", async () => {
+    const test = await fixture();
+    await new Promise<void>((resolve) => test.server.close(() => resolve()));
+    test.settings.timeoutMs = 30;
+    try {
+      await expect(test.control.service.start(test.context)).rejects.toThrow("Matrix Call worker control could not start");
+      await expect(test.control.execute(join, authorized)).rejects.toThrow("worker-unavailable");
+      expect(test.transport.connect).not.toHaveBeenCalled();
+    } finally { await test.cleanup(); }
+  });
+
+  it.each([
+    new Error("private network failure"), new TypeError("fetch failed"),
+    new TypeError("fetch failed", { cause: "private failure" }),
+    new TypeError("fetch failed", { cause: new Error("private failure") }),
+    new TypeError("fetch failed", { cause: Object.assign(new Error("private TLS failure"), { code: "CERT_HAS_EXPIRED" }) }),
+  ])("never retries a terminal startup error %#", async (error) => {
+    const test = await fixture();
+    const connect = vi.spyOn(WorkerHttpClient, "connect").mockRejectedValueOnce(error);
+    try {
+      await expect(test.control.service.start(test.context)).rejects.toThrow("Matrix Call worker control could not start");
+      expect(connect).toHaveBeenCalledTimes(1);
+      expect(test.transport.connect).not.toHaveBeenCalled();
+    } finally { connect.mockRestore(); await test.cleanup(); }
+  });
+
   it.each([
     { senderId: "@visitor:example.org" }, { senderId: undefined }, { isAuthorizedSender: false },
     { channel: "telegram" }, { channelId: "telegram" },
