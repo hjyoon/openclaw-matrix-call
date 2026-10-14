@@ -25,6 +25,7 @@ Number records in order. An accepted ADR is a historical record, not a second in
 | [0015](0015-optional-live-model-evidence.md) | Accepted | Optional access-only operator login snapshots for actual model evidence |
 | [0016](0016-bounded-segmented-speech.md) | Accepted | Sequential bounded speech with authenticated length subdivision and per-piece revocation |
 | [0017](0017-reauthorized-playback-resume.md) | Accepted | Paused bounded PCM resumes only after fresh membership and key authorization |
+| [0018](0018-modern-livekit-transport-config.md) | Accepted | Modern service configuration with optional legacy alias and unchanged authenticated token scope |
 
 ## Record format
 

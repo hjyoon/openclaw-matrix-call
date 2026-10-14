@@ -2,7 +2,7 @@
 
 `OpenIdFocusAuthorizer` exchanges an OpenID token obtained through `MatrixClient.getOpenIdToken` with an explicitly configured focus's `/sfu/get` endpoint. The initial compatibility target is authorization service 0.8.0 and MatrixRTC state membership in room slot `m.call#ROOM`; see [ADR 0007](adr/0007-explicit-focus-authorization.md).
 
-Configure exact trusted focus and SFU URLs. A call's SDK-selected focus must match a trusted focus and advertise the current Matrix room alias. URLs must use HTTPS/WSS with no embedded credentials, query, or fragment. Plain HTTP/WS requires `allowInsecureLoopback: true` and a loopback hostname. This option is for isolated tests and does not authorize arbitrary plaintext network endpoints.
+Configure exact trusted focus and SFU URLs. A call's SDK-selected service must match a trusted focus. The SDK's modern service configuration may omit the legacy alias; when present, that alias must equal the current Matrix room. Returned token scope remains mandatory in both cases; see [ADR 0018](adr/0018-modern-livekit-transport-config.md). URLs must use HTTPS/WSS with no embedded credentials, query, or fragment. Plain HTTP/WS requires `allowInsecureLoopback: true` and a loopback hostname. This option is for isolated tests and does not authorize arbitrary plaintext network endpoints.
 
 Authorization requires a current local membership matching the Matrix client's user/device and the tested backend identity format. OpenID is sent only after focus selection and membership checks, and its issuer must match the local Matrix user's server name. HTTP redirects are rejected; authorization failures do not select another focus or downgrade protocols.
 

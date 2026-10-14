@@ -2,6 +2,8 @@
 
 Status: Accepted
 
+The implementation's legacy discovery-format requirement is refined by [ADR 0018](0018-modern-livekit-transport-config.md). Authorization and credential boundaries below remain current.
+
 Date: 2026-10-13
 
 ## Context

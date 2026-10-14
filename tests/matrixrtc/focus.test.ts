@@ -86,6 +86,20 @@ describe("OpenIdFocusAuthorizer", () => {
     } finally { await new Promise<void>((resolve) => { server.close(() => resolve()); }); }
   });
 
+  it("accepts modern transport configuration while binding the grant to the actual room", async () => {
+    const f = fixture();
+    f.setFocus({ type: "livekit", livekit_service_url: "https://focus.example.org/rtc" });
+    expect((await f.authorizer.authorize(f.source, f.signal)).identity).toBe(member.participantId);
+    f.fetcher.mockResolvedValue(response({ url: "wss://sfu.example.org", jwt: jwt({ ...claims, video: { ...claims.video, room: "different-room" } }) }));
+    await expect(f.authorizer.authorize(f.source, f.signal)).rejects.toThrow("identity-mismatch");
+  });
+
+  it("rejects unconfigured modern transport endpoints before exposing OpenID", async () => {
+    const f = fixture(); f.setFocus({ type: "livekit", livekit_service_url: "https://attacker.example.org" });
+    await expect(f.authorizer.authorize(f.source, f.signal)).rejects.toThrow("untrusted-focus");
+    expect(f.getOpenIdToken).not.toHaveBeenCalled(); expect(f.fetcher).not.toHaveBeenCalled();
+  });
+
   it.each([
     { focusUrls: [] }, { sfuUrls: [] }, { focusUrls: Array(33).fill("https://focus.example.org") }, { sfuUrls: Array(33).fill("wss://sfu.example.org") },
     { timeoutMs: 0 }, { timeoutMs: 300_001 }, { timeoutMs: 0.5 },

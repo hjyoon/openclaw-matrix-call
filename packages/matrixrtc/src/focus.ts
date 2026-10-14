@@ -32,7 +32,7 @@ export type OpenIdFocusOptions = Readonly<{
   fetch?: typeof globalThis.fetch;
 }>;
 
-const focusSchema = z.object({ type: z.literal("livekit"), livekit_service_url: z.string(), livekit_alias: z.string() });
+const focusSchema = z.object({ type: z.literal("livekit"), livekit_service_url: z.string(), livekit_alias: z.string().optional() });
 const openIdSchema = z.object({ access_token: z.string().min(1).max(16_384), token_type: z.literal("Bearer"), matrix_server_name: z.string(), expires_in: z.number().int().positive().max(86_400) });
 const responseSchema = z.object({ url: z.string().max(4096), jwt: z.string().max(32_768).regex(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/) });
 const claimsSchema = z.object({
@@ -129,7 +129,7 @@ export class OpenIdFocusAuthorizer implements FocusAuthorizationPort {
     const advertised = source.focus();
     if (advertised === undefined) throw new FocusAuthorizationError("membership-changed");
     const focus = focusSchema.safeParse(advertised);
-    if (!focus.success || focus.data.livekit_alias !== source.roomId) throw new FocusAuthorizationError("unsupported-call");
+    if (!focus.success || (focus.data.livekit_alias !== undefined && focus.data.livekit_alias !== source.roomId)) throw new FocusAuthorizationError("unsupported-call");
     const focusUrl = endpoint(focus.data.livekit_service_url, false, this.#insecure);
     if (!this.#focuses.has(focusUrl)) throw new FocusAuthorizationError("untrusted-focus");
     const snapshot = JSON.stringify(member);
