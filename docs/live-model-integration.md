@@ -68,6 +68,29 @@ Native leave canceled an actual recognition child and removed its private WAV. G
 
 The separate ignored report `.cache/speech/matrix-live-integration-result.json` records timings, reply hashes/lengths, safe model metadata and `modelInference: true`. It leaves `releasedClient: false`: peers are Matrix SDK fixtures rather than released applications. This report does not overwrite deterministic evidence. Initial enrollment failed in an earlier attempt and remains an investigation recorded in [Matrix evidence](matrix-integration.md).
 
+## Longer actual model responses
+
+The optional long-response mode uses the same private login, public SDK dispatch, speech engines and encrypted Matrix path:
+
+```sh
+MATRIX_CALL_LIVE_MODEL_FILE=/absolute/private/model.json pnpm verify:matrix-live-long
+```
+
+Its native driver requests a longer explanation in each input language. The speech observer checks the original request and response signatures, matching synthesis request IDs and complete non-whitespace model text across successful pieces. It forwards original bytes and authentication rather than re-signing traffic. The native coordinator must finish every publication before the harness can admit the next turn. Each generated piece remains at most ten seconds; total generated audio is limited to sixty seconds and at most 64 synthesis attempts within the existing turn deadline. Typed duration limits permit further subdivision, while ordinary failures and model requests are not retried.
+
+| Native language | Successful pieces | Generated speech | First encrypted output |
+| --- | --- | --- | --- |
+| Korean | 4 | 28.31 s | 31.26 s |
+| English | 6 | 19.21 s | 17.22 s |
+
+Both native turns passed with the actual configured model, producing 201 Korean and 312 English characters. Every observed active output frame was encrypted; signed replies and exact ordered public host histories remained intact. Times describe one development-host run with `base` recognition and `high` thinking. The restored-image portion intentionally retains concise replies because its ordinary cross-process completion observation does not expose the coordinator's busy state. Longer image replies are not established by this mode.
+
+Two earlier native attempts failed during MatrixRTC membership updates. Suspension stopped an active buffer and the starting-revision check rejected even a freshly authorized update. [ADR 0017](adr/0017-reauthorized-playback-resume.md) records the fix: suspend output immediately, retain the remaining bounded buffer, and resume only after current listener/device/key authorization. Stale source callbacks cannot complete resumed playback; revocation, cancellation and closure remain terminal. The passing long-response run exercised multiple membership updates without weakening authority or output checks.
+
+The first post-fix attempt passed both long native turns and concise Korean image output, then timed out awaiting the image's English input. Its cause was not established. A separately instrumented attempt passed the complete check, including concise image output of 5.09/5.99 seconds, native leave cancellation and Gateway-stop recognition cancellation. Before image English input, scalar probes recorded one completed publication, one input delivery and one capture resume. This successful observation does not explain or resolve the preceding timeout.
+
+Set `MATRIX_CALL_CAPTURE_DIAGNOSTICS=1` to add the disposable image's passive Node preload. It counts worklet chunks, acknowledgements, energy, input deliveries, capture resumes and publication completion, writing an atomic private snapshot inside the temporary test volume. It retains no PCM, transcripts, replies or credentials. The preload does not control playback, retries, identity or test admission; all original speech, encryption, history and cleanup assertions remain mandatory. It is not part of the production image or operator setup.
+
 ## Actual model cancellation and authentication failure
 
 After building artifacts, run the opt-in failure check with the same private settings:

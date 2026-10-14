@@ -8,6 +8,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { prepareSpeechModel } from "./speech-model.mjs";
+import { observeSpeech } from "./speech-observer.mjs";
 
 const exec = promisify(execFile);
 
@@ -18,6 +19,7 @@ export async function startMatrixSpeechService(root, directory, image) {
   await mkdir(data, { mode: 0o700 });
   const secret = randomBytes(32).toString("hex");
   let container;
+  let observer;
   try {
     const listener = createServer(); listener.listen(0, "127.0.0.1"); await once(listener, "listening");
     const port = listener.address().port; await new Promise((resolve) => listener.close(resolve));
@@ -48,8 +50,9 @@ export async function startMatrixSpeechService(root, directory, image) {
     assert.equal((await fetch(`${baseUrl}/syntheses`, { method: "POST", body: "{}" })).status, 401);
     assert.notEqual((await exec("docker", ["exec", container, "id", "-u"])).stdout.trim(), "0");
     const imageId = (await exec("docker", ["image", "inspect", "--format", "{{.Id}}", image])).stdout.trim();
+    observer = await observeSpeech(baseUrl, secret);
     return {
-      baseUrl, secret, model: "base", modelSha256: model.sha256, imageId,
+      baseUrl: observer.baseUrl, secret, model: "base", modelSha256: model.sha256, imageId, state: observer.state,
       async engineCount() {
         const source = "const fs=require('node:fs');console.log(fs.readdirSync('/proc').filter(p=>{if(!/^\\d+$/.test(p))return false;try{return fs.readFileSync('/proc/'+p+'/comm','utf8').trim()==='whisper-cli'}catch{return false}}).length)";
         return Number((await exec("docker", ["exec", container, "node", "-e", source])).stdout.trim());
@@ -60,6 +63,7 @@ export async function startMatrixSpeechService(root, directory, image) {
       },
       async close() {
         try {
+          await observer.close();
           await exec("docker", ["stop", "--time", "5", container]);
           const state = JSON.parse((await exec("docker", ["inspect", "--format", "{{json .State}}", container])).stdout);
           assert.equal(state.ExitCode, 0); assert.equal(state.OOMKilled, false);
@@ -72,6 +76,7 @@ export async function startMatrixSpeechService(root, directory, image) {
       },
     };
   } catch (error) {
+    await observer?.close();
     if (container) await exec("docker", ["rm", "--force", container]);
     await rm(data, { recursive: true, force: true });
     throw error;

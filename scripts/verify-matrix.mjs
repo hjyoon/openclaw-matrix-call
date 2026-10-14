@@ -17,6 +17,7 @@ import { verifyBrowserDriver } from "./integration/browser-driver.mjs";
 import { readLiveModel } from "./integration/live-model.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+if (process.env.MATRIX_CALL_LIVE_LONG_REPLY === "1") assert(process.env.MATRIX_CALL_LIVE_MODEL_FILE, "Long actual model speech requires private live-model settings");
 if (process.env.MATRIX_CALL_LIVE_MODEL_REQUIRED === "1") assert(process.env.MATRIX_CALL_LIVE_MODEL_FILE, "Set MATRIX_CALL_LIVE_MODEL_FILE to private access-only model settings");
 if (process.env.MATRIX_CALL_LIVE_MODEL_FILE) {
   assert.equal(process.env.MATRIX_CALL_NATIVE_GATEWAY, "1", "Live model checks require the installed native Gateway");

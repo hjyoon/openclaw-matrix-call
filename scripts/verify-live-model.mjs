@@ -68,6 +68,8 @@ try {
     { cwd: root, env: { ...env, MATRIX_CALL_LIVE_MODEL_REQUIRED: "1", ...patch }, timeout: 30_000 });
   await assert.rejects(matrixCheck({}), (error) => error.code === 1
     && error.stderr.includes("Set MATRIX_CALL_LIVE_MODEL_FILE to private access-only model settings") && !error.stderr.includes(fake.credential.access));
+  await assert.rejects(matrixCheck({ MATRIX_CALL_LIVE_LONG_REPLY: "1" }), (error) => error.code === 1
+    && error.stderr.includes("Long actual model speech requires private live-model settings") && !error.stderr.includes(fake.credential.access));
   await assert.rejects(matrixCheck({ MATRIX_CALL_LIVE_MODEL_FILE: file }), (error) => error.code === 1
     && error.stderr.includes("Live model checks require the installed native Gateway") && !error.stderr.includes(fake.credential.access));
   await assert.rejects(matrixCheck({ MATRIX_CALL_LIVE_MODEL_FILE: file, MATRIX_CALL_NATIVE_GATEWAY: "1", MATRIX_CALL_MATRIX_SPEECH_IMAGE: "test-image" }),
