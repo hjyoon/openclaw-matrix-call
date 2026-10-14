@@ -13,6 +13,8 @@ import { parseBrowserConfig } from "../../packages/browser-worker/src/config.js"
 import type { BrowserMedia } from "../../packages/browser-worker/src/media.js";
 import { FocusAuthorizationError, type FocusAuthorizationSource } from "../../packages/matrixrtc/src/focus.js";
 import type { BrowserSetup } from "../../packages/browser-worker/src/types.js";
+import { PcmSegmenter } from "../../packages/voice/src/segmenter.js";
+import type { PcmAudio } from "../../packages/core/src/index.js";
 import { configuration, credentials } from "../fixtures/browser.js";
 
 const { sdkFactory, mediaFactory, focusFactory } = vi.hoisted(() => ({ sdkFactory: vi.fn(), mediaFactory: vi.fn(), focusFactory: vi.fn() }));
@@ -38,7 +40,7 @@ function fixture(captureAudio = false) {
   const client = Object.assign(new EventEmitter(), { whoami: vi.fn(async () => ({ user_id: credentials.userId, device_id: credentials.deviceId })), downloadKeysForUsers: vi.fn(async () => ({ failures: {}, device_keys: {} })), initRustCrypto: vi.fn(async () => {}), getCrypto: () => cryptoApi, startClient: vi.fn(async () => {}), stopClient: vi.fn(), getSyncState: vi.fn(() => SyncState.Prepared), getRoom: vi.fn(() => room), getUserId: () => credentials.userId, getDeviceId: () => credentials.deviceId, encryptAndSendToDevice: vi.fn(async () => {}), matrixRTC: { getRoomSession: () => session } });
   const publication = { kind: Track.Kind.Audio, isEncrypted: true, isSubscribed: true, track: { mediaStreamTrack: { readyState: "live" } }, setSubscribed: vi.fn((value: boolean) => { publication.isSubscribed = value; }) };
   const mediaRoom = Object.assign(new EventEmitter(), { state: ConnectionState.Connected, isE2EEEnabled: true, remoteParticipants: new Map([[remote.rtcBackendIdentity, { identity: remote.rtcBackendIdentity, trackPublications: new Map([["audio", publication]]) }]]) });
-  const media = { room: mediaRoom, startCapture: vi.fn(async (_listener: (identity: string, audio: typeof pcm) => void, _permitted: (identity: string) => boolean, _failure: () => void) => {}), resetCapture: vi.fn(), connect: vi.fn(async () => {}), suspend: vi.fn(), resume: vi.fn(), publish: vi.fn(async () => {}), close: vi.fn(async () => {}) };
+  const media = { room: mediaRoom, startCapture: vi.fn(async (_listener: (identity: string, audio: PcmAudio) => void, _permitted: (identity: string) => boolean, _failure: () => void) => {}), resetCapture: vi.fn(), connect: vi.fn(async () => {}), suspend: vi.fn(), resume: vi.fn(), publish: vi.fn(async () => {}), close: vi.fn(async () => {}) };
   const grant = { url: "wss://sfu.example.org", jwt: "opaque-jwt", identity: local.rtcBackendIdentity, expiresAtMs: Date.now() + 60_000 };
   const authorizer = { authorize: vi.fn(async (_source: FocusAuthorizationSource, _signal: AbortSignal) => grant) };
   sdkFactory.mockReturnValue(client); mediaFactory.mockReturnValue(media); focusFactory.mockReturnValue(authorizer);
@@ -136,10 +138,46 @@ describe("production Matrix browser runtime", () => {
     const verified = f.cryptoApi.getDeviceVerificationStatus.mock.calls.length;
     receive(f.remote.rtcBackendIdentity, { ...pcm, samples: pcm.samples.slice() });
     await vi.waitFor(() => expect(f.cryptoApi.getDeviceVerificationStatus.mock.calls.length).toBeGreaterThan(verified));
+    f.session.memberships = [f.local, { ...f.remote, createdTs: () => Date.now() - 500 } as CallMembership];
     f.session.emit(MatrixRTCSessionEvent.MembershipsChanged);
     expect(f.runtime.takeAudio()).toBeNull();
     await f.runtime.close(); expect(permitted(f.remote.rtcBackendIdentity)).toBe(false);
     receive(f.remote.rtcBackendIdentity, { ...pcm, samples: pcm.samples.slice() });
+  });
+
+  it.each(["renew", "shorten", "replace", "expired", "left"])("keeps utterance boundaries across %s membership", async (change) => {
+    const f = await ready(fixture(true)); const expiry = Date.now() + 60000;
+    const local = { ...f.local, getAbsoluteExpiry: () => expiry } as CallMembership;
+    const remote = { ...f.remote, getAbsoluteExpiry: () => expiry } as CallMembership;
+    f.session.memberships = [local, remote];
+    const segmenter = new PcmSegmenter(16000); f.media.resetCapture.mockImplementation(() => segmenter.reset());
+    await f.runtime.connect("!room"); await admit(f);
+    const [receive, permitted] = f.media.startCapture.mock.calls[0]!;
+    const feed = (value: number) => {
+      if (!permitted(f.remote.rtcBackendIdentity)) { segmenter.reset(); return; }
+      const audio = segmenter.push(new Float32Array(1600).fill(value));
+      if (audio) receive(f.remote.rtcBackendIdentity, audio);
+    };
+    for (let i = 0; i < 5; i++) feed(0.125);
+    if (change === "renew") f.session.memberships = [local, { ...remote, getAbsoluteExpiry: () => expiry + 60000 } as CallMembership];
+    else if (change === "shorten") f.session.memberships = [local, { ...remote, getAbsoluteExpiry: () => expiry - 30000 } as CallMembership];
+    else if (change === "replace") {
+      const created = Date.now() - 500;
+      f.session.memberships = [local, { ...remote, createdTs: () => created } as CallMembership];
+    }
+    else if (change === "expired") f.session.memberships = [{ ...local, getAbsoluteExpiry: () => Date.now() } as CallMembership, remote];
+    else f.session.isJoined.mockReturnValue(false);
+    f.session.emit(MatrixRTCSessionEvent.MembershipsChanged);
+    if (change === "replace") await admit(f);
+    for (let i = 0; i < 5; i++) feed(0.25);
+    for (let i = 0; i < 6; i++) feed(0);
+    if (change === "expired" || change === "left") expect(f.runtime.takeAudio()).toBeNull();
+    else {
+      const utterance = await vi.waitFor(() => { const audio = f.runtime.takeAudio(); expect(audio).not.toBeNull(); return audio!; });
+      const expected = [...(change === "renew" ? Array(8000).fill(4096) : []), ...Array(8000).fill(8192), ...Array(9600).fill(0)];
+      expect(utterance.audio.samples).toEqual(expected);
+    }
+    await f.runtime.close();
   });
 
   it.each(["callback", "invalid-pcm", "setup"])("closes failed capture: %s", async (stage) => {

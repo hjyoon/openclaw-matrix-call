@@ -8,6 +8,7 @@ import { createBrowserMedia, type BrowserMedia } from "./media.js";
 import { MatrixPublicationGuard, MatrixPublicationChangedError } from "./guard.js";
 import type { BrowserSetup } from "./types.js";
 import { VerifiedAudioInbox } from "./inbox.js";
+import { retainCapture } from "./capture-authority.js";
 
 type ActiveCall = {
   roomId: string;
@@ -146,7 +147,13 @@ export class BrowserMatrixRuntime {
       subscribe();
       if (call.connected) void refreshPublication(guard, AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)])).catch((error) => fail(publicationFailure(error)));
     };
-    const changed = (): void => { call.input.reset(); refresh(); };
+    let captureMemberships = memberships();
+    const changed = (): void => {
+      const current = memberships();
+      if (!this.#localMembership(call) || !retainCapture(captureMemberships, current, Date.now())) call.input.reset();
+      captureMemberships = current;
+      refresh();
+    };
     const input = new VerifiedAudioInbox({ verify: (reference, signal) => this.verify(reference, signal) },
       (reference) => this.#call === call && call.connected && !controller.signal.aborted && this.#localMembership(call) && keys.hasCurrentKey(reference.participantId),
       () => media.resetCapture());

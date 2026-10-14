@@ -1,6 +1,6 @@
 # ADR 0009: Bounded portable voice turns
 
-Status: Accepted. Output policy extended by [ADR 0016](0016-bounded-segmented-speech.md).
+Status: Accepted. Output policy extended by [ADR 0016](0016-bounded-segmented-speech.md); capture continuity refined by [ADR 0020](0020-capture-continuity-on-membership-renewal.md).
 
 Date: 2026-10-13
 
