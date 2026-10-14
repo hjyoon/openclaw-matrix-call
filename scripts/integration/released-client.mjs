@@ -97,6 +97,33 @@ export async function startReleasedClient({ root, directory, chromium, account, 
     await page.waitForFunction(() => Boolean(window.matrixclient?.getCrypto()));
     await page.getByRole("button", { name: "Join call", exact: true }).waitFor();
     const keys = await page.evaluate(() => window.matrixclient.getCrypto().getOwnDeviceKeys());
-    return { page, keys, pin, url, diagnostics, close };
+    const chat = {
+      trust: (value) => page.evaluate(async ({ userId, deviceId, keys, roomId }) => {
+        const client = window.matrixclient; const room = client.getRoom(roomId);
+        if (!room?.hasEncryptionStateEvent()) throw new Error("Released-client encrypted command room is unavailable");
+        const crypto = client.getCrypto(); crypto.prepareToEncrypt(room);
+        const device = (await crypto.getUserDeviceInfo([userId], false)).get(userId)?.get(deviceId);
+        if (!device) return false;
+        if (device.getFingerprint() !== keys.ed25519 || device.getIdentityKey() !== keys.curve25519) throw new Error("Released-client messaging fingerprint mismatch");
+        await crypto.setDeviceVerified(userId, deviceId, true); return true;
+      }, { ...value, roomId }),
+      send: (value) => page.evaluate(({ roomId, text, botId }) => {
+        const client = window.matrixclient;
+        if (!client.getRoom(roomId)?.hasEncryptionStateEvent()) throw new Error("Released-client encrypted command room is unavailable");
+        return client.sendMessage(roomId, { msgtype: "m.text", body: text, "m.mentions": { user_ids: [botId] } });
+      }, value),
+      replies: (value) => page.evaluate(async ({ roomId, botId }) => {
+        const client = window.matrixclient; const replies = [];
+        for (const event of client.getRoom(roomId)?.getLiveTimeline().getEvents() ?? []) {
+          if (event.getSender() !== botId) continue;
+          await client.decryptEventIfNeeded(event);
+          if (event.getType() === "m.room.message" && event.getContent().body?.startsWith("Matrix Call")) {
+            replies.push({ id: event.getId(), type: event.getWireType(), algorithm: event.getWireContent().algorithm, text: event.getContent().body });
+          }
+        }
+        return replies;
+      }, value),
+    };
+    return { page, keys, pin, url, diagnostics, chat, close };
   } catch (error) { await close(); throw error; }
 }

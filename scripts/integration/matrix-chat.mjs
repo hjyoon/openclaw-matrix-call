@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { createHmac, randomBytes } from "node:crypto";
 
-export async function provisionMatrixChat({ api, homeserver, registrationSecret, roomId, creator, owner, peer, username }) {
+export async function provisionMatrixChat({ api, homeserver, registrationSecret, roomId, creator, owner, peer, chatPeer, username }) {
+  const client = chatPeer ?? {
+    trust: (value) => peer.evaluate(({ userId, deviceId, keys }) => window.matrixTest.trust(userId, deviceId, keys), value),
+    replies: (value) => peer.evaluate(({ roomId, botId }) => window.matrixTest.commandReplies(roomId, botId), value),
+    send: (value) => peer.evaluate(({ roomId, text, botId }) => window.matrixTest.sendCommand(roomId, text, botId), value),
+  };
   const endpoint = `${homeserver}/_synapse/admin/v1/register`;
   const { nonce } = await api(endpoint, "GET");
   const password = randomBytes(32).toString("hex");
@@ -28,22 +33,22 @@ export async function provisionMatrixChat({ api, homeserver, registrationSecret,
         if (!device) return false;
         assert.equal(device.user_id, account.user_id); assert.equal(device.device_id, account.device_id);
         const keys = { ed25519: device.keys[`ed25519:${account.device_id}`], curve25519: device.keys[`curve25519:${account.device_id}`] };
-        return peer.evaluate(({ userId, deviceId, keys }) => window.matrixTest.trust(userId, deviceId, keys), { userId: account.user_id, deviceId: account.device_id, keys });
+        return client.trust({ userId: account.user_id, deviceId: account.device_id, keys });
       }, "published encrypted messaging device", 30_000);
-      for (const event of await peer.evaluate(({ roomId, botId }) => window.matrixTest.commandReplies(roomId, botId), { roomId, botId: account.user_id })) seen.add(event.id);
+      for (const event of await client.replies({ roomId, botId: account.user_id })) seen.add(event.id);
     },
     async request(pathname, value, waitFor) {
       const operation = pathname.split("/").at(-1);
       assert(["status", "join", "leave"].includes(operation));
       const text = `/matrixcall ${operation}${operation === "join" ? " " + value.roomId : operation === "leave" ? " " + value.sessionId : ""}`;
-      const sent = await peer.evaluate(({ roomId, text, botId }) => window.matrixTest.sendCommand(roomId, text, botId), { roomId, text, botId: account.user_id });
+      const sent = await client.send({ roomId, text, botId: account.user_id });
       evidence.commands++;
       const wire = await api(`${homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/event/${encodeURIComponent(sent.event_id)}`, "GET", undefined, owner.accessToken);
       assert.equal(wire.sender, owner.userId); assert.equal(wire.type, "m.room.encrypted"); assert.equal(wire.content.algorithm, "m.megolm.v1.aes-sha2");
       assert.equal(wire.content.body, undefined); evidence.encryptedCommands++;
       let reply;
       await waitFor(async () => {
-        const replies = (await peer.evaluate(({ roomId, botId }) => window.matrixTest.commandReplies(roomId, botId), { roomId, botId: account.user_id })).filter((event) => !seen.has(event.id));
+        const replies = (await client.replies({ roomId, botId: account.user_id })).filter((event) => !seen.has(event.id));
         if (!replies.length) return false;
         assert.equal(replies.length, 1); reply = replies[0]; seen.add(reply.id); return true;
       }, `encrypted Matrix ${operation} reply`, 70_000);
