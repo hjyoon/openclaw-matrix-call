@@ -1,6 +1,6 @@
 # ADR 0005: Browser MatrixRTC media adapter
 
-Status: Accepted; local-callback key admission superseded by [ADR 0006](0006-local-outbound-key-provenance.md)
+Status: Accepted; local-callback key admission superseded by [ADR 0006](0006-local-outbound-key-provenance.md). Playback suspension is extended by [ADR 0017](0017-reauthorized-playback-resume.md).
 
 Date: 2026-10-13
 

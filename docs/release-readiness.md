@@ -14,7 +14,7 @@ Administrator tool execution and general-user approval require a supported host 
 | --- | --- | --- |
 | Native package installation | Packed archive installs and runs its signed agent service in a disposable OpenClaw 2026.10.2 Gateway | Recheck the final calling package and complete operator setup from an empty environment |
 | Gateway-to-worker integration | Installed Gateway control and public SDK agent dispatch pass together through real encrypted Matrix media and local speech; restart/reload and strict admission also have dedicated checks | Validate coordinated replacement and complete operator setup |
-| Model-backed voice response | Four actual `gpt-6.1-sol` Korean/English turns pass real Matrix identity, engines, native SDK dispatch, exact ordered host history and encrypted output in the driver/image | Verify real-model abort/failure and unrestricted response-length handling; test supported operator configurations |
+| Model-backed voice response | Actual Korean/English turns pass identity, engines, SDK dispatch, ordered history and encryption in the driver/image; longer native replies and actual host cancellation/authentication failures also pass | Test longer restored-image replies, broader provider failure/reconnect behavior and supported operator configurations |
 | Real speech in encrypted calls | Korean/English turns pass real local engines through the production driver and restored browser image; leave cancels recognition | Broader input quality, sustained-call stability and target-server latency/resource measurements |
 | Device and service setup | Strict external configuration, persistent private profiles, explicit fingerprint pins, optional local speech Compose | Provide a reproducible enrollment/setup flow with useful configuration diagnostics and preserved device state |
 | Call entry | Administrator RPC drives actual encrypted speech and recognition cancellation; owner-only Matrix command identity is checked with SDK contexts | Check actual Matrix chat command dispatch and incoming-call requirements; automatic acceptance is unavailable |
@@ -25,7 +25,7 @@ Runtime coverage is 100% per non-empty source file. That checks exercised code p
 
 ## Next implementation order
 
-1. Verify real-model abort/failure and long-response handling, then actual Matrix chat command entry.
+1. Check actual Matrix chat command entry, longer restored-image replies and broader provider failure/reconnect behavior.
 2. Test released compatible Matrix clients and coordinated replacement; investigate intermittent recognition, enrollment and later-input failures.
 3. Add setup/enrollment diagnostics and validate the complete instructions from an empty operator environment.
 4. Build and inspect release artifacts, finish marketplace validation and publish a version with its exact supported scope.
