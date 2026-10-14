@@ -109,9 +109,18 @@ jobs:
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: pnpm build
       - run: pnpm verify:speech-compose
-      - run: docker build -f deployment/speech-worker.Dockerfile -t matrix-call-speech-worker:0.1.0-alpha.1 .
+      - run: pnpm release:images
       - run: pnpm verify:speech
       - run: MATRIX_CALL_SPEECH_TEST_MODEL=small pnpm verify:speech
-      - run: docker build -f deployment/browser-worker.Dockerfile -t matrix-call-browser-worker:0.1.0-alpha.1 .
       - run: pnpm verify:matrix-chat-media
       - run: pnpm verify:released-client
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: inspected-worker-image-candidate
+          path: |
+            .cache/release-images/*.tar.gz
+            .cache/release-images/SHA256SUMS
+            .cache/release-images/release-report.json
+          compression-level: 0
+          include-hidden-files: true
+          if-no-files-found: error
