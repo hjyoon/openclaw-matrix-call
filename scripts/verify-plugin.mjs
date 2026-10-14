@@ -40,9 +40,10 @@ try {
   const installedMetadata = JSON.parse(await readFile(path.join(env.OPENCLAW_STATE_DIR, "extensions/matrix-call/package.json"), "utf8"));
   assert.equal(installedMetadata.name, metadata.name); assert.equal(installedMetadata.version, metadata.version);
   if (registry) {
-    const config = JSON.parse(await readFile(env.OPENCLAW_CONFIG_PATH, "utf8"));
-    assert.equal(config.plugins.installs["matrix-call"].source, "clawhub");
-    assert.equal(config.plugins.installs["matrix-call"].version, metadata.version);
+    const inspected = JSON.parse((await exec(cli, ["plugins", "inspect", "matrix-call", "--json"], { cwd: directory, env, timeout: 60_000 })).stdout);
+    assert.equal(inspected.install.source, "clawhub");
+    assert.equal(inspected.install.clawhubPackage, metadata.name);
+    assert.equal(inspected.install.version, metadata.version);
   }
   console.log(`${registry ? "Public registry" : "Packed"} plugin installed and loaded in an isolated OpenClaw profile.`);
   await verifyInstalledAgent({ cli, directory, env });
