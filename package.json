@@ -11,6 +11,7 @@
     "build": "node scripts/build.mjs",
     "verify:artifacts": "node scripts/verify-artifacts.mjs",
     "verify:marketplace": "node scripts/verify-marketplace.mjs",
+    "release:images": "node scripts/build-release-images.mjs",
     "verify:worker": "node scripts/verify-worker.mjs",
     "verify:plugin": "node scripts/verify-plugin.mjs",
     "verify:live-model": "node scripts/verify-live-model.mjs",
