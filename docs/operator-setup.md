@@ -34,6 +34,8 @@ Combine the [native agent service](native-agent-service.md) and [native worker c
 
 The agent listener binds loopback. Provision a trusted HTTPS reverse proxy to that listener when the worker is in a separate network namespace. Preserve the signed request path; put only the agent HMAC secret in the worker, never host session keys or a Gateway token. For a local native worker, explicitly opted-in loopback HTTP is supported. Unrelated containers' loopback addresses refer to different namespaces.
 
+For a native OpenClaw Gateway on the same Linux Docker host, use the optional local overlay below. It explicitly shares host networking, while retaining separate worker filesystems, PID namespaces, non-root execution and resource limits. This route needs no agent reverse proxy. It is not the route for a Gateway in an unrelated container namespace. See [ADR 0021](adr/0021-local-gateway-worker-networking.md).
+
 Copy the [browser configuration](browser-worker.md#device-enrollment) and [local speech configuration](local-speech-deployment.md) into the private directory. Set the actual Matrix credentials, exact owner pins, room and trusted endpoints. Set browser `voiceFile` to `/run/config/voice.json`. In the voice JSON, select the same logical agent (`main` for the native adapter), the reachable HTTPS agent endpoint and `/run/secrets/voice_agent_secret`; the shared local speech endpoint is `http://127.0.0.1:19792` with its distinct secret. The local speech example explicitly permits loopback HTTP. Keep the persistent asset port stable.
 
 Verify the selected `base` model's bytes/hash against `deployment/speech-engines.json`. Set absolute paths for `MATRIX_CALL_BROWSER_CONFIG`, `MATRIX_CALL_MATRIX_CREDENTIALS`, `MATRIX_CALL_SECRET_FILE`, `MATRIX_CALL_VOICE_CONFIG`, `MATRIX_CALL_VOICE_AGENT_SECRET`, `MATRIX_CALL_VOICE_SPEECH_SECRET`, `MATRIX_CALL_SPEECH_CONFIG` and `MATRIX_CALL_SPEECH_MODEL`.
@@ -45,6 +47,76 @@ docker compose -f deployment/browser-compose.yml \
   -f deployment/browser-voice.compose.yml \
   -f deployment/browser-local-speech.compose.yml config --quiet
 ```
+
+## Local native Gateway example
+
+Use three distinct private HMAC files and the actual Matrix credentials/pins prepared above. Default images run as UID 1000; their private input files and persistent profile must be readable by that UID. A reviewed user override and correctly owned profile are required for a different UID. The fixture tests this ownership override without granting root to either runtime.
+
+Merge this operator-authored section into the existing Gateway configuration, replacing the owner, room and absolute private paths. Its logical `main` agent must already have the chosen model/authentication:
+
+```json
+{
+  "channels": {
+    "matrix-call": {
+      "enabled": true,
+      "policy": {
+        "owners": ["@owner:example.org"],
+        "rooms": ["!room:example.org"],
+        "agents": ["main"]
+      },
+      "agentService": {
+        "secretFile": "/home/operator/private/matrix-call/agent.secret",
+        "port": 19793
+      },
+      "workerControl": {
+        "baseUrl": "http://127.0.0.1:19790",
+        "secretFile": "/home/operator/private/matrix-call/control.secret",
+        "allowInsecureLoopback": true,
+        "timeoutMs": 90000
+      }
+    }
+  }
+}
+```
+
+The browser JSON uses `/run/secrets/matrix.json`, `/data/profile`, `/app/assets`, a stable asset port and `/run/config/voice.json`. Fill in the actual homeserver, owner/device pins, exact room and trusted focus/SFU endpoints from the [browser example](browser-worker.md#device-enrollment). Keep the Matrix account token in the separate credentials file.
+
+Set the voice JSON to:
+
+```json
+{
+  "agentId": "main",
+  "agent": {
+    "baseUrl": "http://127.0.0.1:19793",
+    "secretFile": "/run/secrets/voice_agent_secret"
+  },
+  "speech": {
+    "baseUrl": "http://127.0.0.1:19792",
+    "secretFile": "/run/secrets/voice_speech_secret"
+  },
+  "allowInsecureLoopback": true,
+  "requestTimeoutMs": 70000,
+  "timeoutMs": 120000
+}
+```
+
+Use `deployment/speech-config.example.json` with its independently verified model. Define the eight absolute `MATRIX_CALL_*` paths listed above; set `MATRIX_CALL_CONTROL_PORT=19790` and `MATRIX_CALL_SPEECH_PORT=19792`. If changing the speech port, change the speech JSON's `port` as well. Require the reviewed loaded images:
+
+```sh
+docker compose -f deployment/browser-compose.yml \
+  -f deployment/browser-voice.compose.yml \
+  -f deployment/browser-local-speech.compose.yml \
+  -f deployment/browser-local-gateway.compose.yml config --quiet
+
+docker compose -f deployment/browser-compose.yml \
+  -f deployment/browser-voice.compose.yml \
+  -f deployment/browser-local-speech.compose.yml \
+  -f deployment/browser-local-gateway.compose.yml up --no-build -d
+
+curl --fail http://127.0.0.1:19790/readyz
+```
+
+Start the Gateway's agent service before the workers. Its worker-control service waits only within the configured initial discovery budget. A worker's liveness does not replace the authenticated readiness check. See [operator integration](operator-compose-integration.md) for the exact empty-profile test and its remaining limits.
 
 Prebuild the images and prepare the model/configuration before starting the Gateway control service. Its initial worker discovery has one bounded `timeoutMs` budget; choose enough time for worker startup/enrollment, such as 90000 ms. The agent service starts first, allowing the worker to authenticate its capabilities. Start the independently configured speech/browser pair inside that budget using the same Compose files with `up -d`. A missed budget requires an explicit service restart after correcting setup; it does not replay a join.
 
@@ -66,4 +138,6 @@ An `enrollment` startup failure can mean a wrong device/token, a changed fingerp
 
 `unsupported-call` requires checking the exact client mode, slot and advertised transport. `untrusted-focus`/`untrusted-sfu` require correcting trusted endpoints. A client-side delayed-event error requires matching server capability limits. Blank recognition results create no model turn; input quality and latency still need measurements on the actual host.
 
-Service restart changes authentication audiences. Stop the owned call and Gateway control service before replacing a worker. After replacing agent or speech services, recreate/reconnect the browser to negotiate fresh capabilities; a speech namespace replacement also requires recreating the browser. No old call, media authority or model turn is replayed. Automated coordinated replacement and a fully tested clean operator deployment remain release work.
+Service restart changes authentication audiences. Leave the exact owned call and stop/remove the browser before replacing services; preserve its complete private profile and stable asset port. Stop/restart the Gateway control service while the worker is absent, then recreate speech and browser within the initial discovery budget. The new worker negotiates fresh agent/speech capabilities, and Gateway control negotiates the new worker audience. No old call, media authority or model turn is replayed.
+
+If the Gateway was restarted while an old worker was still alive, its control client remains bound to that old worker audience. After replacing the worker, explicitly restart that Gateway service again while the worker is absent. An availability check does not silently adopt a new audience. The integration exercises this negative ordering and explicit recovery; an automated deployment supervisor remains separate work.
