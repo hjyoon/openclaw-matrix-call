@@ -20,12 +20,12 @@ SIGINT and SIGTERM close connections and remove process signal handlers. A malfo
 
 Set `MATRIX_CALL_SECRET_FILE` to an existing absolute path outside the repository, then run `docker compose -f deployment/compose.yml up --build`. The Compose configuration mounts that file read-only as a secret, publishes the control port on host loopback, drops Linux capabilities, disables privilege escalation, and uses a read-only container filesystem. The Node user must be able to read the mounted file; file-backed Compose secrets retain host file ownership.
 
-The default control port is 19790. Set `MATRIX_CALL_CONTROL_PORT` to choose another host port. The container health check proves liveness only; `/readyz` remains unavailable. This development container does not enable Matrix calling.
+The default control port is 19790. Set `MATRIX_CALL_CONTROL_PORT` to choose another host port. The container health check proves liveness only. This generic development container has no assistant readiness implementation and does not enable Matrix calling.
 
 ## Control endpoints
 
 - `GET /healthz`: non-secret process audience, protocol version, liveness, and implemented transport list.
-- `GET /readyz`: unavailable until a compatible secure transport is implemented.
+- `GET /readyz`: returns 503 without an explicit assistant readiness implementation. The browser assistant checks its enrolled driver, media controller and current authenticated agent/speech services within two seconds; see [readiness](readiness.md).
 - `POST /v1/calls`: dedicated-secret request authentication, replay checks, and a signed unavailable result.
 
 Control requests are limited to 65,536 bytes with strict UTF-8 decoding. Default responses omit internal exception details. Use the fresh process audience from health when creating an authenticated client, as described in [HTTP authentication](http-authentication.md).

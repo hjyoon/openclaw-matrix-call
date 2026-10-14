@@ -95,7 +95,7 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
 
   async function control(url) {
     const health = await (await fetch(`${url}/healthz`)).json();
-    assert.equal(health.ready, false);
+    assert.equal(health.ready, undefined);
     const auth = new RequestAuthenticator({ secret, audience: health.audience });
     return async (pathname, value) => {
       const body = JSON.stringify(value);

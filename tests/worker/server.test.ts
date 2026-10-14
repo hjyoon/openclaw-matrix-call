@@ -29,7 +29,7 @@ describe("worker control plane", () => {
       expect(health.status).toBe(200);
       expect(health.headers.get("cache-control")).toBe("no-store");
       expect(await health.json()).toEqual({
-        protocolVersion: 1, status: "development", audience: worker.audience, ready: false, transports: [],
+        protocolVersion: 1, status: "development", audience: worker.audience, transports: [],
       });
       const ready = await fetch(`${worker.baseUrl}/readyz`);
       expect(ready.status).toBe(503);

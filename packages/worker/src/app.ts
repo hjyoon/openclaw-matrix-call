@@ -2,12 +2,13 @@ import { readFile } from "node:fs/promises";
 import { once } from "node:events";
 import { readWorkerConfig } from "./config.js";
 import { createWorkerServer } from "./server.js";
+import type { ReadinessProbe } from "./server.js";
 import type { WorkerMediaController } from "./media.js";
 
-export async function startWorker(env: NodeJS.ProcessEnv = process.env, media?: WorkerMediaController, onClose?: () => Promise<void>) {
+export async function startWorker(env: NodeJS.ProcessEnv = process.env, media?: WorkerMediaController, onClose?: () => Promise<void>, readiness?: ReadinessProbe) {
   const config = readWorkerConfig(env);
   const secret = (await readFile(config.secretFile, "utf8")).trim();
-  const { server, audience } = createWorkerServer(secret, media);
+  const { server, audience } = createWorkerServer(secret, media, readiness);
   const listening = once(server, "listening");
   server.listen(config.port, config.host);
   await listening;

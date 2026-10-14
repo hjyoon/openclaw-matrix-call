@@ -38,7 +38,11 @@ export async function startBrowserWorker(env: NodeJS.ProcessEnv = process.env) {
   const media = new WorkerMediaController({ rooms: config.policy.rooms, transport });
   try {
     if (voice) driver.onAudio(async (reference, audio) => { await voice.receive(reference, audio); });
-    const worker = await startWorker(env, media, async () => { try { await voice?.endSession(); } finally { await driver.close(); } });
+    const worker = await startWorker(env, media, async () => { try { await voice?.endSession(); } finally { await driver.close(); } }, async (signal) => {
+      if (!ports || !driver.available) return false;
+      await Promise.all([ports.agent.check(signal), ports.speech.check(signal)]);
+      return driver.available;
+    });
     driver.onEnded(() => driver.available ? media.endSession() : worker.close());
     return Object.freeze({ ...worker, driver, media, voice });
   } catch (error) { try { await voice?.endSession(); } finally { await driver.close(); } throw error; }

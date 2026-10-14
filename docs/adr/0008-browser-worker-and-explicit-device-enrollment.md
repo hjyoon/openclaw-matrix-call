@@ -1,6 +1,6 @@
 # 0008: Browser worker and explicit device enrollment
 
-Status: Accepted
+Status: Accepted. Runtime readiness completed by [ADR 0022](0022-authenticated-pipeline-readiness.md).
 
 Date: 2026-10-13
 

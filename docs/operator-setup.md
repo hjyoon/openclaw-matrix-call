@@ -50,7 +50,7 @@ Prebuild the images and prepare the model/configuration before starting the Gate
 
 ## Verify and enter the call
 
-Worker `/healthz` is liveness. `/readyz` remains 503 because the full assistant readiness contract is unfinished. Check configured media control through an authenticated administrator client, using the intended Gateway profile:
+Worker `/healthz` is liveness. Require `/readyz` HTTP 200 for an available enrolled driver and current authenticated agent/speech services before entering a call; generic/media-only workers remain 503. This does not run inference or attest model-account validity. See [readiness](readiness.md). Check configured media control through an authenticated administrator client, using the intended Gateway profile:
 
 ```sh
 openclaw gateway call matrixcall.control --params '{"operation":"status"}' --json

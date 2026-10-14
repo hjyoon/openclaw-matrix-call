@@ -36,7 +36,7 @@ describe("authenticated media control", () => {
     const worker = await fixture();
     try {
       const health = await (await fetch(`${worker.base}/healthz`)).json();
-      expect(health).toMatchObject({ ready: false, transports: ["media-control"] });
+      expect(health).toMatchObject({ transports: ["media-control"] });
       expect((await fetch(`${worker.base}/readyz`)).status).toBe(503);
       expect(await worker.request("/v1/media/status", {})).toEqual({ status: 200, value: { available: true, session: null } });
       const joined = await worker.request("/v1/media/join", { roomId: "!room" });

@@ -21,10 +21,11 @@ try {
   const [line] = await once(lines, "line", { signal: AbortSignal.timeout(10_000) });
   const event = JSON.parse(line);
   assert.equal(event.event, "worker-started");
-  assert.equal(event.ready, false);
+  assert.equal(event.ready, undefined);
   const response = await fetch(`http://127.0.0.1:${event.port}/healthz`, { signal: AbortSignal.timeout(5_000) });
   assert.equal(response.status, 200);
-  assert.equal((await response.json()).ready, false);
+  assert.equal((await response.json()).ready, undefined);
+  assert.equal((await fetch(`http://127.0.0.1:${event.port}/readyz`, { signal: AbortSignal.timeout(5_000) })).status, 503);
   const exited = once(child, "exit", { signal: AbortSignal.timeout(5_000) });
   child.kill("SIGTERM");
   const [code, signal] = await exited;

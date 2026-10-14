@@ -24,8 +24,8 @@ async function fixture() {
   await writeFile(config, JSON.stringify({ ...configuration, credentialsFile: identity }));
   const driver = { available: true, verify: vi.fn(async (reference: ParticipantReference) => ({ ...reference, userId: configuration.owners[0]!, deviceId: "OWNER", expiresAtMs: Date.now() + 30000, mediaEncrypted: true, deviceVerified: true })), publish: vi.fn(async (_audio: PcmAudio) => {}), onAudio: vi.fn((_listener: (reference: ParticipantReference, audio: PcmAudio) => Promise<void>) => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), close: vi.fn(async () => {}), onEnded: vi.fn((_listener: () => Promise<void>) => {}) };
   start.mockReset().mockResolvedValue(driver);
-  const agent = { id: "http-test", historyMode: "messages", reply: vi.fn(async (_turn: AgentTurn) => ({ text: "Agent reply" })) };
-  const speech = { transcribe: vi.fn(async () => "Transcript"), synthesize: vi.fn(async () => ({ samples: new Int16Array([1, 2]), sampleRate: 16_000, channels: 1 as const })) };
+  const agent = { id: "http-test", historyMode: "messages", check: vi.fn(async (_signal: AbortSignal) => {}), reply: vi.fn(async (_turn: AgentTurn) => ({ text: "Agent reply" })) };
+  const speech = { check: vi.fn(async (_signal: AbortSignal) => {}), transcribe: vi.fn(async () => "Transcript"), synthesize: vi.fn(async () => ({ samples: new Int16Array([1, 2]), sampleRate: 16_000, channels: 1 as const })) };
   agentConnect.mockReset().mockResolvedValue(agent); speechConnect.mockReset().mockResolvedValue(speech);
   const voiceFile = path.join(dir, "voice.json"); const agentSecret = path.join(dir, "agent"); const speechSecret = path.join(dir, "speech");
   const enableVoice = async () => {
@@ -37,6 +37,41 @@ async function fixture() {
 }
 
 describe("browser worker application", () => {
+  it("reports readiness only for a live driver and authenticated voice services without running a turn", async () => {
+    const f = await fixture(); await f.enableVoice(); const worker = await startBrowserWorker(f.env);
+    try {
+      const url = `http://127.0.0.1:${(worker.server.address() as { port: number }).port}/readyz`;
+      expect((await fetch(url)).status).toBe(200);
+      expect(f.agent.check).toHaveBeenCalledOnce(); expect(f.speech.check).toHaveBeenCalledOnce();
+      expect(f.agent.reply).not.toHaveBeenCalled(); expect(f.speech.transcribe).not.toHaveBeenCalled();
+      f.driver.available = false; expect((await fetch(url)).status).toBe(503);
+      expect(f.agent.check).toHaveBeenCalledOnce();
+    } finally { await worker.close(); await f.clean(); }
+  });
+
+  it.each(["agent", "speech"])("reports unavailable after %s service authentication changes", async (service) => {
+    const f = await fixture(); await f.enableVoice(); const worker = await startBrowserWorker(f.env);
+    try {
+      (service === "agent" ? f.agent : f.speech).check.mockRejectedValueOnce(new Error("private backend error"));
+      const response = await fetch(`http://127.0.0.1:${(worker.server.address() as { port: number }).port}/readyz`);
+      expect(response.status).toBe(503); expect(await response.text()).not.toContain("private");
+    } finally { await worker.close(); await f.clean(); }
+  });
+
+  it("does not remain ready when the driver closes during a service check", async () => {
+    const f = await fixture(); await f.enableVoice(); const worker = await startBrowserWorker(f.env);
+    try {
+      f.agent.check.mockImplementationOnce(async () => { f.driver.available = false; });
+      expect((await fetch(`http://127.0.0.1:${(worker.server.address() as { port: number }).port}/readyz`)).status).toBe(503);
+    } finally { await worker.close(); await f.clean(); }
+  });
+
+  it("keeps a media-only worker unavailable as an assistant", async () => {
+    const f = await fixture(); const worker = await startBrowserWorker(f.env);
+    try { expect((await fetch(`http://127.0.0.1:${(worker.server.address() as { port: number }).port}/readyz`)).status).toBe(503); }
+    finally { await worker.close(); await f.clean(); }
+  });
+
   it("wires optional authenticated speech and agent ports without giving participant text control of endpoints", async () => {
     const f = await fixture(); await f.enableVoice(); const worker = await startBrowserWorker(f.env);
     try {
@@ -87,7 +122,7 @@ describe("browser worker application", () => {
     try {
       const port = (worker.server.address() as { port: number }).port;
       const response = await fetch(`http://127.0.0.1:${port}/healthz`);
-      expect(await response.json()).toMatchObject({ ready: false, transports: ["media-control"] });
+      expect(await response.json()).toMatchObject({ transports: ["media-control"] });
       expect(worker.driver).toBe(f.driver);
       await worker.close(); await worker.close();
       expect(f.driver.close).toHaveBeenCalledOnce();
@@ -148,7 +183,7 @@ describe("browser worker application", () => {
     const log = vi.spyOn(console, "info").mockImplementation(() => {});
     const { worker } = await import("../../packages/browser-worker/src/main.js");
     try {
-      expect(JSON.parse(log.mock.calls[0]![0] as string)).toEqual({ event: "browser-worker-started", ready: false, voiceEnabled: false, port: (worker.server.address() as { port: number }).port });
+      expect(JSON.parse(log.mock.calls[0]![0] as string)).toEqual({ event: "browser-worker-started", voiceEnabled: false, port: (worker.server.address() as { port: number }).port });
       expect(JSON.stringify(log.mock.calls)).not.toContain(credentials.accessToken);
     } finally { await worker.close(); await f.clean(); }
   });

@@ -36,9 +36,25 @@ function json(response: ServerResponse, status: number, value: unknown, headers:
   response.end(JSON.stringify(value));
 }
 
-export function createWorkerServer(secret: string, media?: WorkerMediaController) {
+export type ReadinessProbe = (signal: AbortSignal) => Promise<boolean>;
+
+export function createWorkerServer(secret: string, media?: WorkerMediaController, probe?: ReadinessProbe) {
   const audience = randomUUID();
   const auth = new RequestAuthenticator({ secret, audience });
+  let pending: Promise<boolean> | undefined;
+  const ready = (): Promise<boolean> => {
+    if (!media || !probe || !media.status().available) return Promise.resolve(false);
+    if (pending) return pending;
+    const signal = AbortSignal.timeout(2000);
+    let abort!: () => void;
+    const expired = new Promise<boolean>((resolve) => {
+      abort = () => resolve(false); signal.addEventListener("abort", abort, { once: true });
+    });
+    pending = Promise.race([Promise.resolve().then(() => probe(signal)), expired])
+      .then((value) => value === true && media.status().available, () => false)
+      .finally(() => { signal.removeEventListener("abort", abort); pending = undefined; });
+    return pending;
+  };
   const server = createServer({ requestTimeout: 10_000, headersTimeout: 5_000, maxHeaderSize: 8_192 },
     async (request, response) => {
       if (request.method === "GET" && request.url === "/v1/media/capabilities") {
@@ -48,11 +64,13 @@ export function createWorkerServer(secret: string, media?: WorkerMediaController
         return;
       }
       if (request.method === "GET" && request.url === "/healthz") {
-        json(response, 200, { protocolVersion: 1, status: "development", audience, ready: false, transports: media ? ["media-control"] : [] });
+        json(response, 200, { protocolVersion: 1, status: "development", audience, transports: media ? ["media-control"] : [] });
         return;
       }
       if (request.method === "GET" && request.url === "/readyz") {
-        json(response, 503, { ready: false, error: "transport-unavailable" });
+        const available = await ready();
+        json(response, available ? 200 : 503, available ? { ready: true }
+          : { ready: false, error: media && probe ? "service-unavailable" : "transport-unavailable" });
         return;
       }
       if (request.method !== "POST" || (request.url !== "/v1/calls" && !mediaPaths.has(request.url!))) {

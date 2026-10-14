@@ -105,7 +105,7 @@ describe("worker process lifecycle", () => {
     try {
       expect(worker.server.listening).toBe(true);
       expect(JSON.parse(log.mock.calls[0]![0] as string)).toEqual({
-        event: "worker-started", ready: false, port: (worker.server.address() as { port: number }).port,
+        event: "worker-started", port: (worker.server.address() as { port: number }).port,
       });
       expect(JSON.stringify(log.mock.calls)).not.toContain("ab".repeat(32));
     } finally { await worker.close(); await files.clean(); }
