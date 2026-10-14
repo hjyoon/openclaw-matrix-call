@@ -29,7 +29,17 @@ Fifteen Matrix replies passed in the private control room and both direct rooms:
 - Gateway shutdown closes the final owned session. Three accepted connections receive three disconnects, and no active session remains.
 - The two direct rooms remain separate under the messaging adapter's `per-room` session routing.
 
-The signed worker server and controller are real. Media connection/disconnection are deterministic fixtures; the check performs no RTC handshake or speech inference. Chat rooms are unencrypted, and participants use HTTP protocol fixtures rather than released applications. The separate [native Matrix speech check](native-matrix-integration.md) verifies actual encrypted media, engines and Gateway dispatch through the administrator RPC. Combining chat command entry with that complete media path and encrypted chat remains further work.
+The signed worker server and controller in this fifteen-reply check are real. Media connection/disconnection are deterministic fixtures; it performs no RTC handshake or speech inference. Its chat rooms are unencrypted, and participants use HTTP protocol fixtures rather than released applications. The combined check below separately exercises encrypted chat and actual media.
+
+## Encrypted commands with actual speech
+
+`pnpm verify:matrix-chat-media` installs both native plugins and sends literal commands from the SDK peer in the encrypted call room. The peer pins the newly provisioned messaging device against its Matrix device record. Every outgoing command is checked against the actual homeserver event: `m.room.encrypted`, Megolm algorithm, exact Matrix sender and no plaintext body. The peer decrypts the real bot replies and checks their wire encryption too. No handler, model interpretation or media-operation replay substitutes for chat delivery.
+
+On 2026-10-14, six commands/replies passed with the native worker and five with the restored browser image. They cover status, forbidden target, join, duplicate join, wrong-session leave and native exact-session leave. The image's final call is closed by Gateway shutdown. Both modes produce actual Korean/English speech through local CPU engines, installed public SDK agent dispatch and a deterministic provider. The first audible replies took 14.94/9.66 seconds natively and 17.04/9.20 seconds in the image. All observed active output frames were encrypted; two-turn host history and fresh call isolation pass. Command processing adds no provider inference.
+
+The successful local image check enabled the documented capture diagnostics. CI runs the ordinary uninstrumented command. Participants remain SDK peers; this result does not establish released-client interoperability or actual inference through chat entry. Chat session records are permitted alongside the one exact current call record, while call history remains bound to its independent UUID.
+
+An earlier combined attempt returned `[blank_audio]` on the image's second English input. The local Whisper adapter now treats marker-only results as silence without model dispatch. Another attempt failed enrollment because the SDK's uncached HTTP device listing preceded crypto-store registration; enrollment now waits for stored pinned device records. The successful run follows those fixes. Input quality and sustained-call stability remain release gates; one successful run does not close them.
 
 ## Supported command placement and observed limits
 
@@ -41,4 +51,4 @@ Sending the command first in a mention-required room also failed admission despi
 
 The initial two-DM attempt used the default shared session and received the host's DM isolation warning. Explicit `per-room` routing passed both direct-room checks. The test's first startup attempt also sent before Matrix sync was connected; the public connection barrier now prevents that setup race. None of these changes relax caller authorization or automatically retry a command.
 
-Released-client interoperability, encrypted chat entry, incoming calls, coordinated worker replacement, sustained input stability and clean operator setup still gate a calling release. See [release readiness](release-readiness.md).
+Released-client interoperability, incoming calls, coordinated worker replacement, sustained input stability and clean operator setup still gate a calling release. See [release readiness](release-readiness.md).

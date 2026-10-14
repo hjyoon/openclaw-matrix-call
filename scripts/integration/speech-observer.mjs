@@ -9,7 +9,7 @@ export async function observeSpeech(baseUrl, secret) {
   const body = await capability.text(); const audience = JSON.parse(body).audience;
   const auth = new RequestAuthenticator({ secret, audience });
   auth.verify({ method: "RESPONSE_200", path: "/capabilities", body }, Object.fromEntries(capability.headers));
-  const state = { syntheses: [], limits: 0, invalidRequests: 0 };
+  const state = { syntheses: [], inputs: [], limits: 0, invalidRequests: 0 };
   const server = createServer(async (request, response) => {
     const controller = new AbortController(); const abort = () => controller.abort(); response.on("close", abort);
     try {
@@ -20,6 +20,15 @@ export async function observeSpeech(baseUrl, secret) {
       if (request.method === "POST") {
         auth.verify({ method: "POST", path: request.url, body }, request.headers);
         input = (request.url === "/syntheses" ? synthesisRequestSchema : transcriptionRequestSchema).parse(JSON.parse(body));
+        if (request.url === "/transcriptions") {
+          const pcm = Buffer.from(input.audio.data, "base64"); let power = 0; let peak = 0;
+          try {
+            for (let offset = 0; offset < pcm.length; offset += 2) {
+              const sample = pcm.readInt16LE(offset) / 32768; power += sample * sample; peak = Math.max(peak, Math.abs(sample));
+            }
+            state.inputs.push({ sampleRate: input.audio.sampleRate, seconds: pcm.length / (input.audio.sampleRate * 2), rms: Math.sqrt(power / (pcm.length / 2)), peak });
+          } finally { pcm.fill(0); }
+        }
       } else { assert.equal(request.method, "GET"); assert.equal(request.url, "/capabilities"); }
       const upstream = await fetch(baseUrl + request.url, { method: request.method, headers: request.headers,
         ...(input ? { body } : {}), signal: controller.signal });

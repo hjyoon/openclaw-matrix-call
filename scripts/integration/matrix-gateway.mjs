@@ -9,10 +9,11 @@ import { promisify } from "node:util";
 import { GatewayClient } from "openclaw/plugin-sdk/gateway-runtime";
 import { agentResponseSchema, parseAgentRequest, RequestAuthenticator } from "../../dist/core/index.js";
 import { readLiveModel } from "./live-model.mjs";
+import { installMatrixMessaging } from "./matrix-messaging.mjs";
 
 const exec = promisify(execFile);
 
-export async function startMatrixGateway({ root, directory, policy, workerUrl, controlSecretFile, reply, freePort, waitFor, observations, liveModelFile, longReply = false, onAssistant }) {
+export async function startMatrixGateway({ root, directory, policy, workerUrl, controlSecretFile, reply, freePort, waitFor, observations, liveModelFile, longReply = false, onAssistant, matrixChat }) {
   const live = liveModelFile ? readLiveModel(liveModelFile) : undefined;
   await mkdir(directory, { mode: 0o700 });
   const env = Object.fromEntries(["PATH", "HOME", "USER", "SHELL", "TERM"].filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]]));
@@ -21,9 +22,10 @@ export async function startMatrixGateway({ root, directory, policy, workerUrl, c
   const agentSecret = randomBytes(32).toString("hex");
   const secretFile = path.join(directory, "agent.secret");
   await writeFile(secretFile, agentSecret, { mode: 0o600 });
-  const allowed = ["matrix-call", ...(live ? [live.credential.provider] : []), ...(live?.settings.agentRuntime?.id === "codex" ? ["codex"] : [])];
+  const allowed = ["matrix-call", ...(matrixChat ? ["matrix"] : []), ...(live ? [live.credential.provider] : []), ...(live?.settings.agentRuntime?.id === "codex" ? ["codex"] : [])];
   await writeFile(env.OPENCLAW_CONFIG_PATH, JSON.stringify({ plugins: { allow: allowed } }), { mode: 0o600 });
   const cli = path.join(root, "node_modules/.bin/openclaw");
+  if (matrixChat) await installMatrixMessaging(root, directory, env);
   await exec("pnpm", ["--dir", path.join(root, "packages/openclaw-plugin"), "pack", "--pack-destination", directory], { cwd: root, env: { ...env, HOME: process.env.HOME } });
   const archive = (await readdir(directory)).find((name) => name.endsWith(".tgz"));
   assert(archive);
@@ -73,8 +75,9 @@ export async function startMatrixGateway({ root, directory, policy, workerUrl, c
     await writeFile(patchFile, JSON.stringify({
       gateway: { mode: "local", port: gatewayPort, bind: "loopback", auth: { mode: "token", token }, controlUi: { enabled: false } },
       plugins: { slots: { memory: "none" } },
-      channels: { "matrix-call": { enabled: true, policy, agentService: { secretFile, port: agentPort, timeoutMs: live ? 90_000 : 15_000 },
+      channels: { ...(matrixChat ? { matrix: matrixChat.config } : {}), "matrix-call": { enabled: true, policy, agentService: { secretFile, port: agentPort, timeoutMs: live ? 90_000 : 15_000 },
         ...(workerUrl ? { workerControl: { baseUrl: workerUrl, secretFile: controlSecretFile, allowInsecureLoopback: true, timeoutMs: 60_000 } } : {}) } },
+      ...(matrixChat ? { commands: { text: true, allowFrom: { matrix: policy.owners }, ownerAllowFrom: policy.owners.map((id) => `matrix:${id}`) } } : {}),
       agents: { ownership: "explicit", defaults: { workspace, systemAgent: { agentId: "main" }, model: { primary: live?.model ?? "matrix-fixture/fixture" },
         ...(live ? { models: { [live.model]: live.settings }, thinkingDefault: live.thinking } : {}), heartbeat: { every: "0m", agentId: "main" } }, entries: { main: { workspace } } },
       ...(live ? { auth: { profiles: { [live.profileId]: { provider: live.credential.provider, mode: "oauth" } }, order: { [live.credential.provider]: [live.profileId] } } }
@@ -149,6 +152,14 @@ export async function startMatrixGateway({ root, directory, policy, workerUrl, c
     };
     const control = async (_url) => {
       await ready();
+      if (matrixChat) {
+        await waitFor(async () => {
+          const status = await client.request("channels.status", { probe: false });
+          return status.channelAccounts?.matrix?.some((account) => account.running && account.connected && account.configured);
+        }, "encrypted Matrix channel connection", 45_000);
+        await matrixChat.prepare(waitFor);
+        return (pathname, value) => matrixChat.request(pathname, value, waitFor);
+      }
       return async (pathname, value) => {
         try { return { status: 200, value: await client.request("matrixcall.control", { operation: pathname.split("/").at(-1), ...value }, { timeoutMs: 70_000 }) }; }
         catch (error) {

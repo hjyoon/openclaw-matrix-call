@@ -10,10 +10,11 @@ import { startMatrixSpeechService } from "./matrix-speech-service.mjs";
 import { startTestVoiceServices } from "./voice-services.mjs";
 import { startMatrixGateway } from "./matrix-gateway.mjs";
 import { writeBrowserDiagnostics, installRuntimeProbe } from "./browser-diagnostics.mjs";
+import { provisionMatrixChat } from "./matrix-chat.mjs";
 
 const exec = promisify(execFile);
 
-export async function verifyMatrixSpeech({ root, directory, data, config, env, peer, identity, owner, keys, waitFor, control, connect, startBrowserWorker, freePort, getDriverPage }) {
+export async function verifyMatrixSpeech({ root, directory, data, config, env, peer, identity, owner, keys, waitFor, control, connect, startBrowserWorker, freePort, getDriverPage, chatProvision }) {
   const { decodeWav } = await import(pathToFileURL(path.join(root, "dist/speech-worker/index.js")));
   const manifest = JSON.parse(await readFile(path.join(root, "tests/fixtures/speech/manifest.json"), "utf8"));
   const speech = await startMatrixSpeechService(root, directory, process.env.MATRIX_CALL_MATRIX_SPEECH_IMAGE);
@@ -23,12 +24,15 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
   let selected;
   let gateway;
   const nativeGateway = process.env.MATRIX_CALL_NATIVE_GATEWAY === "1";
+  const chatEntry = process.env.MATRIX_CALL_MATRIX_CHAT === "1";
+  assert(!chatEntry || nativeGateway, "Encrypted chat checks require the installed native Gateway");
   const liveModelFile = process.env.MATRIX_CALL_LIVE_MODEL_FILE;
   const longReply = process.env.MATRIX_CALL_LIVE_LONG_REPLY === "1";
   assert(!longReply || liveModelFile, "Long actual model speech requires private live-model settings");
   assert(!liveModelFile || nativeGateway, "Live model checks require the installed native Gateway");
   const results = [];
   const modelEvidence = [];
+  const chatEvidence = [];
   const reference = { roomId: config.rooms[0], rtcSessionId: "m.call#ROOM", participantId: `${owner.userId}:${owner.deviceId}` };
 
   async function prepareInput() {
@@ -80,11 +84,12 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
     await waitFor(async () => (await peer.evaluate((id) => window.matrixTest.status(id), identity)).members === 1, "previous voice worker departure");
     for (const runtime of process.env.MATRIX_CALL_BROWSER_IMAGE ? ["native", "container"] : ["native"]) {
       const workerPort = nativeGateway ? await freePort() : undefined;
+      const matrixChat = chatEntry ? await provisionMatrixChat({ ...chatProvision, username: `commandbot_${runtime}` }) : undefined;
       if (nativeGateway) {
         gateway = await startMatrixGateway({ root, directory: path.join(directory, `gateway-${runtime}`),
           policy: { owners: [owner.userId], rooms: config.rooms, agents: ["main"] }, workerUrl: `http://127.0.0.1:${workerPort}`,
           controlSecretFile: env.MATRIX_CALL_SECRET_FILE, reply: () => manifest[selected].reply, freePort, waitFor, observations: services?.state, liveModelFile,
-          longReply: longReply && runtime === "native" });
+          longReply: longReply && runtime === "native", matrixChat });
         services = gateway;
       }
       await writeFile(agentSecretFile, services.agentSecret, { mode: 0o600 });
@@ -124,7 +129,14 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
         await waitFor(async () => { try { return (await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(500) })).ok; } catch { return false; } }, "real speech browser image startup", 45_000);
       }
       const request = await (gateway ? gateway.control(url) : control(url));
+      if (matrixChat) assert.equal((await request("/v1/media/status", {})).value.session, null);
       const sessionId = await connect(request, container ?? null);
+      if (matrixChat) {
+        assert.equal((await request("/v1/media/join", { roomId: config.rooms[0] })).status, 409);
+        assert.equal((await request("/v1/media/leave", { sessionId: "00000000-0000-4000-8000-000000000000" })).status, 404);
+        assert.equal(services.state.turns.length, firstTurn);
+        if (!liveModelFile) assert.equal(services.state.providerRequests.length, firstTurn);
+      }
       await prepareInput();
 
       for (const language of ["ko", "en"]) {
@@ -151,6 +163,7 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
           }, `${language} real Matrix playback completion`, longReply && runtime === "native" ? 75_000 : 15_000);
         } catch (error) {
           if (worker) console.log(JSON.stringify({ event: "matrix-speech-native-failed", runtime, language,
+            input: speech.state.inputs.at(-1),
             diagnostic: await getDriverPage().evaluate(() => ({ connected: window.matrixCall.status().connected,
               runtime: window.matrixRuntimeProbe, capture: window.matrixCaptureProbe })).catch(() => null) }));
           if (container) {
@@ -161,6 +174,7 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
                   ? [{ event: value.event, reason: value.reason }] : []; } catch { return []; }
               });
               console.log(JSON.stringify({ event: "matrix-speech-container-failed", language, mediaState: status.value.session?.state ?? "absent", records,
+                input: speech.state.inputs.at(-1),
                 diagnostic: process.env.MATRIX_CALL_CAPTURE_DIAGNOSTICS === "1" ? JSON.parse(await readFile(path.join(data, "browser-diagnostics.json"), "utf8")) : null }));
             } catch { console.log(JSON.stringify({ event: "matrix-speech-container-failed", language, diagnosticUnavailable: true })); }
           }
@@ -174,7 +188,7 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
         const missingKeywords = keywords.filter((keyword) => !transcript.includes(keyword));
         if (missingKeywords.length) console.error(JSON.stringify({ event: "matrix-speech-recognition-mismatch", runtime, language,
           fixture: manifest[language].file, fixtureSha256: manifest[language].sha256, inputSeconds: seconds,
-          expectedKeywords: keywords, missingKeywords, recognizedCharacters: transcript.length, recognizedText: transcript.slice(0, 512) }));
+          expectedKeywords: keywords, missingKeywords, recognizedCharacters: transcript.length, recognizedText: transcript.slice(0, 512), input: speech.state.inputs.at(-1) }));
         assert.equal(missingKeywords.length, 0, `Missing ${language} Matrix speech keyword`);
         assert(observation.activeFrames >= 10 && observation.peakRms > 0.005, `${language} synthesized speech must reach the Matrix peer`);
         assert.equal(observation.encryptedFrames, observation.activeFrames);
@@ -194,7 +208,10 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
           const evidence = await gateway.conversationEvidence(turn.conversationId);
           assert.equal(evidence.userTurns, before - firstTurn + 1);
           const sessions = (await gateway.modelEvidence()).sessions;
-          assert.equal(sessions.length, 1, "Disposable Gateway must not inherit an earlier call");
+          const calls = sessions.filter((session) => session.key.startsWith("agent:main:matrix-call:call:"));
+          assert.equal(calls.length, 1, "Disposable Gateway must not inherit an earlier call");
+          assert.equal(calls[0].key, `agent:main:matrix-call:call:${turn.conversationId}`);
+          if (!matrixChat) assert.equal(sessions.length, 1);
           if (liveModelFile) {
             assert.equal(services.state.providerRequests.length, 0);
             if (longReply && runtime === "native") assert(reply.text.length >= 180, "The actual model must produce a longer response");
@@ -238,6 +255,11 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
       if (gateway && runtime === "container") { await gateway.close(); gateway = undefined; }
       else assert.equal((await request("/v1/media/leave", { sessionId })).status, 200);
       await waitFor(async () => await speech.engineCount() === 0 && await speech.inputRemoved(), "real Matrix leave terminates recognition and removes input", 10_000);
+      if (matrixChat) {
+        const evidence = { runtime, ...matrixChat.evidence, entry: "encrypted Matrix messages", stop: runtime === "container" ? "Gateway shutdown" : "encrypted leave command" };
+        assert.equal(evidence.commands, evidence.replies); assert.equal(evidence.encryptedCommands, evidence.commands); assert.equal(evidence.encryptedReplies, evidence.replies);
+        chatEvidence.push(evidence); console.log(JSON.stringify({ event: "matrix-chat-media-passed", ...evidence }));
+      }
       await closeWorker();
       assert.equal(services.state.turns.length, firstTurn + 2);
       await waitFor(async () => (await peer.evaluate((id) => window.matrixTest.status(id), identity)).members === 1, "real speech worker departure");
@@ -245,7 +267,7 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
     assert.equal(services.state.invalidRequests, 0); assert.equal(services.state.transcriptions.length, 0); assert.equal(services.state.syntheses, 0);
     assert.equal(speech.state.invalidRequests, 0);
     if (liveModelFile) { assert.equal(modelEvidence.length, results.length); assert.equal(services.state.replies.length, services.state.turns.length); }
-    const report = { model: speech.model, modelSha256: speech.modelSha256, imageId: speech.imageId, results, modelEvidence,
+    const report = { model: speech.model, modelSha256: speech.modelSha256, imageId: speech.imageId, results, modelEvidence, chatEvidence,
       verifiedMatrixCaller: true, encryptedInput: true, encryptedOutput: true, canceledRecognitionOnLeave: true,
       restoredBrowserProfile: results.some((result) => result.runtime === "container"),
       agentRuntime: liveModelFile ? "installed OpenClaw public SDK with operator-configured live model"

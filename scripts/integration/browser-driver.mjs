@@ -248,7 +248,8 @@ export async function verifyBrowserDriver({ root, directory, api, waitFor, homes
     }
     assert.equal(voiceServices.state.invalidRequests, 0);
     const realSpeech = process.env.MATRIX_CALL_MATRIX_SPEECH_IMAGE ? await verifyMatrixSpeech({ root, directory, data, config, env, peer, identity,
-      owner, keys, waitFor, control, connect, startBrowserWorker, freePort, getDriverPage: () => driverPage }) : undefined;
+      owner, keys, waitFor, control, connect, startBrowserWorker, freePort, getDriverPage: () => driverPage,
+      chatProvision: { api, homeserver, registrationSecret, roomId, creator, owner, peer } }) : undefined;
     return { productionBrowserDriver: true, persistentDeviceBinding: true, pcmPublication: true, voicePipeline: true,
       speechModel: "protocol-fixture", agentRuntime: "protocol-fixture", browserContainer: containerChecked, realSpeech };
   } finally {
