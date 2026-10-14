@@ -77,7 +77,7 @@ try {
   const serverName = `localhost:${tlsProxy.address().port}`;
   execFileSync("docker", ["run", "--rm", "--user", dockerUser, "--env", `SYNAPSE_SERVER_NAME=${serverName}`, "--env", "SYNAPSE_REPORT_STATS=no", "--mount", `type=bind,source=${directory},target=/data`, image, "generate"], { stdio: "pipe" });
   const configFile = path.join(directory, "homeserver.yaml");
-  await writeFile(configFile, `server_name: ${serverName}\npid_file: /data/homeserver.pid\nreport_stats: false\nlisteners:\n  - port: 8008\n    type: http\n    tls: false\n    bind_addresses: [0.0.0.0]\n    resources:\n      - names: [client, federation]\n        compress: false\ndatabase:\n  name: sqlite3\n  args:\n    database: /data/homeserver.db\nlog_config: /data/${serverName}.log.config\nsigning_key_path: /data/${serverName}.signing.key\nmedia_store_path: /data/media_store\nregistration_shared_secret: ${registrationSecret}\nenable_registration: false\ntrusted_key_servers: []\nsuppress_key_server_warning: true\nrc_message:\n  per_second: 100\n  burst_count: 1000\nmax_event_delay_duration: 10000\n`, { mode: 0o600 });
+  await writeFile(configFile, `server_name: ${serverName}\npid_file: /data/homeserver.pid\nreport_stats: false\nlisteners:\n  - port: 8008\n    type: http\n    tls: false\n    bind_addresses: [0.0.0.0]\n    resources:\n      - names: [client, federation]\n        compress: false\ndatabase:\n  name: sqlite3\n  args:\n    database: /data/homeserver.db\nlog_config: /data/${serverName}.log.config\nsigning_key_path: /data/${serverName}.signing.key\nmedia_store_path: /data/media_store\nregistration_shared_secret: ${registrationSecret}\nenable_registration: false\ntrusted_key_servers: []\nsuppress_key_server_warning: true\nrc_message:\n  per_second: 100\n  burst_count: 1000\nmax_event_delay_duration: ${process.env.MATRIX_CALL_RELEASED_CLIENT === "1" ? 3600000 : 10000}\n`, { mode: 0o600 });
   execFileSync("docker", ["run", "--detach", "--rm", "--name", container, "--user", dockerUser, "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory", "768m", "--pids-limit", "128", "--publish", "127.0.0.1::8008", "--mount", `type=bind,source=${directory},target=/data`, image], { stdio: "pipe" });
   running = true;
   const port = JSON.parse(execFileSync("docker", ["inspect", "--format", "{{json .NetworkSettings.Ports}}", container], { encoding: "utf8" }))["8008/tcp"][0].HostPort;
@@ -222,8 +222,10 @@ try {
   }
   assert.equal((await restoredControl.request("/v1/media/leave", { sessionId: restoredSession.value.sessionId })).status, 200);
   assert.equal((await controls[1].request("/v1/media/leave", { sessionId: sessions[1] })).status, 200);
-  const driver = await verifyBrowserDriver({ root, directory, api, waitFor, homeserver, registrationSecret, roomId: room.room_id,
-    creator: accounts[0], owner: accounts[1], ownerKeys: fingerprints[1], peer: pages[1], focusUrl: authorization.url, sfuUrl: sfu.url });
+  const driver = process.env.MATRIX_CALL_RELEASED_CLIENT === "1"
+    ? await (await import("./integration/released-call.mjs")).verifyReleasedCall({ root, directory, chromium, api, waitFor, homeserver, serverName, registrationSecret, roomId: room.room_id, creator: accounts[0], focusUrl: authorization.url, sfuUrl: sfu.url })
+    : await verifyBrowserDriver({ root, directory, api, waitFor, homeserver, registrationSecret, roomId: room.room_id,
+      creator: accounts[0], owner: accounts[1], ownerKeys: fingerprints[1], peer: pages[1], focusUrl: authorization.url, sfuUrl: sfu.url });
   console.log(JSON.stringify({ browser: restored.browser().version(), synapse: "1.162.0", matrixSdk: "43.0.0", livekit: "1.13.9", authorization: "0.8.0", matrixRtcKeys: true, authenticatedDeviceBinding: true, plaintextRejected: true, deviceClaimRejected: true, persistentKeysAndTrust: true, matrixAudio: true, restartAndRejoin: true, focusAuthorization: true, authenticatedWorkerControl: true, ...driver }));
   succeeded = true;
 } finally {
