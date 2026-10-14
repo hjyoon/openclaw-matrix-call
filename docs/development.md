@@ -14,6 +14,10 @@ The pinned `@openclaw/matrix` 2026.10.2 development dependency provides the actu
 
 After building artifacts, `pnpm verify:matrix-commands` checks actual Matrix messages through both installed native plugins and the signed worker control plane. It uses disposable Synapse accounts, a private control room and isolated DMs, with fixture media and zero inference. Its separate CI job needs Docker and no Chromium or hosted credentials. See [command evidence](matrix-command-integration.md) for supported placement, session settings and the observed mention-prefix limitation.
 
+With the speech/browser images and Chromium installed, `pnpm verify:matrix-chat-media` combines encrypted commands with actual Korean/English speech in both worker modes. It uses disposable messaging accounts, encrypted SDK peers and a deterministic provider, without hosted credentials. Captured input metrics contain only duration, sample rate, RMS and peak; no audio buffers enter the report.
+
+`pnpm verify:marketplace` uses the locked ClawHub inspector, performs a publication dry-run and produces an inspected package archive, checksum and source-bound inventory under `.cache/release/`. It does not publish. See [distribution checks](marketplace-distribution.md).
+
 Coverage is enforced per file at 100% for statements, branches, functions, and lines across the plugin, shared core, and worker runtime sources. Generated bundles, dependencies, tests, and build tooling are outside the runtime coverage scope. Build and package checks validate those artifacts separately.
 
 Tests must exercise security decisions, invalid inputs, cancellation, concurrency, failure recovery, and transport boundaries. Full unit coverage does not establish Matrix calling interoperability. The release process also requires a real encrypted call with actual audio.
