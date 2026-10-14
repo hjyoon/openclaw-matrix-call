@@ -15,7 +15,7 @@ function fixture(expectedKeys: DeviceKeys | undefined = undefined) {
   const setup: BrowserSetup = { credentials: config.credentials, policy: config.policy, expectedKeys };
   const pin = setup.policy.devices[0]!;
   const device = new Device({ userId: pin.userId, deviceId: pin.deviceId, algorithms: [], keys: new Map([[`ed25519:${pin.deviceId}`, pin.ed25519], [`curve25519:${pin.deviceId}`, pin.curve25519]]) });
-  const cryptoApi = { getOwnDeviceKeys: vi.fn(async () => keys), getUserDeviceInfo: vi.fn(async () => new Map([[pin.userId, new Map([[pin.deviceId, device]])]])), setDeviceVerified: vi.fn(async () => {}) };
+  const cryptoApi = { getOwnDeviceKeys: vi.fn(async () => keys), getUserDeviceInfo: vi.fn(async () => new Map([[pin.userId, new Map([[pin.deviceId, device]])]])), setDeviceVerified: vi.fn(async () => {}), prepareToEncrypt: vi.fn() };
   const client = { whoami: vi.fn(async () => ({ user_id: credentials.userId, device_id: credentials.deviceId })), downloadKeysForUsers: vi.fn(async () => ({ failures: {}, device_keys: {} })), initRustCrypto: vi.fn(async () => {}), getCrypto: vi.fn(() => cryptoApi), startClient: vi.fn(async () => {}), getSyncState: vi.fn(() => SyncState.Prepared), getRoom: vi.fn(() => ({ getMyMembership: () => "join", hasEncryptionStateEvent: () => true }) as Room) };
   return { client, sdk: client as unknown as MatrixClient, cryptoApi, setup, pin, device };
 }
@@ -78,15 +78,40 @@ describe("Matrix browser device initialization", () => {
   it("marks only explicitly compared owner device keys as verified", async () => {
     const f = fixture();
     await enrollPinnedDevices(f.sdk, f.setup);
-    expect(f.cryptoApi.getUserDeviceInfo).toHaveBeenCalledWith([f.pin.userId], true);
+    expect(f.cryptoApi.getUserDeviceInfo).toHaveBeenCalledWith([f.pin.userId], false);
     expect(f.cryptoApi.setDeviceVerified).toHaveBeenCalledWith(f.pin.userId, f.pin.deviceId, true);
   });
 
-  it.each(["missing-user", "missing-device", "wrong-user", "wrong-device", "signing-key", "identity-key"])("rejects incomplete or changed enrolled device evidence: %s", async (change) => {
+  it.each(["wrong-user", "wrong-device", "signing-key", "identity-key"])("rejects changed enrolled device evidence: %s", async (change) => {
     const f = fixture();
     const device = { userId: change === "wrong-user" ? "@wrong:example.org" : f.pin.userId, deviceId: change === "wrong-device" ? "OTHER" : f.pin.deviceId, getFingerprint: () => change === "signing-key" ? "wrong" : f.pin.ed25519, getIdentityKey: () => change === "identity-key" ? "wrong" : f.pin.curve25519 };
-    f.cryptoApi.getUserDeviceInfo.mockResolvedValue(new Map(change === "missing-user" ? [] : [[f.pin.userId, new Map(change === "missing-device" ? [] : [[f.pin.deviceId, device as Device]])]]));
+    f.cryptoApi.getUserDeviceInfo.mockResolvedValue(new Map([[f.pin.userId, new Map([[f.pin.deviceId, device as Device]])]]));
     await expect(enrollPinnedDevices(f.sdk, f.setup)).rejects.toThrow("Matrix device fingerprint does not match enrollment");
+    expect(f.cryptoApi.setDeviceVerified).not.toHaveBeenCalled();
+  });
+
+  it.each(["missing-user", "missing-device"])("waits for pinned devices to enter the SDK crypto store: %s", async (missing) => {
+    const f = fixture();
+    f.cryptoApi.getUserDeviceInfo.mockResolvedValueOnce(new Map(missing === "missing-user" ? [] : [[f.pin.userId, new Map()]]));
+    await enrollPinnedDevices(f.sdk, f.setup);
+    expect(f.cryptoApi.getUserDeviceInfo).toHaveBeenCalledTimes(2);
+    expect(f.cryptoApi.prepareToEncrypt).toHaveBeenCalledTimes(2);
+    expect(f.cryptoApi.setDeviceVerified).toHaveBeenCalledExactlyOnceWith(f.pin.userId, f.pin.deviceId, true);
+  });
+
+  it("bounds unavailable device storage without granting trust", async () => {
+    const f = fixture(); const controller = new AbortController();
+    f.cryptoApi.getUserDeviceInfo.mockImplementation(async () => { setTimeout(() => controller.abort(new Error("enrollment expired")), 10); return new Map(); });
+    await expect(enrollPinnedDevices(f.sdk, f.setup, controller.signal)).rejects.toThrow("enrollment expired");
+    expect(f.cryptoApi.setDeviceVerified).not.toHaveBeenCalled();
+  });
+
+  it("rejects cancellation after the SDK lookup and a lost encrypted room", async () => {
+    const f = fixture(); const controller = new AbortController();
+    f.cryptoApi.getUserDeviceInfo.mockImplementation(async () => { controller.abort(new Error("enrollment canceled")); return new Map(); });
+    await expect(enrollPinnedDevices(f.sdk, f.setup, controller.signal)).rejects.toThrow("enrollment canceled");
+    f.client.getRoom.mockReturnValue(undefined as never);
+    await expect(enrollPinnedDevices(f.sdk, f.setup)).rejects.toThrow("Joined encrypted Matrix room is unavailable");
     expect(f.cryptoApi.setDeviceVerified).not.toHaveBeenCalled();
   });
 

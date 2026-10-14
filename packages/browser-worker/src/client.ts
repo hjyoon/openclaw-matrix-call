@@ -29,13 +29,25 @@ export async function initializeMatrixClient(client: MatrixClient, setup: Browse
   return Object.freeze(keys);
 }
 
-export async function enrollPinnedDevices(client: MatrixClient, setup: BrowserSetup): Promise<void> {
+export async function enrollPinnedDevices(client: MatrixClient, setup: BrowserSetup, signal = AbortSignal.timeout(30_000)): Promise<void> {
   const cryptoApi = client.getCrypto();
   if (!cryptoApi) throw new Error("Matrix crypto is unavailable");
-  const devices = await cryptoApi.getUserDeviceInfo([...new Set(setup.policy.devices.map((pin) => pin.userId))], true);
+  let devices: Awaited<ReturnType<typeof cryptoApi.getUserDeviceInfo>>;
+  for (;;) {
+    signal.throwIfAborted();
+    for (const id of setup.policy.rooms) {
+      const room = joinedEncryptedRoom(client, id);
+      if (!room) throw new Error("Joined encrypted Matrix room is unavailable");
+      cryptoApi.prepareToEncrypt(room);
+    }
+    devices = await cryptoApi.getUserDeviceInfo([...new Set(setup.policy.devices.map((pin) => pin.userId))], false);
+    signal.throwIfAborted();
+    if (setup.policy.devices.every((pin) => devices.get(pin.userId)?.has(pin.deviceId))) break;
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  }
   for (const pin of setup.policy.devices) {
-    const device = devices.get(pin.userId)?.get(pin.deviceId);
-    if (!device || device.userId !== pin.userId || device.deviceId !== pin.deviceId ||
+    const device = devices.get(pin.userId)!.get(pin.deviceId)!;
+    if (device.userId !== pin.userId || device.deviceId !== pin.deviceId ||
         device.getFingerprint() !== pin.ed25519 || device.getIdentityKey() !== pin.curve25519) {
       throw new Error("Matrix device fingerprint does not match enrollment");
     }
