@@ -69,6 +69,41 @@
               "agents"
             ],
             "additionalProperties": false
+          },
+          "agentService": {
+            "readOnly": true,
+            "type": "object",
+            "properties": {
+              "secretFile": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "host": {
+                "default": "127.0.0.1",
+                "type": "string",
+                "enum": [
+                  "127.0.0.1",
+                  "::1"
+                ]
+              },
+              "port": {
+                "default": 19793,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "timeoutMs": {
+                "default": 30000,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 300000
+              }
+            },
+            "required": [
+              "secretFile"
+            ],
+            "additionalProperties": false
           }
         },
         "additionalProperties": false,

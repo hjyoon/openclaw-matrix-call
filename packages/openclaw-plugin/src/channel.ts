@@ -1,10 +1,17 @@
 import type { ChannelPlugin, OpenClawConfig } from "openclaw/plugin-sdk/channel-core";
 import { z } from "zod";
+import { isAbsolute } from "node:path";
 import { CallError, policySchema } from "@matrix-call/core";
 
 const accountSchema = z.strictObject({
   enabled: z.boolean().default(false),
   policy: policySchema.optional(),
+  agentService: z.strictObject({
+    secretFile: z.string().min(1).max(4096).refine(isAbsolute),
+    host: z.enum(["127.0.0.1", "::1"]).default("127.0.0.1"),
+    port: z.number().int().min(1).max(65535).default(19793),
+    timeoutMs: z.number().int().min(1).max(300_000).default(30_000),
+  }).readonly().optional(),
 }).refine((account) => !account.enabled || account.policy !== undefined).readonly();
 
 type MatrixCallAccount = z.infer<typeof accountSchema> & { accountId: "default" };

@@ -1,6 +1,6 @@
 # Public release readiness
 
-Updated: 2026-10-14. This repository is public source under development. It is not yet an installable calling release. Installing the native OpenClaw package currently registers a channel descriptor and `/matrixcall` status command; it does not connect an agent to the standalone worker.
+Updated: 2026-10-14. This repository is public source under development. It is not yet an installable calling release. The native package registers a channel descriptor, `/matrixcall` status command and optional signed agent service. Worker control and native call entry remain unfinished.
 
 ## First public alpha
 
@@ -13,7 +13,7 @@ Administrator tool execution and general-user approval require a supported host 
 | Requirement | Current evidence | Work before a calling alpha |
 | --- | --- | --- |
 | Native package installation | Packed archive installs and loads in a disposable OpenClaw 2026.10.2 profile | Recheck the final connected package on a clean supported Gateway |
-| Gateway-to-worker integration | Native channel registration, exported ingress adapter, separate signed worker and agent protocols | Register the actual agent service, connect worker control, and implement host start/stop/error lifecycle |
+| Gateway-to-worker integration | Optional Gateway-owned signed agent service with explicit loopback configuration, delegated ingress, bounded idempotency and cancellation-safe start/stop/reload; SDK dispatch is unit-tested with an injected runner | Verify the installed service on a running Gateway, connect worker control, and finish native call entry |
 | Model-backed voice response | Signed deterministic agent fixtures exercise identity, history and cancellation | Dispatch through the supported OpenClaw SDK to an operator-configured model; test reply, history, abort and failure |
 | Real speech in encrypted calls | Korean/English turns pass real local engines through the production driver and restored browser image; leave cancels recognition | Broader input quality, sustained-call stability and target-server latency/resource measurements |
 | Device and service setup | Strict external configuration, persistent private profiles, explicit fingerprint pins, optional local speech Compose | Provide a reproducible enrollment/setup flow with useful configuration diagnostics and preserved device state |
@@ -25,7 +25,7 @@ Runtime coverage is 100% per non-empty source file. That checks exercised code p
 
 ## Next implementation order
 
-1. Connect the native agent adapter to an authenticated service owned by the OpenClaw plugin, preserving delegated authority and dedicated credentials.
+1. Verify the installed native agent service against a running supported Gateway, then connect worker control and native call entry.
 2. Verify real model-backed spoken turns through that service and a released compatible Matrix client; investigate intermittent enrollment and later-input failures.
 3. Add setup/enrollment diagnostics and validate the complete instructions from an empty operator environment.
 4. Build and inspect release artifacts, finish marketplace validation and publish a version with its exact supported scope.

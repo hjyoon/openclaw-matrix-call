@@ -9,7 +9,8 @@ describe("native SDK registration", () => {
   it.each(["full", "discovery", "cli-metadata", "tool-discovery"])("loads through the real channel SDK in %s mode", (registrationMode) => {
     const registerChannel = vi.fn();
     const registerCommand = vi.fn();
-    const api = { registrationMode, registerChannel, registerCommand } as unknown as OpenClawPluginApi;
+    const registerService = vi.fn();
+    const api = { registrationMode, registerChannel, registerCommand, registerService } as unknown as OpenClawPluginApi;
     plugin.register(api);
     expect(plugin.id).toBe("matrix-call");
     expect(plugin.channelPlugin).toBe(matrixCallChannel);
@@ -21,8 +22,10 @@ describe("native SDK registration", () => {
       const command = registerCommand.mock.calls[0]![0];
       expect(command.name).toBe("matrixcall");
       expect(command.requireAuth).toBe(true);
-      expect(command.handler().text).toContain("native call wiring and model-backed dispatch are unavailable");
+      expect(command.handler().text).toContain("Worker control and native call entry remain unavailable");
     } else expect(registerCommand).not.toHaveBeenCalled();
+    if (registrationMode === "full") expect(registerService.mock.calls[0]![0].id).toBe("matrix-call-agent");
+    else expect(registerService).not.toHaveBeenCalled();
   });
 });
 
@@ -53,11 +56,23 @@ describe("development channel configuration", () => {
     { channels: { "matrix-call": { enabled: true } } },
     { channels: { "matrix-call": { enabled: false, unexpected: true } } },
     { channels: { "matrix-call": { enabled: true, policy: { ...policy, owners: [] } } } },
+    ...[
+      { secretFile: "relative" }, { secretFile: "/secret", host: "0.0.0.0" },
+      { secretFile: "/secret", port: 0 }, { secretFile: "/secret", port: 65536 },
+      { secretFile: "/secret", timeoutMs: 0 }, { secretFile: "/secret", timeoutMs: 300001 },
+      { secretFile: "/secret", secret: "inline" },
+    ].map((agentService) => ({ channels: { "matrix-call": { enabled: true, policy, agentService } } })),
   ])("rejects invalid or incomplete configuration %#", (cfg) => {
     expect(() => matrixCallChannel.config.resolveAccount(cfg)).toThrow("invalid-input");
   });
 
   it("rejects an unknown account", () => {
     expect(() => matrixCallChannel.config.resolveAccount({}, "other")).toThrow("invalid-input");
+  });
+
+  it("defaults a configured agent service to bounded loopback operation", () => {
+    const account = matrixCallChannel.config.resolveAccount({ channels: { "matrix-call": { enabled: true, policy, agentService: { secretFile: "/private/secret" } } } });
+    expect(account.agentService).toEqual({ secretFile: "/private/secret", host: "127.0.0.1", port: 19793, timeoutMs: 30000 });
+    expect(Object.isFrozen(account.agentService)).toBe(true);
   });
 });

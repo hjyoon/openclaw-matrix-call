@@ -22,7 +22,9 @@ Decision rationale and changes are recorded in [ADRs](adr/README.md). This statu
 - Immutable conversation records with validated versioned JSON export/import.
 - Dedicated HTTP message authentication with replay protection and process-incarnation binding.
 - Portable agent HTTP protocol and adapter, including a complete core turn against a real local test service.
+- A portable signed agent server with strict request decoding, rechecked caller policy, bound conversations, retained idempotency keys, concurrent-work rejection and abort propagation. Timed-out host work keeps its slot until actual settlement.
 - Native channel registration through the actual pinned OpenClaw SDK, with a delegated, tool-free agent adapter and a status command.
+- Optional native agent service registration through the public SDK, with explicit loopback/secret-file configuration, serialized start/stop/reload and redacted command output. Lifecycle tests use a real HTTP listener and an injected SDK runner; installed Gateway dispatch remains a separate check.
 - A packed plugin installed and loaded in a disposable OpenClaw profile, including cold channel configuration metadata.
 - An authenticated worker control plane, secret-file configuration, cancellation-safe shutdown, and standalone process checks.
 - A pinned worker image tested with a non-root user, read-only filesystem, dropped Linux capabilities, and no OpenClaw SDK.
@@ -59,7 +61,7 @@ Decision rationale and changes are recorded in [ADRs](adr/README.md). This statu
 - Real Korean/English recognition and synthesis through encrypted Matrix microphones, actual participant verification, the production browser driver and the restored production image. Two turns preserve history; the image starts a fresh conversation while retaining device keys.
 - Signed media leave during actual recognition terminates the engine child, removes its temporary WAV and prevents a late agent turn in both worker modes. The real speech path retains image sandboxing and clean shutdown.
 
-The current suite has 870 passing tests, with 100% per-file runtime coverage across 47 non-empty files. Full package/worker/plugin checks and the combined real Matrix speech image check pass locally. The original Matrix voice fixtures use deterministic text/PCM. Separate speech image checks run actual engines with fixture authority, agent and output transport. The combined check runs actual engines with real Matrix identity and encrypted transport; only agent dispatch remains a fixture. Its controlled clip gain/selection does not establish arbitrary-speech or long-call reliability. GitHub Actions runs package, image, sandbox, encrypted integration, both separate speech models and the combined `base`-model check.
+The current suite has 943 passing tests, with 100% per-file runtime coverage across 49 non-empty files. Full package/worker/plugin checks pass locally. The combined real Matrix speech image check passed at the previous audio baseline. The original Matrix voice fixtures use deterministic text/PCM. Separate speech image checks run actual engines with fixture authority, agent and output transport. The combined check runs actual engines with real Matrix identity and encrypted transport; only agent dispatch remains a fixture. Its controlled clip gain/selection does not establish arbitrary-speech or long-call reliability. GitHub Actions runs package, image, sandbox, encrypted integration, both separate speech models and the combined `base`-model check.
 
 ## Remaining release work
 
@@ -70,6 +72,6 @@ The current suite has 870 passing tests, with 100% per-file runtime coverage acr
 - Real encrypted audio interoperability with documented client versions, including a non-Element client where compatible calling support exists.
 - Marketplace validation, source provenance, release assets, and publication setup.
 
-Native agent-service registration, worker control integration and a clean operator setup flow remain missing. See [public release readiness](release-readiness.md) for the implementation order and evidence gates.
+Native agent-service registration is implemented; running-Gateway dispatch, worker control integration and a clean operator setup flow remain to be verified or implemented. See [public release readiness](release-readiness.md) for the implementation order and evidence gates.
 
 Synthetic Matrix SDK peers have passed real encrypted audio tests. No released Matrix client application has passed interoperability testing yet. The worker still reports `ready: false`; the repository is a development baseline, not a deployable calling release.
