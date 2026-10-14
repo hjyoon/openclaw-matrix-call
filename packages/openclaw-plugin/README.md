@@ -8,4 +8,6 @@ The exported agent adapter uses the public SDK ingress API, creates an independe
 
 The adapter dispatches delegated, tool-free turns. OpenClaw 2026.10.2 restricts authenticated owner admission to bundled or trusted official plugins; community plugin installation does not remove that restriction. Privileged tasks and general-user approvals are not implemented. The worker must never receive a Gateway operator token.
 
+The [combined native Matrix check](https://github.com/hjyoon/openclaw-matrix-call/blob/main/docs/native-matrix-integration.md) now runs installed SDK dispatch and administrator controls with actual encrypted Korean/English speech in the production driver and restored browser image. Its provider text remains deterministic. Released-client interoperability, actual model inference and clean operator setup still gate a calling release.
+
 See the repository's [implementation status](https://github.com/hjyoon/openclaw-matrix-call/blob/main/docs/implementation-status.md), [agent protocol](https://github.com/hjyoon/openclaw-matrix-call/blob/main/docs/agent-protocol.md), and [Matrix compatibility](https://github.com/hjyoon/openclaw-matrix-call/blob/main/docs/matrix-compatibility.md).

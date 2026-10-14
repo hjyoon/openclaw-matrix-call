@@ -72,4 +72,4 @@ jobs:
       - run: pnpm verify:speech
       - run: MATRIX_CALL_SPEECH_TEST_MODEL=small pnpm verify:speech
       - run: docker build -f deployment/browser-worker.Dockerfile -t matrix-call-browser-worker:0.1.0-alpha.1 .
-      - run: pnpm verify:matrix-speech
+      - run: pnpm verify:matrix-gateway

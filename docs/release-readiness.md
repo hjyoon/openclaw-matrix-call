@@ -13,20 +13,20 @@ Administrator tool execution and general-user approval require a supported host 
 | Requirement | Current evidence | Work before a calling alpha |
 | --- | --- | --- |
 | Native package installation | Packed archive installs and runs its signed agent service in a disposable OpenClaw 2026.10.2 Gateway | Recheck the final calling package and complete operator setup from an empty environment |
-| Gateway-to-worker integration | Gateway-owned signed agent service plus native signed worker control; installed Gateway checks dispatch, strict admission, history, cancellation, restart/reload and exact owned-session cleanup using deterministic fixtures | Connect both to real encrypted voice and validate coordinated replacement |
-| Model-backed voice response | Real installed SDK dispatch reaches a deterministic model-provider HTTP fixture; encrypted Matrix speech checks use a separate agent fixture | Connect an operator-configured real model to the spoken path and test reply, history, abort and failure |
+| Gateway-to-worker integration | Installed Gateway control and public SDK agent dispatch pass together through real encrypted Matrix media and local speech; restart/reload and strict admission also have dedicated checks | Validate coordinated replacement and complete operator setup |
+| Model-backed voice response | Four Korean/English turns pass real Matrix identity, engines, native SDK dispatch, host history and encrypted output; the model endpoint returns deterministic text | Connect an operator-configured real model and test reply, history, abort, failure and response-length limits |
 | Real speech in encrypted calls | Korean/English turns pass real local engines through the production driver and restored browser image; leave cancels recognition | Broader input quality, sustained-call stability and target-server latency/resource measurements |
 | Device and service setup | Strict external configuration, persistent private profiles, explicit fingerprint pins, optional local speech Compose | Provide a reproducible enrollment/setup flow with useful configuration diagnostics and preserved device state |
-| Call entry | Documented owner-only Matrix command and administrator RPC; real installed RPC controls a signed fixture worker, while command identity is checked with SDK contexts | Check actual Matrix chat command dispatch and complete spoken turns; automatic incoming-call handling is unavailable |
+| Call entry | Administrator RPC drives actual encrypted speech and recognition cancellation; owner-only Matrix command identity is checked with SDK contexts | Check actual Matrix chat command dispatch and incoming-call requirements; automatic acceptance is unavailable |
 | Released Matrix clients | SDK peers pass encrypted audio and restart/rejoin | Record supported application versions, protocol/encryption mode and complete spoken turns with at least one actual client; test compatible non-Element clients where available |
 | Distribution | Development bundles, image recipes, pinned dependencies and third-party notices | Produce versioned plugin archives and worker images, inspect publication contents, validate the selected marketplace requirements, and publish install instructions |
 
-Runtime coverage is 100% per non-empty source file. That checks exercised code paths; it does not replace client interoperability, native model dispatch or clean-host usability evidence. `/readyz` continues to report unavailable until assistant readiness has its own completed contract and checks.
+Runtime coverage is 100% per non-empty source file. That checks exercised code paths; it does not replace client interoperability, actual model inference or clean-host usability evidence. `/readyz` continues to report unavailable until assistant readiness has its own completed contract and checks. The [combined native Matrix check](native-matrix-integration.md) records the current native/media evidence.
 
 ## Next implementation order
 
-1. Exercise native control and the signed agent service together through real encrypted media, including actual Matrix command entry and coordinated lifecycle behavior.
-2. Verify real model-backed spoken turns through that service and a released compatible Matrix client; investigate intermittent enrollment and later-input failures.
+1. Verify operator-configured model-backed spoken turns and actual Matrix chat command entry, including abort/failure and long-response handling.
+2. Test released compatible Matrix clients and coordinated replacement; investigate intermittent recognition, enrollment and later-input failures.
 3. Add setup/enrollment diagnostics and validate the complete instructions from an empty operator environment.
 4. Build and inspect release artifacts, finish marketplace validation and publish a version with its exact supported scope.
 

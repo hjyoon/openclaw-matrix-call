@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { startMatrixSpeechService } from "./matrix-speech-service.mjs";
 import { startTestVoiceServices } from "./voice-services.mjs";
+import { startMatrixGateway } from "./matrix-gateway.mjs";
 
 const exec = promisify(execFile);
 
@@ -19,6 +20,8 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
   let worker;
   let container;
   let selected;
+  let gateway;
+  const nativeGateway = process.env.MATRIX_CALL_NATIVE_GATEWAY === "1";
   const results = [];
   const reference = { roomId: config.rooms[0], rtcSessionId: "m.call#ROOM", participantId: `${owner.userId}:${owner.deviceId}` };
 
@@ -35,6 +38,7 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
   }
 
   async function closeWorker() {
+    if (gateway) { await gateway.close(); gateway = undefined; }
     if (worker) { await worker.close(); worker = undefined; }
     if (container) {
       try {
@@ -63,20 +67,27 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
   }
 
   try {
-    services = await startTestVoiceServices(root, { agentReply: () => manifest[selected].reply });
+    if (!nativeGateway) services = await startTestVoiceServices(root, { agentReply: () => manifest[selected].reply });
     const agentSecretFile = path.join(data, "real-agent.secret"); const speechSecretFile = path.join(data, "real-speech.secret");
-    await writeFile(agentSecretFile, services.agentSecret, { mode: 0o600 });
     await writeFile(speechSecretFile, speech.secret, { mode: 0o600 });
     const voiceFile = path.join(data, "real-voice.json");
-    await writeFile(voiceFile, JSON.stringify({ agentId: "assistant", agent: { baseUrl: services.agentUrl, secretFile: agentSecretFile },
-      speech: { baseUrl: speech.baseUrl, secretFile: speechSecretFile }, requestTimeoutMs: 70_000, timeoutMs: 120_000, allowInsecureLoopback: true }), { mode: 0o600 });
     await waitFor(async () => (await peer.evaluate((id) => window.matrixTest.status(id), identity)).members === 1, "previous voice worker departure");
     for (const runtime of process.env.MATRIX_CALL_BROWSER_IMAGE ? ["native", "container"] : ["native"]) {
+      const workerPort = nativeGateway ? await freePort() : undefined;
+      if (nativeGateway) {
+        gateway = await startMatrixGateway({ root, directory: path.join(directory, `gateway-${runtime}`),
+          policy: { owners: [owner.userId], rooms: config.rooms, agents: ["main"] }, workerUrl: `http://127.0.0.1:${workerPort}`,
+          controlSecretFile: env.MATRIX_CALL_SECRET_FILE, reply: () => manifest[selected].reply, freePort, waitFor, observations: services?.state });
+        services = gateway;
+      }
+      await writeFile(agentSecretFile, services.agentSecret, { mode: 0o600 });
+      await writeFile(voiceFile, JSON.stringify({ agentId: nativeGateway ? "main" : "assistant", agent: { baseUrl: services.agentUrl, secretFile: agentSecretFile },
+        speech: { baseUrl: speech.baseUrl, secretFile: speechSecretFile }, requestTimeoutMs: 70_000, timeoutMs: 120_000, allowInsecureLoopback: true }), { mode: 0o600 });
       const firstTurn = services.state.turns.length;
       let url;
       if (runtime === "native") {
         await writeFile(env.MATRIX_CALL_BROWSER_CONFIG, JSON.stringify({ ...config, voiceFile }));
-        worker = await startBrowserWorker(env);
+        worker = await startBrowserWorker(nativeGateway ? { ...env, MATRIX_CALL_PORT: String(workerPort) } : env);
         assert(worker.voice);
         const receive = worker.voice.receive.bind(worker.voice);
         worker.voice.receive = async (...args) => {
@@ -94,7 +105,7 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
         await writeFile(path.join(data, "real-container-voice.json"), JSON.stringify(voice), { mode: 0o600 });
         await writeFile(path.join(data, "real-container.json"), JSON.stringify({ ...config, credentialsFile: "/data/matrix.json", profileDir: "/data/profile",
           assetDir: "/app/assets", voiceFile: "/data/real-container-voice.json" }), { mode: 0o600 });
-        const port = await freePort();
+        const port = workerPort ?? await freePort();
         container = (await exec("docker", ["run", "--detach", "--init", "--user", `${process.getuid()}:${process.getgid()}`, "--network", "host",
           "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges:true", "--security-opt", `seccomp=${path.join(root, "deployment/browser-seccomp.json")}`,
           "--tmpfs", "/tmp:rw,nosuid,nodev,size=256m", "--memory=768m", "--pids-limit=256", "--mount", `type=bind,src=${data},dst=/data`,
@@ -103,7 +114,7 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
         url = `http://127.0.0.1:${port}`;
         await waitFor(async () => { try { return (await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(500) })).ok; } catch { return false; } }, "real speech browser image startup", 45_000);
       }
-      const request = await control(url);
+      const request = await (gateway ? gateway.control(url) : control(url));
       const sessionId = await connect(request, container ?? null);
       await prepareInput();
 
@@ -139,6 +150,17 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
         assert(observation.activeFrames >= 10 && observation.peakRms > 0.005, `${language} synthesized speech must reach the Matrix peer`);
         assert.equal(observation.encryptedFrames, observation.activeFrames);
         assert.equal(services.state.turns.length, before + 1);
+        if (nativeGateway) {
+          const provider = services.state.providerRequests[before];
+          assert.equal(turn.agentId, "main"); assert.equal(turn.messages.length, before === firstTurn ? 1 : 3);
+          assert(provider.tools === undefined || provider.tools.length === 0);
+          assert(JSON.stringify(provider.messages).includes(turn.messages[0].text));
+          if (before > firstTurn) {
+            assert(JSON.stringify(provider.messages).includes(services.state.turns[firstTurn].messages[0].text));
+            assert(JSON.stringify(provider.messages).includes(manifest.ko.reply));
+            assert.equal(provider.messages.filter((message) => message.role === "user" && JSON.stringify(message.content).includes(services.state.turns[firstTurn].messages[0].text)).length, 1);
+          } else if (firstTurn) assert(!JSON.stringify(provider.messages).includes(services.state.turns[firstTurn - 1].messages[0].text));
+        }
         results.push({ runtime, language, inputStartSeconds: language === "en" ? 5 : 0, inputSeconds: seconds, peakNormalized: true, ...observation });
         console.log(JSON.stringify({ event: "matrix-speech-turn-passed", ...results.at(-1) }));
         if (worker) console.log(JSON.stringify({ event: "matrix-capture-probe", nodes: await getDriverPage().evaluate(() => window.matrixCaptureProbe) }));
@@ -158,7 +180,8 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
       await prepareInput();
       await play("ko");
       await waitFor(async () => await speech.engineCount() > 0, "real Matrix recognition child started", 10_000);
-      assert.equal((await request("/v1/media/leave", { sessionId })).status, 200);
+      if (gateway && runtime === "container") { await gateway.close(); gateway = undefined; }
+      else assert.equal((await request("/v1/media/leave", { sessionId })).status, 200);
       await waitFor(async () => await speech.engineCount() === 0 && await speech.inputRemoved(), "real Matrix leave terminates recognition and removes input", 10_000);
       await closeWorker();
       assert.equal(services.state.turns.length, firstTurn + 2);
@@ -167,7 +190,9 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
     assert.equal(services.state.invalidRequests, 0); assert.equal(services.state.transcriptions.length, 0); assert.equal(services.state.syntheses, 0);
     const report = { model: speech.model, modelSha256: speech.modelSha256, imageId: speech.imageId, results,
       verifiedMatrixCaller: true, encryptedInput: true, encryptedOutput: true, canceledRecognitionOnLeave: true,
-      restoredBrowserProfile: results.some((result) => result.runtime === "container"), agentRuntime: "signed deterministic fixture", releasedClient: false };
+      restoredBrowserProfile: results.some((result) => result.runtime === "container"),
+      agentRuntime: nativeGateway ? "installed OpenClaw public SDK with deterministic provider" : "signed deterministic fixture",
+      nativeGatewayControl: nativeGateway, modelInference: false, releasedClient: false };
     await mkdir(path.join(root, ".cache/speech"), { recursive: true });
     await writeFile(path.join(root, ".cache/speech/matrix-integration-result.json"), JSON.stringify(report, null, 2));
     return report;

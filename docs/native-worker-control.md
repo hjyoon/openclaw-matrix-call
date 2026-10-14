@@ -70,4 +70,6 @@ Behavior tests use real signed worker HTTP operations and managed SDK contexts. 
 
 The [installed Gateway check](agent-integration.md) drives the packed plugin's administrator RPC against a real signed HTTP worker. It also verifies rejection of a read-scoped public SDK client, restart, configuration reload and owned-session shutdown. Its media transport is deterministic; real Matrix media is checked separately.
 
+The [native Matrix check](native-matrix-integration.md) runs the same administrator control against actual encrypted Matrix media with local speech engines and installed SDK agent dispatch. It also checks initial discovery ordering and Gateway shutdown cancelling recognition inside the restored browser image. The provider remains deterministic and client participants remain SDK peers.
+
 The command handler is tested with public SDK command contexts. Actual Matrix chat command dispatch and released-client interoperability still need an isolated end-to-end check. Media connection alone does not establish verified voice input, model inference or assistant readiness. The native descriptor retains `isConfigured: false` and `media: false`; `/readyz` and automatic incoming calls remain unavailable. See [release readiness](release-readiness.md).
