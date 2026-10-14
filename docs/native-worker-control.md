@@ -32,7 +32,9 @@ The channel defaults to disabled. Its `matrix-call-worker` service starts only w
 
 ## Call entry
 
-The installed native Matrix messaging integration dispatches these commands:
+Chat entry requires the separately installed `@openclaw/matrix` 2026.10.2 messaging plugin, configured with its own bot credentials and sender/room access policies. The calling package registers controls but does not receive Matrix messages itself. Set `channels.matrix.dm.sessionScope` to `per-room` when multiple DMs reach the bot. Installing only the calling archive still permits the administrator RPC when worker control is configured.
+
+Send these literal commands as the message body in a DM, or in a dedicated allowlisted control room with `requireMention: false`:
 
 | Command | Result |
 | --- | --- |
@@ -41,6 +43,8 @@ The installed native Matrix messaging integration dispatches these commands:
 | `/matrixcall leave <session-uuid>` | Close that exact current session after backend cleanup |
 
 The command is restricted to the canonical Matrix channel. The host must identify an authorized sender, and its exact full Matrix user ID must be present in the current policy's owners. Display names, `from`, caller-supplied roles and transcript text never establish authority. Missing, unauthorized or unlisted senders are rejected. This command does not grant owner authority to an agent turn or implement general-user approval.
+
+Visible bot-mention prefixes before custom `/matrixcall` commands are unsupported by the pinned messaging adapter's command detector. The observed prefix form went to the model instead of this handler. Keep ordinary conversation-room mention policy independent and use DM entry or a dedicated control room. See [actual command evidence](matrix-command-integration.md) for the tested message forms and limits.
 
 The Gateway entry point is `matrixcall.control`, registered with `operator.admin` scope and independent profile access. It also requires current live transport authority before execution and after asynchronous work. Request bodies are strict and accept only these operations:
 
@@ -72,4 +76,4 @@ The [installed Gateway check](agent-integration.md) drives the packed plugin's a
 
 The [native Matrix check](native-matrix-integration.md) runs the same administrator control against actual encrypted Matrix media with local speech engines and installed SDK agent dispatch. It also checks initial discovery ordering and Gateway shutdown cancelling recognition inside the restored browser image. The provider remains deterministic and client participants remain SDK peers.
 
-The command handler is tested with public SDK command contexts. Actual Matrix chat command dispatch and released-client interoperability still need an isolated end-to-end check. Media connection alone does not establish verified voice input, model inference or assistant readiness. The native descriptor retains `isConfigured: false` and `media: false`; `/readyz` and automatic incoming calls remain unavailable. See [release readiness](release-readiness.md).
+The [actual command check](matrix-command-integration.md) passes fifteen Matrix replies through both installed plugins, including owner controls, forged display-name/role rejection, two isolated DMs, exact-session errors and owned-session cleanup. Its chat is unencrypted and media transport is a fixture; it performs zero inference. Combining chat control with actual encrypted media, encrypted chat and released-client interoperability remains further work. Media connection alone does not establish assistant readiness. The native descriptor retains `isConfigured: false` and `media: false`; `/readyz` and automatic incoming calls remain unavailable. See [release readiness](release-readiness.md).
