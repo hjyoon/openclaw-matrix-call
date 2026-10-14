@@ -27,6 +27,6 @@ The packed inventory is restricted to seven files: package/manifest metadata, en
 
 ## Publication boundary
 
-The report currently records `published: false`, `uploaded: false` and `callingReleaseReady: false`. Worker image recipes remain separate from the plugin archive. Full operator setup, released-client audio, supported protocol scope, replacement and input stability must be reviewed before producing an installable calling alpha.
+The report currently records `published: false`, `uploaded: false` and `callingReleaseReady: false`. [Worker image candidates](worker-image-distribution.md) are separate compressed Docker archives with their own source/version labels, manifest checks, immutable image IDs and checksum/report. CI produces both candidate artifacts without a registry publication; compare their source commits and versions before release. Full operator setup, declared client/protocol scope, replacement and input stability must be reviewed before producing an installable calling alpha.
 
 After those gates pass, a publisher with access to the `hjyoon` namespace can perform a manual authenticated first publication. Initial publication establishes the package before trusted GitHub publishing can be configured. Future registry publication should require its terminal public result, not treat a staged upload as success. No registry login, token creation or real publication is performed by CI or these development checks.

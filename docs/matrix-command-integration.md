@@ -41,6 +41,8 @@ The successful local image check enabled the documented capture diagnostics. CI 
 
 An earlier combined attempt returned `[blank_audio]` on the image's second English input. The local Whisper adapter now treats marker-only results as silence without model dispatch. Another attempt failed enrollment because the SDK's uncached HTTP device listing preceded crypto-store registration; enrollment now waits for stored pinned device records. The successful run follows those fixes. Input quality and sustained-call stability remain release gates; one successful run does not close them.
 
+The separate [released-client check](released-client-integration.md) now combines the official Element Call 0.28.0 application, ten encrypted commands/replies, actual local speech and two independent call histories. Both deterministic and actual-model runs pass in the native worker. The application's public SDK sends and decrypts commands; this does not claim a chat-composing UI in the calling application. No chat control adds an inference turn.
+
 ## Supported command placement and observed limits
 
 Send a literal command at the beginning of the Matrix message body, for example `/matrixcall status`. DMs are the simplest operator entry point. A dedicated allowlisted control room can use `requireMention: false`; its sender allowlist and the calling plugin's exact owner policy still apply. Do not change a general conversation room's mention policy solely to enable this control entry. Clients with local slash handling must transmit the literal command as message text.
@@ -51,4 +53,4 @@ Sending the command first in a mention-required room also failed admission despi
 
 The initial two-DM attempt used the default shared session and received the host's DM isolation warning. Explicit `per-room` routing passed both direct-room checks. The test's first startup attempt also sent before Matrix sync was connected; the public connection barrier now prevents that setup race. None of these changes relax caller authorization or automatically retry a command.
 
-Released-client interoperability, incoming calls, coordinated worker replacement, sustained input stability and clean operator setup still gate a calling release. See [release readiness](release-readiness.md).
+Restored-image interoperability with a released application, coordinated worker replacement, sustained input stability and clean operator setup remain calling release work. Incoming calls remain unsupported. See [release readiness](release-readiness.md).

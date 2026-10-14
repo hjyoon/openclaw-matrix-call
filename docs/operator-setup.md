@@ -20,12 +20,13 @@ From a pinned checkout:
 pnpm install --frozen-lockfile
 pnpm check
 pnpm verify:marketplace
-docker build -f deployment/browser-worker.Dockerfile -t matrix-call-browser-worker:0.1.0-alpha.1 .
-docker build -f deployment/speech-worker.Dockerfile -t matrix-call-speech-worker:0.1.0-alpha.1 .
+pnpm release:images
 pnpm speech:model
 ```
 
 Review `.cache/release/release-report.json`, verify the archive with `SHA256SUMS`, and install that exact archive into a separate supported Gateway profile. Local-source fixtures use `plugins install <archive> --force --no-enable --accept-capabilities` after source/capability review, followed by `plugins enable matrix-call`. That local-source trust acknowledgment is not registry approval. Published-name installation is unavailable until a release is actually public. Configure an explicit plugin allowlist that includes `matrix-call` and, for chat controls, the official `matrix` plugin 2026.10.2.
+
+Image packing requires a clean checkout and writes a separate checksum/report under `.cache/release-images/`. Match its version and commit to the plugin report. A reviewed image archive can instead be loaded on the target host as described in [worker image distribution](worker-image-distribution.md); use Compose `up --no-build -d` to require those exact images. No public image registry or release download has been established yet.
 
 ## Configure the Gateway and workers
 
