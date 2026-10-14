@@ -52,6 +52,20 @@ describe("local recognition adapter", () => {
     expect(() => new WhisperRecognition({ ...whisper, ...override } as typeof whisper)).toThrow();
   });
 
+  it.each(["[BLANK_AUDIO]", "  [blank_audio]\n", "[BLANK_AUDIO]\n[BLANK_AUDIO]"])("treats a Whisper no-speech result as silence: %s", async (text) => {
+    const output = Buffer.from(text);
+    let file = "";
+    const run: typeof runEngine = async (request) => { file = request.args[3]!; return output; };
+    expect(await new WhisperRecognition(whisper, run).transcribe(audio, signal())).toBe("");
+    expect(output.every((byte) => byte === 0)).toBe(true);
+    await expect(access(file)).rejects.toThrow();
+  });
+
+  it("preserves speech containing a literal no-speech marker", async () => {
+    const run: typeof runEngine = async () => Buffer.from("The label is [BLANK_AUDIO]");
+    expect(await new WhisperRecognition(whisper, run).transcribe(audio, signal())).toBe("The label is [BLANK_AUDIO]");
+  });
+
   it("does not start a cancelled operation or accept malformed PCM", async () => {
     const run = vi.fn();
     const adapter = new WhisperRecognition(whisper, run);

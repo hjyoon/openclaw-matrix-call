@@ -2,6 +2,8 @@
 
 Checked: 2026-10-14.
 
+Whisper results containing only one or more `[BLANK_AUDIO]` markers, including lowercase variants and whitespace, are normalized to an empty transcript. The voice coordinator treats that as silence without creating or advancing an agent conversation. Spoken text containing the literal marker remains unchanged. This prevents an observed no-speech result from being sent to the model; it does not establish reliable recognition or repair missing input. Temporary WAV and result-buffer cleanup also apply to this path.
+
 Build artifacts with `pnpm build` and build `deployment/speech-worker.Dockerfile` as `matrix-call-speech-worker:0.1.0-alpha.1` before running these checks.
 
 `pnpm verify:speech` starts a disposable non-root image with a read-only root, all capabilities dropped, no privilege gain, 1,536 MiB RAM, no additional swap, two CPUs and 128 PIDs. It uses the [public Korean and English fixtures](../tests/fixtures/speech/README.md), real signed speech requests and a signed deterministic agent fixture. Both turns pass through the portable voice coordinator, preserve one call's history and produce non-silent 22,050 Hz PCM. Identity and output transport are fixtures; this is not a released-client or complete Matrix speech-call test. The existing Matrix integration also checks encrypted publication of 22,050 Hz fixture audio through the production browser driver.

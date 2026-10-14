@@ -45,7 +45,7 @@ export class WhisperRecognition implements SpeechRecognitionPort {
       }, signal);
       try {
         signal.throwIfAborted();
-        return transcript.parse(new TextDecoder("utf-8", { fatal: true }).decode(output));
+        return transcript.parse(new TextDecoder("utf-8", { fatal: true }).decode(output)).replace(/^(?:\[BLANK_AUDIO\]\s*)+$/i, "");
       } finally { output.fill(0); }
     } catch (error) {
       signal.throwIfAborted();
