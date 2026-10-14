@@ -1,6 +1,6 @@
 # Operator setup for a calling preview
 
-This is an experimental manual setup, not a published turnkey release. Read [release readiness](release-readiness.md) before connecting production accounts. The tested calling scope is one shared trusted MatrixRTC backend, explicit owners and rooms, bounded half-duplex Korean/English speech and tool-free agent replies. General-user approval, privileged agent tools, automatic incoming calls, Matrix 2.0 and legacy VoIP are unavailable.
+This is an experimental manual setup for the [public alpha](publication-0.1.0-alpha.1.md). Read [release readiness](release-readiness.md) before connecting production accounts. The tested calling scope is one shared trusted MatrixRTC backend, explicit owners and rooms, bounded half-duplex Korean/English speech and tool-free agent replies. General-user approval, privileged agent tools, automatic incoming calls, Matrix 2.0 and legacy VoIP are unavailable.
 
 ## Prepare the inputs
 
@@ -24,9 +24,9 @@ pnpm release:images
 pnpm speech:model
 ```
 
-Review `.cache/release/release-report.json`, verify the archive with `SHA256SUMS`, and install that exact archive into a separate supported Gateway profile. Local-source fixtures use `plugins install <archive> --force --no-enable --accept-capabilities` after source/capability review, followed by `plugins enable matrix-call`. That local-source trust acknowledgment is not registry approval. Published-name installation is unavailable until a release is actually public. Configure an explicit plugin allowlist that includes `matrix-call` and, for chat controls, the official `matrix` plugin 2026.10.2.
+For the public version, review its source/capabilities and run `openclaw plugins install clawhub:@hjyoon/openclaw-matrix-call@0.1.0-alpha.1 --accept-capabilities` in a separate supported profile. This exact public-name installation has been verified. For a source build, review `.cache/release/release-report.json`, verify the archive with `SHA256SUMS`, and install that exact archive. Local-source fixtures use `plugins install <archive> --force --no-enable --accept-capabilities` after review, followed by `plugins enable matrix-call`. Configure an explicit plugin allowlist that includes `matrix-call` and, for chat controls, the official `matrix` plugin 2026.10.2.
 
-Image packing requires a clean checkout and writes a separate checksum/report under `.cache/release-images/`. Match its version and commit to the plugin report. A reviewed image archive can instead be loaded on the target host as described in [worker image distribution](worker-image-distribution.md); use Compose `up --no-build -d` to require those exact images. No public image registry or release download has been established yet.
+Image packing requires a clean checkout and writes a separate checksum/report under `.cache/release-images/`. Match its version and commit to the plugin report. The [public prerelease](https://github.com/hjyoon/openclaw-matrix-call/releases/tag/v0.1.0-alpha.1) supplies matching reviewed plugin/image archives and reports; download all five assets before checking the combined archive checksums. Load the images as described in [worker image distribution](worker-image-distribution.md) and use Compose `up --no-build -d` to require them. A public image registry is not required.
 
 ## Configure the Gateway and workers
 

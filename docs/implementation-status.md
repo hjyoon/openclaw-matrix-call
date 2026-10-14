@@ -10,7 +10,7 @@ Updated: 2026-10-15. This is the current development baseline; earlier server se
 - Matrix compatibility is defined by protocol capabilities. Element is one client to test. MatrixRTC and legacy Matrix VoIP need separate adapters.
 - Runtime coverage requires 100% statements, branches, functions, and lines per file. Coverage does not prove real encrypted audio interoperability.
 - The initial policy accepts explicitly configured owners, rooms, and logical agents. General-user approval is a later integration requiring an end-to-end authorization test.
-- No production server deployment, Matrix user messaging, or marketplace publication has been performed as part of repository development.
+- The [first public alpha](publication-0.1.0-alpha.1.md) is distributed through ClawHub with paired GitHub assets. No production server deployment or production Matrix user messaging was performed as part of repository development.
 
 Decision rationale and changes are recorded in [ADRs](adr/README.md). This status document describes implementation evidence, not a second set of development instructions.
 
@@ -83,7 +83,7 @@ The current suite has 1,149 passing tests, with 100% per-file runtime coverage a
 - Broader recognition accuracy, quiet-input/pausing behavior, human pronunciation evaluation and target-server latency/resource measurements. Cold enrollment and later-input timeouts occurred during development and remain a stability investigation. Streaming and interruption remain separate design work.
 - Broader provider failure/reconnect behavior and a supported privileged execution/approval path. The pinned SDK does not allow a community plugin to admit owner authority; see [ADR 0004](adr/0004-delegated-openclaw-ingress.md).
 - Real encrypted audio interoperability with documented client versions, including a non-Element client where compatible calling support exists.
-- Marketplace validation, source provenance, release assets, and publication setup.
+- Trusted-publisher provenance for future releases and additional distribution platforms. The first manual source-linked ClawHub publication and paired GitHub assets are complete.
 
 Native agent-service registration, running-Gateway dispatch and signed worker control pass together with real encrypted Matrix speech and both deterministic and optional actual-model evidence. See [native Matrix evidence](native-matrix-integration.md) and [live model evidence](live-model-integration.md). Supported literal Matrix chat command entry passes with fixture media and, separately, eleven encrypted commands/replies and actual encrypted speech in both worker modes. The local native-Gateway Compose route now has empty-profile setup and coordinated replacement evidence. Other network routes and an automated deployment supervisor remain separate work. See [public release readiness](release-readiness.md) for distribution gates and declared scope.
 

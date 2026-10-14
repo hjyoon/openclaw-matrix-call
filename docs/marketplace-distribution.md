@@ -1,6 +1,6 @@
 # Marketplace distribution checks
 
-Checked: 2026-10-15. Package validation and archive generation pass. Publication remains gated by [release readiness](release-readiness.md); these checks do not publish or upload a package.
+Checked: 2026-10-15. The [first public alpha](publication-0.1.0-alpha.1.md) passed terminal ClawHub publication, public file/hash checks and anonymous exact-version installation. The reproducible candidate commands below continue to validate/package only; they do not publish or upload a package. Subsequent releases retain the [readiness gates](release-readiness.md).
 
 ## Reproducible candidate
 

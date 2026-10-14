@@ -1,6 +1,6 @@
 # Public release readiness
 
-Updated: 2026-10-15. The experimental manual calling alpha now has empty-profile setup, encrypted speech and explicit service-replacement evidence for the declared local Linux deployment. Final artifact/CI checks, paired public assets and terminal registry publication still gate distribution. Installing only the plugin does not provision the workers or enroll devices.
+Updated: 2026-10-15. Experimental manual calling alpha `0.1.0-alpha.1` is public on ClawHub with paired GitHub prerelease assets. Release-source CI, terminal registry publication, all public package file hashes and anonymous exact-version installation have passed. See the [publication record](publication-0.1.0-alpha.1.md). Installing only the plugin does not provision the workers or enroll devices.
 
 ## First public alpha
 
@@ -14,18 +14,18 @@ Administrator tool execution and general-user approval require a supported host 
 
 | Requirement | Current evidence | Remaining distribution gate or scope limit |
 | --- | --- | --- |
-| Native package installation | Packed archive installs and runs its signed agent service in a disposable OpenClaw 2026.10.2 Gateway; operator Compose starts from an empty profile | Recheck final package and install the actually published version by its registry name |
+| Native package installation | Archive installation and empty-profile operator Compose pass; the exact public ClawHub version also installs anonymously and passes installed SDK service/control checks | Additional host versions require their own compatibility checks |
 | Gateway-to-worker integration | Installed control and public SDK dispatch pass real encrypted media/speech; operator replacement changes service audiences, rejects old signed requests and preserves device keys | Automated replacement supervision and other deployment routes remain future work |
 | Model-backed voice response | Actual Korean/English turns pass identity, engines, SDK dispatch, ordered history and encryption; longer operator image replies pass complete bounded synthesis/playback across replacement | Broader provider/network failures remain outside the alpha evidence |
 | Real speech in encrypted calls | Korean/English turns pass real local engines through the production driver and restored browser image; leave cancels recognition | Broader input quality, sustained-call stability and target-server latency/resource measurements |
 | Device and service setup | Strict private configuration/pins and persistent profiles; the public local-Gateway Compose route passes [empty-profile setup and coordinated recovery](operator-compose-integration.md) | Setup remains manual; SAS enrollment UI, unrelated network namespaces and HTTPS proxy routes are unsupported by this evidence |
 | Call entry | Administrator RPC drives encrypted speech; fifteen actual Matrix chat replies verify owner controls, isolated DMs, spoof rejection and owned-session cleanup with fixture media; eleven encrypted commands/replies pass with actual speech in both worker modes; ten commands/replies also pass with a released application and actual inference | Keep the visible mention-prefix limitation explicit; incoming calls remain unsupported |
 | Released Matrix clients | Element Call 0.28.0 compatibility passes encrypted commands and actual model speech in the native worker and operator browser image, persistent devices and independent histories | Additional clients, Matrix 2.0, multi-backend modes and legacy VoIP are outside the initial claim |
-| Distribution | Pinned inspection/dry-run, exact plugin inventory and paired source/version reports; worker archives verify image IDs, labels, checksums and loading | Require final-source CI success, publish matching GitHub assets, wait for terminal ClawHub checks and verify public-name installation |
+| Distribution | Release-source CI passes all five jobs; paired archives/reports are public; ClawHub reports published with clean exact-version scans; seven public file hashes and anonymous installation match the CI plugin candidate | Trusted-publisher provenance and other distribution platforms remain future work |
 
 Runtime coverage is 100% per non-empty source file with 1,149 passing tests. That checks exercised paths; it does not replace interoperability or operator usability evidence. [Runtime readiness](readiness.md) has a bounded authenticated driver/media/voice-service contract with tests and actual Compose transitions from 200 to 503 after backend replacement and back to 200 after explicit recovery. It does not invoke inference or attest model-account validity. Ordinary CI needs no hosted account.
 
-## Final publication sequence
+## Publication checks for subsequent versions
 
 1. Review the passed concise/long actual-model operator evidence and preserve the observed input/enrollment stability limits.
 2. Commit the final source, require all CI jobs to pass, and build/inspect clean matching plugin/image archives.
@@ -34,4 +34,4 @@ Runtime coverage is 100% per non-empty source file with 1,149 passing tests. Tha
 
 An earlier no-replacement operator run timed out on second-call output and stopped its browser with exit 143. A later instrumented run passed without a production-code change; its success does not identify or resolve the initial fault. Other enrollment/input failures are recorded in the integration documents. Sustained calls, arbitrary speech, physical microphones, human pronunciation quality, interruptions and target-host latency/resources are not established. The alpha must retain these limitations rather than present a stable or turnkey service.
 
-The [implementation status](implementation-status.md) records completed behavior. The [architecture requirements](architecture.md#release-requirements) and [Matrix compatibility](matrix-compatibility.md) describe the boundaries a release must retain. No production deployment or marketplace publication has been performed at this checkpoint.
+The [implementation status](implementation-status.md) records completed behavior. The [architecture requirements](architecture.md#release-requirements) and [Matrix compatibility](matrix-compatibility.md) describe the boundaries a release must retain. Public distribution is complete for this alpha; no production deployment was performed.

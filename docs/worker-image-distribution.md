@@ -2,6 +2,8 @@
 
 The plugin archive does not contain its browser or local speech services. `pnpm release:images` builds both Linux x86-64 images from a clean checkout, adds source/version labels, verifies their architecture, non-root user and command, and saves them into one compressed Docker archive. It publishes nothing to a container registry. Calling release readiness remains separate.
 
+The [0.1.0-alpha.1 prerelease](https://github.com/hjyoon/openclaw-matrix-call/releases/tag/v0.1.0-alpha.1) now supplies both worker images with the matching plugin source/version. Download all five assets for its combined archive checksums; the image report is named `worker-images-release-report.json` there. See the [publication record](publication-0.1.0-alpha.1.md) for exact hashes, image IDs and passed installation/deployment evidence.
+
 Use the pinned Node/pnpm versions on a Linux x86-64 Docker host:
 
 ```sh

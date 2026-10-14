@@ -2,7 +2,7 @@
 
 A portable Matrix calling core, an OpenClaw adapter, and an isolated RTC worker for conversations with AI agents.
 
-The project targets public distribution through ClawHub. Development starts with explicit room and caller authorization, independent call sessions, and encrypted MatrixRTC interoperability.
+The experimental `0.1.0-alpha.1` is public through ClawHub and [GitHub release assets](https://github.com/hjyoon/openclaw-matrix-call/releases/tag/v0.1.0-alpha.1). See the [publication record](docs/publication-0.1.0-alpha.1.md) for the exact versioned installation command, provenance, checksums and validation. Development starts with explicit room and caller authorization, independent call sessions, and encrypted MatrixRTC interoperability.
 
 Agent runtimes, model providers, speech services, and persistence use replaceable interfaces. Element is one interoperability target; Matrix protocol support must not depend on a particular client brand. See [Portability](docs/portability.md) and [Matrix compatibility](docs/matrix-compatibility.md).
 
