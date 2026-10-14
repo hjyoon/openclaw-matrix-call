@@ -9,21 +9,23 @@ import { installRuntimeProbe } from "./browser-diagnostics.mjs";
 
 const exec = promisify(execFile);
 
-export async function startReleasedWorker({ root, data, configFile, controlSecretFile, port, waitFor }) {
+export async function startReleasedWorker({ root, data, configFile, controlSecretFile, port, waitFor, composition }) {
   const image = process.env.MATRIX_CALL_RELEASED_BROWSER_IMAGE;
   if (!image) {
     const worker = await startBrowserWorker({ MATRIX_CALL_SECRET_FILE: controlSecretFile, MATRIX_CALL_PORT: String(port), MATRIX_CALL_BROWSER_CONFIG: configFile });
-    return { ...worker, evidence: { mode: "native" }, waitForPlayback: () => waitFor(() => !worker.voice.busy, "released-client playback completion"), verifySandbox: async () => {} };
+    return { ...worker, evidence: { mode: "native" }, waitForPlayback: () => waitFor(() => !worker.voice.busy, "released-client playback completion"),
+      diagnostics: async () => ({ driverAvailable: worker.driver.available, voiceBusy: worker.voice.busy }), verifySandbox: async () => {} };
   }
-  const directory = path.join(data, "worker-container"); await mkdir(directory, { mode: 0o700 });
+  const directory = composition?.directory ?? path.join(data, "worker-container"); await mkdir(directory, { recursive: true, mode: 0o700 });
   const config = JSON.parse(await readFile(configFile, "utf8")); const voice = JSON.parse(await readFile(config.voiceFile, "utf8"));
   for (const [source, name] of [[config.credentialsFile, "matrix.json"], [controlSecretFile, "control.secret"], [voice.agent.secretFile, "agent.secret"], [voice.speech.secretFile, "speech.secret"]]) {
     await copyFile(source, path.join(directory, name));
   }
   await writeFile(path.join(directory, "voice.json"), JSON.stringify({ ...voice,
-    agent: { ...voice.agent, secretFile: "/data/agent.secret" }, speech: { ...voice.speech, secretFile: "/data/speech.secret" } }), { mode: 0o600 });
-  await writeFile(path.join(directory, "browser.json"), JSON.stringify({ ...config, credentialsFile: "/data/matrix.json", profileDir: "/data/profile",
-    assetDir: "/app/assets", voiceFile: "/data/voice.json" }), { mode: 0o600 });
+    agent: { ...voice.agent, secretFile: composition ? "/run/secrets/voice_agent_secret" : "/data/agent.secret" },
+    speech: { ...voice.speech, secretFile: composition ? "/run/secrets/voice_speech_secret" : "/data/speech.secret" } }), { mode: 0o600 });
+  await writeFile(path.join(directory, "browser.json"), JSON.stringify({ ...config, credentialsFile: composition ? "/run/secrets/matrix.json" : "/data/matrix.json", profileDir: "/data/profile",
+    assetDir: "/app/assets", voiceFile: composition ? "/run/config/voice.json" : "/data/voice.json" }), { mode: 0o600 });
   const preload = `import { chromium } from "/app/node_modules/playwright-core/index.mjs";
 import { readFile, writeFile, rename } from "node:fs/promises";
 const launch = chromium.launchPersistentContext.bind(chromium);
@@ -63,15 +65,17 @@ chromium.launchPersistentContext = async (...args) => {
   assert.equal(metadata.Id, report.images.find((entry) => entry.role === "browser").imageId);
   assert.equal(metadata.Config.Labels["org.opencontainers.image.revision"], report.sourceCommit);
   assert.equal(metadata.Config.Labels["org.opencontainers.image.version"], report.version);
-  const name = `matrix-call-released-${randomUUID()}`;
+  let name = `matrix-call-released-${randomUUID()}`;
   const close = async () => {
+    if (composition) { await composition.stopBrowser(); return; }
     try {
       await exec("docker", ["stop", "--time", "15", name]);
       const state = JSON.parse((await exec("docker", ["inspect", "--format", "{{json .State}}", name])).stdout);
       assert.equal(state.ExitCode, 0); assert.equal(state.OOMKilled, false);
     } finally { await exec("docker", ["rm", "--force", name]); }
   };
-  await exec("docker", ["run", "--detach", "--name", name, "--init", "--user", `${process.getuid()}:${process.getgid()}`, "--network", "host",
+  if (composition) name = await composition.startBrowser();
+  else await exec("docker", ["run", "--detach", "--name", name, "--init", "--user", `${process.getuid()}:${process.getgid()}`, "--network", "host",
     "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--security-opt", `seccomp=${path.join(root, "deployment/browser-seccomp.json")}`,
     "--tmpfs", "/tmp:rw,nosuid,nodev,size=256m", "--memory", "768m", "--pids-limit", "256", "--mount", `type=bind,source=${directory},target=/data`,
     "--env", "MATRIX_CALL_SECRET_FILE=/data/control.secret", "--env", "MATRIX_CALL_BROWSER_CONFIG=/data/browser.json", "--env", `MATRIX_CALL_PORT=${port}`,
@@ -81,7 +85,7 @@ chromium.launchPersistentContext = async (...args) => {
     const { keys } = JSON.parse(await readFile(path.join(directory, "profile/matrix-call-device.json"), "utf8"));
     const state = async () => JSON.parse(await readFile(path.join(directory, "state.json"), "utf8"));
     return {
-      evidence: { mode: "container", imageId: metadata.Id, sourceCommit: metadata.Config.Labels["org.opencontainers.image.revision"] },
+      evidence: { mode: composition ? "operator-compose" : "container", imageId: metadata.Id, sourceCommit: metadata.Config.Labels["org.opencontainers.image.revision"] },
       driver: {
         deviceKeys: keys,
         async verify(reference, signal) {
@@ -99,6 +103,15 @@ chromium.launchPersistentContext = async (...args) => {
         },
       },
       waitForPlayback: (turn) => waitFor(async () => { const value = await state(); return value.resumes >= turn && value.inputs === value.resumes && !value.publishing && !value.failure; }, "released-client image playback completion"),
+      async diagnostics() {
+        const value = JSON.parse((await exec("docker", ["inspect", "--format", "{{json .State}}", name])).stdout);
+        const logs = await exec("docker", ["logs", name]);
+        const events = logs.stdout.split("\n").flatMap((line) => {
+          try { const entry = JSON.parse(line); return ["browser-voice-failed", "browser-call-failed"].includes(entry.event) ? [{ event: entry.event, reason: entry.reason }] : []; }
+          catch { return []; }
+        }).slice(-8);
+        return { runtime: await state().catch(() => null), running: value.Running, exitCode: value.ExitCode, oomKilled: value.OOMKilled, events };
+      },
       async verifySandbox() {
         const probe = await readFile(path.join(root, "scripts/integration/renderer-probe.mjs"), "utf8");
         const value = JSON.parse((await exec("docker", ["exec", name, "node", "--input-type=module", "-e", probe])).stdout);

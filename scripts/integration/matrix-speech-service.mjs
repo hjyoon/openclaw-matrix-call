@@ -9,6 +9,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { prepareSpeechModel } from "./speech-model.mjs";
 import { observeSpeech } from "./speech-observer.mjs";
+import { createOperatorComposition } from "./operator-compose.mjs";
+import { RequestAuthenticator } from "../../dist/core/index.js";
 
 const exec = promisify(execFile);
 
@@ -20,6 +22,7 @@ export async function startMatrixSpeechService(root, directory, image) {
   const secret = randomBytes(32).toString("hex");
   let container;
   let observer;
+  let composition;
   try {
     const listener = createServer(); listener.listen(0, "127.0.0.1"); await once(listener, "listening");
     const port = listener.address().port; await new Promise((resolve) => listener.close(resolve));
@@ -30,12 +33,17 @@ export async function startMatrixSpeechService(root, directory, image) {
     const secretFile = path.join(data, "secret"); const configFile = path.join(data, "speech.json");
     await writeFile(secretFile, secret, { mode: 0o600 });
     await writeFile(configFile, JSON.stringify(config), { mode: 0o600 });
-    const mount = (source, target) => ["--mount", `type=bind,src=${source},dst=${target},readonly`];
-    const result = await exec("docker", ["run", "--detach", "--init", "--user", `${process.getuid()}:${process.getgid()}`, "--network", "host",
+    if (process.env.MATRIX_CALL_OPERATOR_COMPOSE === "1") {
+      composition = await createOperatorComposition({ root, directory: path.join(directory, "operator-compose"), model, secret, speechPort: port });
+      container = await composition.startSpeech();
+    } else {
+      const mount = (source, target) => ["--mount", `type=bind,src=${source},dst=${target},readonly`];
+      const result = await exec("docker", ["run", "--detach", "--init", "--user", `${process.getuid()}:${process.getgid()}`, "--network", "host",
       "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges:true", "--pids-limit=128", "--memory=1536m", "--memory-swap=1536m", "--cpus=2",
       "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777", ...mount(secretFile, "/run/secrets/voice_speech_secret"),
       ...mount(configFile, "/run/config/speech.json"), ...mount(model.file, "/models/model.bin"), image]);
-    container = result.stdout.trim();
+      container = result.stdout.trim();
+    }
     const deadline = Date.now() + 15_000;
     for (;;) {
       try { if ((await fetch(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(500) })).ok) break; }
@@ -52,7 +60,25 @@ export async function startMatrixSpeechService(root, directory, image) {
     const imageId = (await exec("docker", ["image", "inspect", "--format", "{{.Id}}", image])).stdout.trim();
     observer = await observeSpeech(baseUrl, secret);
     return {
-      baseUrl: observer.baseUrl, secret, model: "base", modelSha256: model.sha256, imageId, state: observer.state,
+      get baseUrl() { return observer.baseUrl; }, secret, model: "base", modelSha256: model.sha256, imageId,
+      get state() { return observer.state; }, composition,
+      async restart() {
+        assert(composition);
+        const previous = await fetch(baseUrl + "/capabilities", { signal: AbortSignal.timeout(5000) });
+        const body = await previous.text(); const audience = JSON.parse(body).audience;
+        const stale = new RequestAuthenticator({ secret, audience });
+        stale.verify({ method: "RESPONSE_200", path: "/capabilities", body }, Object.fromEntries(previous.headers));
+        await observer.close(); container = await composition.restartSpeech();
+        const current = await fetch(baseUrl + "/capabilities", { signal: AbortSignal.timeout(5000) });
+        const currentBody = await current.text(); const next = JSON.parse(currentBody).audience;
+        assert.notEqual(next, audience);
+        new RequestAuthenticator({ secret, audience: next }).verify({ method: "RESPONSE_200", path: "/capabilities", body: currentBody }, Object.fromEntries(current.headers));
+        const rejected = await fetch(baseUrl + "/transcriptions", { method: "POST", body: "{}",
+          headers: { "content-type": "application/json", ...stale.sign({ method: "POST", path: "/transcriptions", body: "{}" }) }, signal: AbortSignal.timeout(5000) });
+        assert.equal(rejected.status, 401);
+        observer = await observeSpeech(baseUrl, secret);
+        return { speechAudienceChanged: true, staleSpeechRequestRejected: true };
+      },
       async engineCount() {
         const source = "const fs=require('node:fs');console.log(fs.readdirSync('/proc').filter(p=>{if(!/^\\d+$/.test(p))return false;try{return fs.readFileSync('/proc/'+p+'/comm','utf8').trim()==='whisper-cli'}catch{return false}}).length)";
         return Number((await exec("docker", ["exec", container, "node", "-e", source])).stdout.trim());
@@ -70,14 +96,16 @@ export async function startMatrixSpeechService(root, directory, image) {
           const logs = await exec("docker", ["logs", container]);
           assert(!logs.stdout.includes(secret) && !logs.stderr.includes(secret), "Speech service leaked its secret");
         } finally {
-          await exec("docker", ["rm", "--force", container]);
+          if (composition) await composition.close();
+          else await exec("docker", ["rm", "--force", container]);
           await rm(data, { recursive: true, force: true });
         }
       },
     };
   } catch (error) {
     await observer?.close();
-    if (container) await exec("docker", ["rm", "--force", container]);
+    if (composition) await composition.close();
+    else if (container) await exec("docker", ["rm", "--force", container]);
     await rm(data, { recursive: true, force: true });
     throw error;
   }

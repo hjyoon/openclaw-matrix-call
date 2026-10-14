@@ -12,7 +12,12 @@ export function installRuntimeProbe() {
     runtime.publish = async (...values) => {
       state.publications++; state.publishing = true;
       try { await publish(...values); state.finished++; }
-      catch (error) { state.failure = true; throw error; }
+      catch (error) {
+        state.failure = true;
+        state.failureReason = ["Matrix media is unavailable", "Matrix publication is suspended", "Matrix publication changed during playback", "Browser audio is unavailable"]
+          .find((reason) => error?.message === reason) ?? "publication";
+        throw error;
+      }
       finally { state.publishing = false; }
     };
     const verify = runtime.verify.bind(runtime);
