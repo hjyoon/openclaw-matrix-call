@@ -7,7 +7,7 @@ import { createAgentServer } from "@matrix-call/agent-http";
 import { OpenClawAgentAdapter } from "./agent.js";
 import { matrixCallChannel } from "./channel.js";
 
-export function createNativeAgentService(api: Pick<OpenClawPluginApi, "runtime">): OpenClawPluginService {
+export function createNativeAgentService(api: Pick<OpenClawPluginApi, "runtime" | "lifecycle">): OpenClawPluginService {
   let worker: ReturnType<typeof createAgentServer> | undefined;
   let transition = Promise.resolve();
   const close = async (): Promise<void> => {
@@ -32,19 +32,27 @@ export function createNativeAgentService(api: Pick<OpenClawPluginApi, "runtime">
         const settings = account.agentService;
         phase = "credentials";
         const secret = readSecretFileSync(settings.secretFile, "Matrix Call agent secret", { maxBytes: 65, rejectSymlink: true });
+        if (!/^[0-9a-f]{64}$/.test(secret)) throw new Error("Invalid agent credential");
         phase = "runtime";
-        const agent = new OpenClawAgentAdapter({
+        const background = api.lifecycle.runInBackgroundContext;
+        if (!background) throw new Error("Managed plugin background context unavailable");
+        const adapter = new OpenClawAgentAdapter({
           runtime: api.runtime, policy: account.policy!,
           commandRuntime: createLoggerBackedRuntime({ logger: {
             info: () => {},
             error: () => { context.logger.error("Matrix Call agent command failed"); },
           } }),
         });
-        worker = createAgentServer({ secret, agent, policy: account.policy!, timeoutMs: settings.timeoutMs });
         phase = "listener";
-        const listening = once(worker.server, "listening");
-        worker.server.listen(settings.port, settings.host);
-        await listening;
+        await background(async () => {
+          worker = createAgentServer({ secret, policy: account.policy!, timeoutMs: settings.timeoutMs, agent: {
+            id: adapter.id, historyMode: adapter.historyMode,
+            reply: (turn) => background(() => adapter.reply(turn)),
+          } });
+          const listening = once(worker.server, "listening");
+          worker.server.listen(settings.port, settings.host);
+          await listening;
+        });
         context.logger.info("Matrix Call agent service started with delegated, tool-free ingress");
       } catch {
         await close();

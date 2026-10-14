@@ -39,10 +39,13 @@ async function fixture(host = "127.0.0.1") {
   };
   const run = vi.fn<Runner>().mockResolvedValue(result);
   const runtime = { version: "2026.10.2", agent: { runCommandFromIngress: run } } as unknown as PluginRuntime;
-  const service = createNativeAgentService({ runtime } as OpenClawPluginApi);
+  const background = vi.fn(() => {});
+  const runBackground = <T>(operation: () => T): T => { background(); return operation(); };
+  const api = { runtime, lifecycle: { runInBackgroundContext: runBackground, registerRuntimeLifecycle: vi.fn() } } as unknown as OpenClawPluginApi;
+  const service = createNativeAgentService(api);
   const baseUrl = `http://${host === "::1" ? "[::1]" : host}:${port}`;
   const cleanup = async () => { await service.stop!(context); await rm(directory, { recursive: true, force: true }); };
-  return { directory, context, settings, runtime, service, run, baseUrl, cleanup };
+  return { directory, context, settings, runtime, api, background, runBackground, service, run, baseUrl, cleanup };
 }
 
 function turn() {
@@ -66,6 +69,7 @@ describe("native signed agent service lifecycle", () => {
       const agent = await HttpAgentAdapter.connect({ baseUrl: test.baseUrl, secret });
       expect(agent.historyMode).toBe("host-session");
       expect(await agent.reply(turn())).toEqual({ text: "Hello 한국어" });
+      expect(test.background).toHaveBeenCalledTimes(2);
       expect(test.context.logger.info).toHaveBeenCalledExactlyOnceWith("Matrix Call agent service started with delegated, tool-free ingress");
       expect(test.context.logger.error).toHaveBeenCalledExactlyOnceWith("Matrix Call agent command failed");
     } finally { await test.cleanup(); }
@@ -170,7 +174,7 @@ describe("native signed agent service lifecycle", () => {
     } finally { finish(); await test.cleanup(); }
   });
 
-  it.each(["missing", "directory", "symlink", "hardlink", "oversized", "invalid-secret", "version", "invalid-account"])("redacts %s startup failure and recovers on a later start", async (kind) => {
+  it.each(["missing", "directory", "symlink", "hardlink", "oversized", "invalid-secret", "version", "lifecycle", "invalid-account"])("redacts %s startup failure and recovers on a later start", async (kind) => {
     const test = await fixture();
     const original = test.settings.secretFile;
     try {
@@ -182,15 +186,29 @@ describe("native signed agent service lifecycle", () => {
       if (kind === "invalid-secret") await writeFile(invalid, "private-invalid-credential");
       test.settings.secretFile = invalid;
       if (kind === "version") { test.settings.secretFile = original; test.runtime.version = "2026.10.3"; }
+      if (kind === "lifecycle") { test.settings.secretFile = original; test.api.lifecycle = { registerRuntimeLifecycle: vi.fn() }; }
       if (kind === "invalid-account") test.context.config = { channels: { "matrix-call": { enabled: true } } };
-      const phase = kind === "invalid-account" ? "configuration" : ["version", "invalid-secret"].includes(kind) ? "runtime" : "credentials";
+      const phase = kind === "invalid-account" ? "configuration" : ["version", "lifecycle"].includes(kind) ? "runtime" : "credentials";
       await expect(test.service.start(test.context)).rejects.toThrow(`Matrix Call agent service could not start (${phase})`);
       if (kind === "hardlink") await rm(invalid);
       test.settings.secretFile = original;
       test.runtime.version = "2026.10.2";
+      test.api.lifecycle = { runInBackgroundContext: test.runBackground, registerRuntimeLifecycle: vi.fn() };
       test.context.config = { channels: { "matrix-call": { enabled: true, policy, agentService: test.settings } } };
       await test.service.start(test.context);
       const agent = await HttpAgentAdapter.connect({ baseUrl: test.baseUrl, secret });
+      expect(await agent.reply(turn())).toEqual({ text: "Hello 한국어" });
+    } finally { await test.cleanup(); }
+  });
+
+  it("fails closed if background admission closes before a host turn", async () => {
+    const test = await fixture();
+    try {
+      await test.service.start(test.context);
+      const agent = await HttpAgentAdapter.connect({ baseUrl: test.baseUrl, secret });
+      test.background.mockImplementationOnce(() => { throw new Error("private lifecycle failure"); });
+      await expect(agent.reply(turn())).rejects.toThrow("http-error");
+      expect(test.run).not.toHaveBeenCalled();
       expect(await agent.reply(turn())).toEqual({ text: "Hello 한국어" });
     } finally { await test.cleanup(); }
   });

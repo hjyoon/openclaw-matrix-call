@@ -45,4 +45,6 @@ Apply the channel section through `openclaw config patch --file <channel-setting
 
 Start and stop transitions are serialized. Reload of `channels.matrix-call` stops the old listener and cancels its host operation before starting a fresh service audience. Shutdown waits for the operation to settle, including a host that ignores its abort signal. A hung host can therefore delay shutdown or reload; the service never clears the slot merely to admit replacement work. Timeout, disconnect, idempotency and capacity behavior follow the [portable server contract](agent-protocol.md#portable-server-implementation).
 
+Listener installation and every host request use the managed instance's public `api.lifecycle.runInBackgroundContext` runner. This detaches the starting request's async context and selects the instance's current adopted registry after reload. The callback returns its host promise so the instance can drain it. Hosts without this capability are rejected during the runtime startup phase; disposed instances cannot admit new host work.
+
 The native channel continues to report unconfigured call support and `media: false` because worker control and call entry are unfinished. Signed text ingress alone does not establish voice readiness or released Matrix client interoperability.
