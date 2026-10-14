@@ -2,7 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { isAbsolute } from "node:path";
 
 export class SpeechEngineError extends Error {
-  constructor(readonly code: "invalid-engine-request" | "engine-failed" | "engine-output-limit") {
+  constructor(readonly code: "invalid-engine-request" | "engine-failed" | "engine-output-limit" | "engine-diagnostic-limit") {
     super(code);
     this.name = "SpeechEngineError";
   }
@@ -53,7 +53,7 @@ export async function runEngine(request: EngineRequest, signal: AbortSignal, spa
     });
     child.stderr.on("data", (chunk: Buffer) => {
       stderrBytes += chunk.length;
-      if (stderrBytes > 65_536) fail(new SpeechEngineError("engine-output-limit"));
+      if (stderrBytes > 65_536) fail(new SpeechEngineError("engine-diagnostic-limit"));
     });
     child.once("close", (code, termination) => {
       clearTimeout(killTimer);

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { AuthenticationError, RequestAuthenticator, type SpeechRecognitionPort, type SpeechSynthesisPort } from "@matrix-call/core";
+import { AuthenticationError, isSynthesisLimit, RequestAuthenticator, type SpeechRecognitionPort, type SpeechSynthesisPort } from "@matrix-call/core";
 import { decodePcm, encodePcm, synthesisRequestSchema, synthesisResponseSchema, transcriptionRequestSchema, transcriptionResponseSchema } from "@matrix-call/speech-http";
 
 class BodyError extends Error {
@@ -65,6 +65,7 @@ export function createSpeechServer(options: {
     response.on("close", onClose);
     let timer: ReturnType<typeof setTimeout> | undefined;
     let expired = false;
+    let requestId = "";
     try {
       const body = await readBody(request);
       auth.verify({ method: "POST", path, body }, request.headers);
@@ -73,6 +74,7 @@ export function createSpeechServer(options: {
       catch { signed(400, { error: "invalid-request" }); return; }
       const parsed = (path === "/transcriptions" ? transcriptionRequestSchema : synthesisRequestSchema).safeParse(value);
       if (!parsed.success) { signed(400, { error: "invalid-request" }); return; }
+      requestId = parsed.data.requestId;
       if (closing) { signed(503, { error: "speech-closed" }); return; }
       if (active) { signed(409, { error: "speech-busy" }); return; }
       controller.signal.throwIfAborted();
@@ -101,6 +103,7 @@ export function createSpeechServer(options: {
       request.resume();
       if (error instanceof AuthenticationError) json(response, 401, JSON.stringify({ error: "unauthorized" }));
       else if (error instanceof BodyError) json(response, error.status, JSON.stringify({ error: "invalid-request-body" }));
+      else if (path === "/syntheses" && isSynthesisLimit(error) && !expired) signed(422, { protocolVersion: 1, requestId, error: "synthesis-too-long" });
       else signed(expired ? 504 : 503, { error: expired ? "speech-timeout" : "speech-failed" });
     } finally {
       clearTimeout(timer);

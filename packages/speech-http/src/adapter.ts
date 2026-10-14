@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { RequestAuthenticator, type PcmAudio, type SpeechRecognitionPort, type SpeechSynthesisPort } from "@matrix-call/core";
-import { decodePcm, encodePcm, speechCapabilitiesSchema, synthesisRequestSchema, synthesisResponseSchema, transcriptionResponseSchema } from "./protocol.js";
+import { RequestAuthenticator, SynthesisLimitError, type PcmAudio, type SpeechRecognitionPort, type SpeechSynthesisPort } from "@matrix-call/core";
+import { decodePcm, encodePcm, speechCapabilitiesSchema, synthesisLimitResponseSchema, synthesisRequestSchema, synthesisResponseSchema, transcriptionResponseSchema } from "./protocol.js";
 
 export type SpeechHttpOptions = Readonly<{
   baseUrl: string;
@@ -93,12 +93,19 @@ export class HttpSpeechAdapter implements SpeechRecognitionPort, SpeechSynthesis
     return decodePcm(result.data.audio);
   }
 
-  async #request(path: string, request: unknown, maxBytes: number, callerSignal: AbortSignal): Promise<unknown> {
+  async #request<T extends { requestId: string }>(path: string, request: T, maxBytes: number, callerSignal: AbortSignal): Promise<unknown> {
     const signal = AbortSignal.any([callerSignal, AbortSignal.timeout(this.#timeoutMs)]);
     const body = JSON.stringify(request);
     const endpoint = new URL(path, this.#baseUrl);
     const response = await this.#fetch(endpoint, { method: "POST", body, redirect: "error", signal,
       headers: { "content-type": "application/json", ...this.#auth.sign({ method: "POST", path: endpoint.pathname, body }) } });
+    if (response.status === 422 && path === "syntheses") {
+      const responseBody = await readBody(response, 512, signal);
+      this.#auth.verify({ method: "RESPONSE_422", path: endpoint.pathname, body: responseBody }, Object.fromEntries(response.headers));
+      const result = synthesisLimitResponseSchema.safeParse(parseJson(responseBody));
+      if (!result.success || result.data.requestId !== request.requestId) throw new SpeechHttpError("invalid-response");
+      throw new SynthesisLimitError();
+    }
     if (response.status !== 200) throw new SpeechHttpError("http-error");
     const responseBody = await readBody(response, maxBytes, signal);
     this.#auth.verify({ method: "RESPONSE_200", path: endpoint.pathname, body: responseBody }, Object.fromEntries(response.headers));

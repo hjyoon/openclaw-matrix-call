@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { z } from "zod";
-import type { PcmAudio, SpeechRecognitionPort, SpeechSynthesisPort } from "@matrix-call/core";
+import { SynthesisLimitError, type PcmAudio, type SpeechRecognitionPort, type SpeechSynthesisPort } from "@matrix-call/core";
 import { runEngine, SpeechEngineError } from "./process.js";
 import { decodeWav, encodeWav, recognitionPcm } from "./wav.js";
 
@@ -81,6 +81,7 @@ export class EspeakSynthesis implements SpeechSynthesisPort {
       finally { output.fill(0); }
     } catch (error) {
       signal.throwIfAborted();
+      if (error instanceof SpeechEngineError && error.code === "engine-output-limit") throw new SynthesisLimitError();
       if (error instanceof SpeechEngineError) throw error;
       throw new SpeechEngineError("engine-failed");
     } finally { input.fill(0); }

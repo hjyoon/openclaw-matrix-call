@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { copyPcm, validatePcm, type PcmAudio } from "../../packages/core/src/index.js";
+import { copyPcm, isSynthesisLimit, SynthesisLimitError, validatePcm, type PcmAudio } from "../../packages/core/src/index.js";
 
 const audio: PcmAudio = { samples: new Int16Array([-32768, 0, 32767]), sampleRate: 16_000, channels: 1 };
 
 describe("portable PCM", () => {
+  it("identifies explicit synthesis limits across independently bundled adapters", () => {
+    expect(isSynthesisLimit(new SynthesisLimitError())).toBe(true);
+    expect(isSynthesisLimit(Object.assign(new Error("redacted"), { code: "synthesis-too-long" }))).toBe(true);
+    for (const value of [null, { code: "synthesis-too-long" }, new Error("synthesis-too-long"), Object.assign(new Error(), { code: "other" })]) expect(isSynthesisLimit(value)).toBe(false);
+  });
   it("copies audio independently without changing its format or signed samples", () => {
     const copied = copyPcm(audio);
     expect(copied).toEqual(audio);

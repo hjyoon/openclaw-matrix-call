@@ -154,10 +154,11 @@ describe("local synthesis adapter", () => {
     expect(output.every((byte) => byte === 0)).toBe(true);
   });
 
-  it.each([new Error("private detail"), new SpeechEngineError("engine-output-limit")])("wipes text and exposes only engine failure codes", async (error) => {
+  it.each([new Error("private detail"), new SpeechEngineError("engine-output-limit"), new SpeechEngineError("engine-diagnostic-limit")])("wipes text and exposes only engine failure codes", async (error) => {
     let input: Buffer | undefined;
     const run: typeof runEngine = async (request) => { input = request.input; throw error; };
-    await expect(new EspeakSynthesis(espeak, run).synthesize("private text", signal())).rejects.toThrow(error instanceof SpeechEngineError ? "engine-output-limit" : "engine-failed");
+    await expect(new EspeakSynthesis(espeak, run).synthesize("private text", signal())).rejects.toThrow(error instanceof SpeechEngineError
+      ? error.code === "engine-output-limit" ? "synthesis-too-long" : "engine-diagnostic-limit" : "engine-failed");
     expect(input!.every((byte) => byte === 0)).toBe(true);
   });
 

@@ -22,6 +22,7 @@ export const transcriptionRequestSchema = z.strictObject({ ...envelope, audio: w
 export const transcriptionResponseSchema = z.strictObject({ ...envelope, text: z.string().trim().max(16_000) });
 export const synthesisRequestSchema = z.strictObject({ ...envelope, text: z.string().trim().min(1).max(16_000) });
 export const synthesisResponseSchema = z.strictObject({ ...envelope, audio: wirePcmSchema });
+export const synthesisLimitResponseSchema = z.strictObject({ ...envelope, error: z.literal("synthesis-too-long") });
 
 export function encodePcm(audio: PcmAudio): z.infer<typeof wirePcmSchema> {
   validatePcm(audio);

@@ -82,7 +82,7 @@ describe("bounded speech engine processes", () => {
     const { child, spawn } = processFixture();
     const controller = new AbortController();
     const result = runEngine(request, controller.signal, spawn);
-    const rejected = expect(result).rejects.toThrow("engine-output-limit");
+    const rejected = expect(result).rejects.toThrow(stream === "stdout" ? "engine-output-limit" : "engine-diagnostic-limit");
     child.stdout.emit("data", Buffer.from("partial"));
     child.stderr.emit("data", Buffer.from("diagnostic"));
     child[stream].emit("data", Buffer.alloc(stream === "stdout" ? 1025 : 65_537));

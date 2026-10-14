@@ -3,7 +3,7 @@ import { request as httpRequest } from "node:http";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it, vi } from "vitest";
-import { RequestAuthenticator, type PcmAudio } from "../../packages/core/src/index.js";
+import { RequestAuthenticator, SynthesisLimitError, type PcmAudio } from "../../packages/core/src/index.js";
 import { encodePcm, HttpSpeechAdapter } from "../../packages/speech-http/src/index.js";
 import { createSpeechServer } from "../../packages/speech-worker/src/index.js";
 
@@ -35,6 +35,26 @@ function abortable(signal: AbortSignal, started: () => void): Promise<never> {
 }
 
 describe("authenticated portable speech service", () => {
+  it("returns a signed request-bound limit only for synthesis and permits a smaller subsequent request", async () => {
+    const synthesize = vi.fn(async () => pcm()).mockRejectedValueOnce(new SynthesisLimitError());
+    const worker = await fixture({ synthesis: { synthesize }, recognition: { transcribe: async () => { throw new SynthesisLimitError(); } } });
+    try {
+      const request = { ...envelope(), text: "Too long" };
+      expect(await worker.post("/syntheses", request)).toEqual({ status: 422, body: { ...envelope(), requestId: request.requestId, error: "synthesis-too-long" } });
+      const adapter = await HttpSpeechAdapter.connect({ baseUrl: worker.baseUrl, secret, allowInsecureLoopback: true });
+      expect(await adapter.synthesize("Short", new AbortController().signal)).toEqual(pcm());
+      expect((await worker.post("/transcriptions", { ...envelope(), audio: encodePcm(pcm()) })).status).toBe(503);
+    } finally { await worker.close(); }
+  });
+
+  it("keeps a late synthesis limit as a timeout rather than inviting another generation", async () => {
+    const worker = await fixture({ timeoutMs: 15, synthesis: { synthesize: async (_text, signal) => {
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      throw new SynthesisLimitError();
+    } } });
+    try { expect((await worker.post("/syntheses", { ...envelope(), text: "Long" })).status).toBe(504); }
+    finally { await worker.close(); }
+  });
   it("serves signed capabilities compatible with the existing HTTP speech adapter", async () => {
     const input = pcm();
     const synthesized = pcm();

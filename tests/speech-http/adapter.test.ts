@@ -120,6 +120,28 @@ describe("authenticated portable HTTP speech", () => {
     await expect(adapter.synthesize("Hello", signal())).rejects.toThrow("response-too-large");
   });
 
+  it("accepts only authenticated strict synthesis limits bound to the current request", async () => {
+    const f = fixture(); const adapter = await f.connect();
+    const limit = (mutate: (requestId: string) => unknown, signed = true) => f.fetcher.mockImplementationOnce(async (url, options) => {
+      const path = new URL(String(url)).pathname;
+      const body = JSON.stringify(mutate(JSON.parse(options!.body as string).requestId));
+      return new Response(body, { status: 422, headers: signed ? f.auth.sign({ method: "RESPONSE_422", path, body }) : {} });
+    });
+    limit((requestId) => ({ protocolVersion: 1, requestId, error: "synthesis-too-long" }));
+    await expect(adapter.synthesize("Long answer", signal())).rejects.toMatchObject({ code: "synthesis-too-long" });
+    limit((requestId) => ({ protocolVersion: 1, requestId, error: "synthesis-too-long" }), false);
+    await expect(adapter.synthesize("Long answer", signal())).rejects.toThrow("invalid-auth");
+    for (const mutate of [
+      (_id: string) => ({ protocolVersion: 1, requestId: audience, error: "synthesis-too-long" }),
+      (requestId: string) => ({ protocolVersion: 1, requestId, error: "synthesis-too-long", credential: "private" }),
+      (requestId: string) => ({ protocolVersion: 1, requestId, error: "other" }),
+    ]) { limit(mutate); await expect(adapter.synthesize("Long answer", signal())).rejects.toThrow("invalid-response"); }
+    f.fetcher.mockResolvedValueOnce(new Response("private", { status: 422 }));
+    await expect(adapter.transcribe(audio, signal())).rejects.toThrow("http-error");
+    limit((_id) => "x".repeat(513));
+    await expect(adapter.synthesize("Long answer", signal())).rejects.toThrow("response-too-large");
+  });
+
   it("discards late HTTP results and cancels a stalled response body", async () => {
     const f = fixture(); const adapter = await f.connect(); const controller = new AbortController();
     f.fetcher.mockImplementationOnce(async () => { controller.abort(new Error("closed")); return new Response("{}"); });
