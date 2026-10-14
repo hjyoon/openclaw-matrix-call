@@ -130,7 +130,12 @@ export async function verifyMatrixSpeech({ root, directory, data, config, env, p
         assert.equal(turn.caller.userId, owner.userId); assert.equal(turn.caller.deviceId, owner.deviceId);
         assert.equal(turn.caller.roomId, config.rooms[0]); assert(turn.caller.deviceVerified && turn.caller.mediaEncrypted);
         const transcript = turn.messages.at(-1).text.toLowerCase();
-        for (const keyword of language === "en" ? ["country"] : manifest[language].keywords) assert(transcript.includes(keyword), `Missing ${language} Matrix speech keyword`);
+        const keywords = language === "en" ? ["country"] : manifest[language].keywords;
+        const missingKeywords = keywords.filter((keyword) => !transcript.includes(keyword));
+        if (missingKeywords.length) console.error(JSON.stringify({ event: "matrix-speech-recognition-mismatch", runtime, language,
+          fixture: manifest[language].file, fixtureSha256: manifest[language].sha256, inputSeconds: seconds,
+          expectedKeywords: keywords, missingKeywords, recognizedCharacters: transcript.length, recognizedText: transcript.slice(0, 512) }));
+        assert.equal(missingKeywords.length, 0, `Missing ${language} Matrix speech keyword`);
         assert(observation.activeFrames >= 10 && observation.peakRms > 0.005, `${language} synthesized speech must reach the Matrix peer`);
         assert.equal(observation.encryptedFrames, observation.activeFrames);
         assert.equal(services.state.turns.length, before + 1);
