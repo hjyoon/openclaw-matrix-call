@@ -213,12 +213,22 @@ try {
     return measurement.encrypted && measurement.rms > 0.03 && Math.abs(measurement.frequency - 660) < 35;
   }, "rotated remote audio after rejoin");
   for (const [participant, identity, account] of [[pages[1], identities[0], accounts[0]], [page, identities[1], accounts[1]]]) {
-    await waitFor(async () => {
-      try {
-        const proof = await participant.evaluate((id) => window.matrixTest.verify(id), identity);
-        return proof.userId === account.userId && proof.deviceId === account.deviceId && proof.deviceVerified && proof.mediaEncrypted;
-      } catch { return false; }
-    }, "fresh authenticated participant after rejoin");
+    let reason;
+    try {
+      await waitFor(async () => {
+        try {
+          const proof = await participant.evaluate((id) => window.matrixTest.verify(id), identity);
+          return proof.userId === account.userId && proof.deviceId === account.deviceId && proof.deviceVerified && proof.mediaEncrypted;
+        } catch (error) {
+          reason = ["session does not match", "device is not verified", "encrypted media is unavailable", "membership is unavailable", "encrypted audio is unavailable", "membership changed during verification"].find((text) => error.message.includes(text)) ?? "unexpected verification error";
+          return false;
+        }
+      }, "fresh authenticated participant after rejoin");
+    } catch (error) {
+      const diagnostic = await participant.evaluate((id) => window.matrixTest.admissionDiagnostic(id), identity).catch(() => ({ unavailable: true }));
+      console.log(JSON.stringify({ event: "matrix-rejoin-admission-failed", reason, diagnostic }));
+      throw error;
+    }
   }
   assert.equal((await restoredControl.request("/v1/media/leave", { sessionId: restoredSession.value.sessionId })).status, 200);
   assert.equal((await controls[1].request("/v1/media/leave", { sessionId: sessions[1] })).status, 200);

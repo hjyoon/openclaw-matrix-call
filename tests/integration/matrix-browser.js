@@ -112,6 +112,15 @@ window.matrixTest = {
   status(remoteIdentity) {
     return { members: session?.memberships.length ?? 0, joined: session?.isJoined() === true, localMember: session?.memberships.filter((member) => member.userId === client.getUserId() && member.deviceId === client.getDeviceId()).length === 1, localKey, remoteKey: gate?.hasCurrentKey(remoteIdentity) ?? false, accepted, rejected, authenticated, verified, failed };
   },
+  async admissionDiagnostic(participantId) {
+    const members = session?.memberships.filter((member) => member.rtcBackendIdentity === participantId) ?? [];
+    const participant = media.remoteParticipants.get(participantId);
+    const device = members.length === 1 ? await client.getCrypto().getDeviceVerificationStatus(members[0].userId, members[0].deviceId) : undefined;
+    return { now: Date.now(), mediaState: media.state, mediaEncrypted: media.isE2EEEnabled, currentKey: gate?.hasCurrentKey(participantId) ?? false,
+      members: members.map(membershipSnapshot), deviceVerified: device?.isVerified() === true,
+      publications: [...participant?.trackPublications.values() ?? []].map((publication) => ({ kind: publication.kind, encrypted: publication.isEncrypted,
+        subscribed: publication.isSubscribed, trackState: publication.track?.mediaStreamTrack.readyState })), accepted, rejected, authenticated, verified };
+  },
   async sendKey(targetUserId, targetDeviceId, roomId, claim, plaintext) {
     const content = {
       room_id: roomId, member: { id: `${client.getUserId()}:${client.getDeviceId()}`, claimed_device_id: claim },
