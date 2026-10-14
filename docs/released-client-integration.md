@@ -1,6 +1,6 @@
 # Released Matrix client integration
 
-Checked locally: 2026-10-14. Element Call 0.28.0 passes encrypted Matrix command entry, actual Korean/English speech and leave/rejoin through the production native worker and browser image. This records one supported application configuration, rather than universal Matrix client support.
+Checked locally: 2026-10-15. Element Call 0.28.0 passes encrypted Matrix command entry, actual Korean/English speech and leave/rejoin through the production native worker and browser image. This records one supported application configuration, rather than universal Matrix client support.
 
 ## Reproduction
 
@@ -75,7 +75,7 @@ The local actual-model run passed all three turns with `openai/gpt-6.1-sol`, the
 | First / English | 80 | 24.90 s |
 | Second / Korean | 26 | 29.39 s |
 
-Timings include fixture preparation/playback, recognition, actual model inference and synthesis on one development host. They are not target-server measurements or a latency guarantee. This actual-model path uses the production native worker. The browser image passes the deterministic-provider application check above; the combined application/image/actual-model configuration remains unverified.
+Timings include fixture preparation/playback, recognition, actual model inference and synthesis on one development host. They are not target-server measurements or a latency guarantee. This earlier actual-model path uses the production native worker. The [operator Compose integration](operator-compose-integration.md) now also passes the combined application/image/actual-model configuration using the public local-Gateway composition. It adds coordinated backend/worker replacement, readiness transitions and eleven encrypted commands/replies while retaining the device profile and two independent histories. Its separate report is `released-client-operator-live-result.json`; the ordinary image test above remains independently reproducible without a model login.
 
 ## Setup failures corrected during validation
 

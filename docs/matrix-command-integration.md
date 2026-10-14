@@ -53,4 +53,4 @@ Sending the command first in a mention-required room also failed admission despi
 
 The initial two-DM attempt used the default shared session and received the host's DM isolation warning. Explicit `per-room` routing passed both direct-room checks. The test's first startup attempt also sent before Matrix sync was connected; the public connection barrier now prevents that setup race. None of these changes relax caller authorization or automatically retry a command.
 
-Restored-image interoperability with a released application, coordinated worker replacement, sustained input stability and clean operator setup remain calling release work. Incoming calls remain unsupported. See [release readiness](release-readiness.md).
+The [operator Compose check](operator-compose-integration.md) adds a released application, restored worker profile, actual inference and explicit coordinated replacement from an empty Gateway. Sustained input stability, additional clients and other deployment routes remain outside its evidence. Incoming calls remain unsupported. See [release readiness](release-readiness.md).
