@@ -12,6 +12,8 @@ The project tests the actual pinned OpenClaw SDK. Dependency installation permit
 
 The pinned `@openclaw/matrix` 2026.10.2 development dependency provides the actual messaging-channel adapter for isolated chat command checks. It is not imported by portable runtime packages or worker images. Its bundled Matrix SDK is 42.4.0; the RTC worker independently uses the tested 43.0.0 SDK.
 
+After building artifacts, `pnpm verify:matrix-commands` checks actual Matrix messages through both installed native plugins and the signed worker control plane. It uses disposable Synapse accounts, a private control room and isolated DMs, with fixture media and zero inference. Its separate CI job needs Docker and no Chromium or hosted credentials. See [command evidence](matrix-command-integration.md) for supported placement, session settings and the observed mention-prefix limitation.
+
 Coverage is enforced per file at 100% for statements, branches, functions, and lines across the plugin, shared core, and worker runtime sources. Generated bundles, dependencies, tests, and build tooling are outside the runtime coverage scope. Build and package checks validate those artifacts separately.
 
 Tests must exercise security decisions, invalid inputs, cancellation, concurrency, failure recovery, and transport boundaries. Full unit coverage does not establish Matrix calling interoperability. The release process also requires a real encrypted call with actual audio.
