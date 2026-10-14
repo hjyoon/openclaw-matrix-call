@@ -124,4 +124,18 @@ export class HttpAgentAdapter implements AgentPort {
     signal.throwIfAborted();
     return Object.freeze({ text: reply.data.text });
   }
+
+  async check(signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted();
+    const endpoint = new URL("capabilities", this.#baseUrl);
+    const response = await this.#fetch(endpoint, {
+      signal: AbortSignal.any([signal, AbortSignal.timeout(this.#timeoutMs)]), redirect: "error",
+    });
+    if (response.status !== 200) throw new AgentHttpError("http-error");
+    const body = await readBody(response, 4096);
+    this.#auth.verify({ method: "RESPONSE_200", path: endpoint.pathname, body }, Object.fromEntries(response.headers));
+    const capabilities = agentCapabilitiesSchema.safeParse(parseJson(body));
+    if (!capabilities.success || capabilities.data.historyMode !== this.historyMode) throw new AgentHttpError("invalid-response");
+    signal.throwIfAborted();
+  }
 }

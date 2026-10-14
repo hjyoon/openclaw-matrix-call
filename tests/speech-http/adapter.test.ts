@@ -28,6 +28,33 @@ function fixture() {
 }
 
 describe("authenticated portable HTTP speech", () => {
+  it("checks current speech capabilities without invoking either engine", async () => {
+    const f = fixture(); const adapter = await f.connect();
+    await expect(adapter.check(signal())).resolves.toBeUndefined();
+    expect(f.fetcher).toHaveBeenCalledTimes(2);
+    expect(f.fetcher.mock.calls.every(([, options]) => options?.method !== "POST")).toBe(true);
+    expect(String(f.fetcher.mock.calls[1]![0])).toBe(`${baseUrl}/capabilities`);
+  });
+
+  it.each(["offline", "invalid", "unsigned", "replaced"])("rejects %s readiness without rebinding the service", async (state) => {
+    const f = fixture(); const adapter = await f.connect();
+    if (state === "offline") f.fetcher.mockResolvedValueOnce(new Response("private error", { status: 503 }));
+    else if (state === "invalid") f.fetcher.mockResolvedValueOnce(f.signed("{}", "/v1/speech/capabilities"));
+    else if (state === "unsigned") f.fetcher.mockResolvedValueOnce(new Response(JSON.stringify(capabilities)));
+    else {
+      const next = "6c27544a-302c-4aad-9469-e37b1ed8426c"; const signer = new RequestAuthenticator({ secret, audience: next });
+      const body = JSON.stringify({ ...capabilities, audience: next });
+      f.fetcher.mockResolvedValueOnce(new Response(body, { headers: signer.sign({ method: "RESPONSE_200", path: "/v1/speech/capabilities", body }) }));
+    }
+    await expect(adapter.check(signal())).rejects.toThrow();
+    await expect(adapter.transcribe(audio, signal())).resolves.toBe("Hello");
+  });
+
+  it("does not retrieve capabilities for an already canceled check", async () => {
+    const f = fixture(); const adapter = await f.connect(); const controller = new AbortController(); controller.abort(new Error("closed"));
+    await expect(adapter.check(controller.signal)).rejects.toThrow("closed"); expect(f.fetcher).toHaveBeenCalledOnce();
+  });
+
   it("signs bounded PCM requests, trims transcripts and decodes independent synthesis samples", async () => {
     const f = fixture(); const adapter = await f.connect();
     expect(await adapter.transcribe(audio, signal())).toBe("Hello");

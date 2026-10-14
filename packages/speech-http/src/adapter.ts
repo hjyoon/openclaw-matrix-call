@@ -84,6 +84,18 @@ export class HttpSpeechAdapter implements SpeechRecognitionPort, SpeechSynthesis
     return result.data.text;
   }
 
+  async check(callerSignal: AbortSignal): Promise<void> {
+    callerSignal.throwIfAborted();
+    const signal = AbortSignal.any([callerSignal, AbortSignal.timeout(this.#timeoutMs)]);
+    const endpoint = new URL("capabilities", this.#baseUrl);
+    const response = await this.#fetch(endpoint, { signal, redirect: "error" });
+    if (response.status !== 200) throw new SpeechHttpError("http-error");
+    const body = await readBody(response, 4096, signal);
+    this.#auth.verify({ method: "RESPONSE_200", path: endpoint.pathname, body }, Object.fromEntries(response.headers));
+    if (!speechCapabilitiesSchema.safeParse(parseJson(body)).success) throw new SpeechHttpError("invalid-response");
+    callerSignal.throwIfAborted();
+  }
+
   async synthesize(text: string, signal: AbortSignal): Promise<PcmAudio> {
     signal.throwIfAborted();
     const request = synthesisRequestSchema.parse({ protocolVersion: 1, requestId: randomUUID(), text });

@@ -37,6 +37,41 @@ function fixtures(historyMode: "messages" | "host-session" = "messages") {
 }
 
 describe("provider-neutral HTTP agent adapter", () => {
+  it("checks current authenticated capabilities without creating a model turn", async () => {
+    const f = fixtures(); const adapter = await HttpAgentAdapter.connect({ baseUrl, secret, fetch: f.fetcher });
+    await expect(adapter.check(new AbortController().signal)).resolves.toBeUndefined();
+    expect(f.fetcher.mock.calls).toHaveLength(2);
+    expect(f.fetcher.mock.calls.every(([, init]) => init?.method !== "POST")).toBe(true);
+    expect(String(f.fetcher.mock.calls[1]![0])).toBe(`${baseUrl}/capabilities`);
+    expect(f.fetcher.mock.calls[1]![1]!.redirect).toBe("error");
+  });
+
+  it.each(["offline", "invalid", "mode", "unsigned", "replaced"])("rejects a %s service without adopting new authority", async (state) => {
+    const f = fixtures(); const adapter = await HttpAgentAdapter.connect({ baseUrl, secret, fetch: f.fetcher });
+    if (state === "offline") f.fetcher.mockResolvedValueOnce(new Response("private error", { status: 503 }));
+    else if (state === "invalid") f.fetcher.mockResolvedValueOnce(f.signed("{}", "/v1/agent/capabilities"));
+    else if (state === "mode") f.fetcher.mockResolvedValueOnce(f.signed(JSON.stringify({ protocolVersion: 1, audience, historyMode: "host-session" }), "/v1/agent/capabilities"));
+    else if (state === "unsigned") f.fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ protocolVersion: 1, audience, historyMode: "messages" })));
+    else {
+      const next = randomUUID(); const signer = new RequestAuthenticator({ secret, audience: next });
+      const body = JSON.stringify({ protocolVersion: 1, audience: next, historyMode: "messages" });
+      f.fetcher.mockResolvedValueOnce(new Response(body, { headers: signer.sign({ method: "RESPONSE_200", path: "/v1/agent/capabilities", body }) }));
+    }
+    await expect(adapter.check(new AbortController().signal)).rejects.toThrow();
+    await expect(adapter.reply(turn())).resolves.toEqual({ text: "Welcome" });
+    const [, options] = f.fetcher.mock.calls.at(-1)!;
+    f.auth.verify({ method: "POST", path: "/v1/agent/turns", body: options!.body as string }, options!.headers as Record<string, string>);
+  });
+
+  it("rejects checks canceled before or during capability retrieval", async () => {
+    const f = fixtures(); const adapter = await HttpAgentAdapter.connect({ baseUrl, secret, fetch: f.fetcher });
+    const before = new AbortController(); before.abort(new Error("closed"));
+    await expect(adapter.check(before.signal)).rejects.toThrow("closed"); expect(f.fetcher).toHaveBeenCalledOnce();
+    const during = new AbortController();
+    f.fetcher.mockImplementationOnce(async () => { during.abort(new Error("closed")); return f.capability(); });
+    await expect(adapter.check(during.signal)).rejects.toThrow("closed");
+  });
+
   it.each(["messages", "host-session"] as const)("supports declared %s history mode", async (historyMode) => {
     const { auth, fetcher } = fixtures(historyMode);
     const adapter = await HttpAgentAdapter.connect({ baseUrl, secret, fetch: fetcher });
