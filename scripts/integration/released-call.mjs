@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -7,6 +7,7 @@ import path from "node:path";
 import { startReleasedClient } from "./released-client.mjs";
 import { startMatrixGateway } from "./matrix-gateway.mjs";
 import { startMatrixSpeechService } from "./matrix-speech-service.mjs";
+import { provisionMatrixChat } from "./matrix-chat.mjs";
 import { decodeWav } from "../../dist/speech-worker/index.js";
 import { startBrowserWorker } from "../../dist/browser-worker/index.js";
 
@@ -30,16 +31,19 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
   await api(roomPath + "/state/m.room.power_levels/", "PUT", { ...power, users: { ...power.users, [owner.user_id]: 100, [bot.user_id]: 100 } }, creator.accessToken);
   let app; let speech; let gateway; let worker; let selected; let failure; let report;
   const results = [];
+  const liveModelFile = process.env.MATRIX_CALL_LIVE_MODEL_FILE;
   const manifest = JSON.parse(await readFile(path.join(root, "tests/fixtures/speech/manifest.json"), "utf8"));
   try {
     app = await startReleasedClient({ root, directory: data, chromium, account: owner, homeserver, serverName, focusUrl, roomId });
+    const matrixChat = await provisionMatrixChat({ api, homeserver, registrationSecret, roomId, creator,
+      owner: { userId: owner.user_id, accessToken: owner.access_token }, chatPeer: app.chat, username: "releasedchat" });
     speech = await startMatrixSpeechService(root, data, process.env.MATRIX_CALL_MATRIX_SPEECH_IMAGE);
     const credentialsFile = path.join(data, "matrix.json"); const controlSecretFile = path.join(data, "control.secret");
     const agentSecretFile = path.join(data, "agent.secret"); const speechSecretFile = path.join(data, "speech.secret"); const voiceFile = path.join(data, "voice.json"); const configFile = path.join(data, "browser.json");
     await writeFile(credentialsFile, JSON.stringify({ baseUrl: homeserver, userId: bot.user_id, deviceId: bot.device_id, accessToken: bot.access_token }), { mode: 0o600 });
     await writeFile(controlSecretFile, randomBytes(32).toString("hex"), { mode: 0o600 }); const workerPort = await freePort();
     gateway = await startMatrixGateway({ root, directory: path.join(data, "gateway"), policy: { owners: [owner.user_id], rooms: [roomId], agents: ["main"] },
-      workerUrl: `http://127.0.0.1:${workerPort}`, controlSecretFile, reply: () => manifest[selected].reply, freePort, waitFor });
+      workerUrl: `http://127.0.0.1:${workerPort}`, controlSecretFile, reply: () => manifest[selected].reply, freePort, waitFor, matrixChat, liveModelFile });
     await writeFile(agentSecretFile, gateway.agentSecret, { mode: 0o600 }); await writeFile(speechSecretFile, speech.secret, { mode: 0o600 });
     await writeFile(voiceFile, JSON.stringify({ agentId: "main", agent: { baseUrl: gateway.agentUrl, secretFile: agentSecretFile },
       speech: { baseUrl: speech.baseUrl, secretFile: speechSecretFile }, requestTimeoutMs: 70000, timeoutMs: 120000, allowInsecureLoopback: true }), { mode: 0o600 });
@@ -57,6 +61,8 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
     await app.page.getByRole("button", { name: "Join call", exact: true }).click();
     await waitFor(() => app.page.evaluate((id) => window.matrixclient.matrixRTC.getRoomSession(window.matrixclient.getRoom(id)).memberships.length === 1, roomId), "released-client RTC membership");
     const request = await gateway.control(`http://127.0.0.1:${workerPort}`);
+    assert.equal((await request("/v1/media/status", {})).status, 200);
+    assert.equal((await request("/v1/media/join", { roomId: "!unconfigured" })).status, 403);
     console.log(JSON.stringify({ event: "released-client-transports", ...await app.page.evaluate((id) => {
       const session = window.matrixclient.matrixRTC.getRoomSession(window.matrixclient.getRoom(id));
       return { slot: session.slotId, memberships: session.memberships.map((member) => {
@@ -73,6 +79,8 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
     }, "released-client encrypted microphone admission");
     for (const [index, language] of ["ko", "en", "ko"].entries()) {
       if (index === 2) {
+        assert.equal((await request("/v1/media/status", {})).value.session.state, "connected");
+        assert.equal((await request("/v1/media/leave", { sessionId: randomUUID() })).status, 404);
         assert.equal((await request("/v1/media/leave", { sessionId: joined.value.sessionId })).status, 200);
         await app.page.getByRole("button", { name: "End call", exact: true }).click();
         await app.page.goto(app.url); await app.page.getByRole("button", { name: "Join call", exact: true }).waitFor();
@@ -85,7 +93,7 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
           try { return (await worker.driver.verify(reference, new AbortController().signal)).mediaEncrypted; } catch { return false; }
         }, "released-client encrypted microphone after rejoin");
       }
-      selected = language; const before = gateway.state.turns.length;
+      selected = language; const before = gateway.state.turns.length; const started = Date.now();
       const bytes = await readFile(path.join(root, "tests/fixtures/speech", manifest[language].file)); assert.equal(createHash("sha256").update(bytes).digest("hex"), manifest[language].sha256);
       const audio = decodeWav(bytes); const input = audio.samples.subarray(language === "en" ? audio.sampleRate * 5 : 0);
       const peak = input.reduce((maximum, value) => Math.max(maximum, Math.abs(value)), 0); const samples = Array.from(input, (value) => Math.round(value * 0.8 * 32767 / peak));
@@ -94,24 +102,35 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
       finally { samples.fill(0); }
       await waitFor(() => gateway.state.turns.length === before + 1, "released-client recognition and SDK dispatch", 90000);
       let peakRms = 0;
-      await waitFor(async () => { const audio = await app.page.evaluate(() => window.releasedMicrophone.measure()); peakRms = Math.max(peakRms, audio.rms); return audio.rms > 0.005; }, "released-client synthesized audio", 30000);
+      await waitFor(async () => { const audio = await app.page.evaluate(() => window.releasedMicrophone.measure()); peakRms = Math.max(peakRms, audio.rms); return audio.rms > 0.005; }, "released-client synthesized audio", liveModelFile ? 100000 : 30000);
+      const firstAudioMs = Date.now() - started;
       await waitFor(() => !worker.voice.busy, "released-client playback completion");
       const turn = gateway.state.turns[before]; const text = turn.messages.at(-1).text.toLowerCase();
       assert((language === "en" ? ["country"] : manifest[language].keywords).every((keyword) => text.includes(keyword)));
       assert.equal(turn.caller.userId, owner.user_id); assert.equal(turn.caller.deviceId, owner.device_id); assert(turn.caller.deviceVerified && turn.caller.mediaEncrypted);
       const history = await gateway.conversationEvidence(turn.conversationId); assert.equal(history.userTurns, index === 2 ? 1 : index + 1);
+      const reply = gateway.state.replies[before];
+      if (liveModelFile) {
+        assert.equal(gateway.state.providerRequests.length, 0);
+        assert(language === "ko" ? /[가-힣]/.test(reply.text) : /[a-zA-Z]/.test(reply.text));
+      }
       if (index === 0 || index === 2) conversations.push(turn.conversationId);
       if (index === 2) { assert.notEqual(conversations[0], conversations[1]); assert.equal(turn.messages.length, 1); }
-      results.push({ call: index === 2 ? 2 : 1, language, peakRms, input: speech.state.inputs.at(-1), userTurns: history.userTurns, assistantReplies: history.assistantReplies });
+      results.push({ call: index === 2 ? 2 : 1, language, peakRms, firstAudioMs, input: speech.state.inputs.at(-1),
+        replyCharacters: reply.text.length, replySha256: createHash("sha256").update(reply.text).digest("hex"), ...history });
       console.log(JSON.stringify({ event: "released-client-speech-passed", client: app.pin.name, version: app.pin.version, ...results.at(-1) }));
     }
+    assert.equal((await request("/v1/media/status", {})).value.session.state, "connected");
     assert.equal((await request("/v1/media/leave", { sessionId: joined.value.sessionId })).status, 200);
+    assert.equal((await request("/v1/media/status", {})).value.session, null);
     await app.page.getByRole("button", { name: "End call", exact: true }).click();
-    assert.equal(new Set(conversations).size, 2); assert.equal(gateway.state.turns.length, 3); assert.equal(gateway.state.providerRequests.length, 3);
+    assert.equal(new Set(conversations).size, 2); assert.equal(gateway.state.turns.length, 3); assert.equal(gateway.state.providerRequests.length, liveModelFile ? 0 : 3);
     assert.equal((await gateway.modelEvidence()).sessions.filter((session) => session.key.startsWith("agent:main:matrix-call:call:")).length, 2);
+    assert.deepEqual(matrixChat.evidence, { commands: 10, replies: 10, encryptedCommands: 10, encryptedReplies: 10 });
     report = { client: app.pin.name, version: app.pin.version, artifactSha256: app.pin.sha256, mode: "standalone compatibility", perParticipantE2EE: true,
-      microphone: "controlled browser MediaStream fixture", engines: "real local CPU speech", agent: "installed Gateway with deterministic provider", results,
-      leaveAndRejoin: true, persistentClientDevice: true, independentCallHistory: true, modelInference: false };
+      microphone: "controlled browser MediaStream fixture", engines: "real local CPU speech",
+      agent: liveModelFile ? "installed Gateway with operator-configured live model" : "installed Gateway with deterministic provider", results,
+      leaveAndRejoin: true, persistentClientDevice: true, independentCallHistory: true, encryptedMatrixChat: matrixChat.evidence, modelInference: Boolean(liveModelFile) };
   } catch (error) {
     failure = error;
     console.log(JSON.stringify({ event: "released-client-call-failed", stage: worker ? "media" : app ? "worker setup" : "client setup", results: results.length,
@@ -123,6 +142,8 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
     if (rejected.length) failure = new AggregateError([...(failure ? [failure] : []), ...rejected], "Released-client verification cleanup failed");
   }
   if (failure) throw failure;
+  await mkdir(path.join(root, ".cache/speech"), { recursive: true });
+  await writeFile(path.join(root, ".cache/speech", liveModelFile ? "released-client-live-result.json" : "released-client-result.json"), JSON.stringify(report, null, 2) + "\n");
   console.log(JSON.stringify({ event: "released-client-call-passed", ...report }));
   return report;
 }
