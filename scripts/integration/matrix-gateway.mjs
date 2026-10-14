@@ -56,15 +56,23 @@ export async function startMatrixGateway({ root, directory, policy, workerUrl, c
     : "Reply to the user's speech with one short sentence in the user's language. Keep spoken replies concise. Do not use tools.\n", { mode: 0o600 });
   const patchFile = path.join(directory, "config.patch.json");
   let gateway; let exited; let client; let connected; let probe; let closing; let output = "";
+  const stopGateway = async () => {
+    client?.stop(); client = undefined; connected = undefined;
+    if (!gateway) return;
+    const process = gateway; process.kill("SIGTERM");
+    const timeout = setTimeout(() => process.kill("SIGKILL"), 90_000);
+    try { const exit = await exited; assert.equal(exit.code, 0, `Matrix Gateway shutdown: ${JSON.stringify(exit)} ${output}`); }
+    finally { clearTimeout(timeout); gateway = undefined; }
+  };
+  const startGateway = () => {
+    output = "";
+    gateway = spawn(cli, ["gateway", "run", "--bind", "loopback", "--port", String(gatewayPort)], { cwd: directory, env, stdio: ["ignore", "pipe", "pipe"] });
+    exited = new Promise((resolve, reject) => { gateway.once("error", reject); gateway.once("exit", (code, signal) => resolve({ code, signal })); });
+    for (const stream of [gateway.stdout, gateway.stderr]) stream.on("data", (chunk) => { output = (output + chunk.toString("utf8")).slice(-16_000); });
+  };
   const close = () => closing ??= (async () => {
-    client?.stop();
     try {
-      if (gateway) {
-        gateway.kill("SIGTERM");
-        const timeout = setTimeout(() => gateway.kill("SIGKILL"), 90_000);
-        try { const exit = await exited; assert.equal(exit.code, 0, `Matrix Gateway shutdown: ${JSON.stringify(exit)} ${output}`); }
-        finally { clearTimeout(timeout); gateway = undefined; }
-      }
+      await stopGateway();
     } finally {
       for (const server of [probe, provider]) {
         if (server) { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
@@ -86,12 +94,10 @@ export async function startMatrixGateway({ root, directory, policy, workerUrl, c
     }), { mode: 0o600 });
     await exec(cli, ["config", "patch", "--file", patchFile], { cwd: directory, env, timeout: 60_000 });
     if (live) await exec(process.execPath, [path.join(root, "scripts/integration/prepare-live-model.mjs"), liveModelFile], { cwd: directory, env, timeout: 30_000 });
-    gateway = spawn(cli, ["gateway", "run", "--bind", "loopback", "--port", String(gatewayPort)], { cwd: directory, env, stdio: ["ignore", "pipe", "pipe"] });
-    exited = new Promise((resolve, reject) => { gateway.once("error", reject); gateway.once("exit", (code, signal) => resolve({ code, signal })); });
-    for (const stream of [gateway.stdout, gateway.stderr]) stream.on("data", (chunk) => { output = (output + chunk.toString("utf8")).slice(-16_000); });
+    startGateway();
     const agentBase = `http://127.0.0.1:${agentPort}`;
     let audience;
-    await waitFor(async () => {
+    const authenticateAgent = () => waitFor(async () => {
       if (gateway.exitCode !== null) throw new Error(`Matrix Gateway startup: ${output}`);
       try {
         const response = await fetch(agentBase + "/capabilities", { signal: AbortSignal.timeout(500) });
@@ -101,7 +107,8 @@ export async function startMatrixGateway({ root, directory, policy, workerUrl, c
         return response.status === 200;
       } catch { return false; }
     }, "Matrix Gateway agent listener", 45_000);
-    const auth = new RequestAuthenticator({ secret: agentSecret, audience });
+    await authenticateAgent();
+    let auth = new RequestAuthenticator({ secret: agentSecret, audience });
     probe = createServer(async (request, response) => {
       const controller = new AbortController(); const abort = () => controller.abort(); response.on("close", abort);
       try {
@@ -198,7 +205,17 @@ export async function startMatrixGateway({ root, directory, policy, workerUrl, c
       return { model: session.model, provider: session.modelProvider, inputTokens: session.inputTokens,
         outputTokens: session.outputTokens, agentRuntime: session.agentRuntime?.id, userTurns: users.length, assistantReplies: assistants.length };
     };
-    return { state, agentSecret, agentUrl: `http://127.0.0.1:${probe.address().port}`, control, close, modelEvidence, conversationEvidence, subscribe,
+    const restart = async () => {
+      const previous = audience; const stale = auth; const requests = state.providerRequests.length;
+      await stopGateway(); startGateway(); await authenticateAgent();
+      assert.notEqual(audience, previous); auth = new RequestAuthenticator({ secret: agentSecret, audience });
+      const body = "{}";
+      const rejected = await fetch(agentBase + "/turns", { method: "POST", body,
+        headers: { "content-type": "application/json", ...stale.sign({ method: "POST", path: "/turns", body }) }, signal: AbortSignal.timeout(5000) });
+      assert.equal(rejected.status, 401); assert.equal(state.providerRequests.length, requests);
+      return { agentAudienceChanged: true, staleAgentRequestRejected: true };
+    };
+    return { state, agentSecret, agentUrl: `http://127.0.0.1:${probe.address().port}`, control, close, restart, modelEvidence, conversationEvidence, subscribe,
       model: live?.model ?? "matrix-fixture/fixture", live: Boolean(live) };
   } catch (error) { await close(); throw new Error(`Matrix Gateway integration failed: ${error.message}\n${output}`, { cause: error }); }
 }
