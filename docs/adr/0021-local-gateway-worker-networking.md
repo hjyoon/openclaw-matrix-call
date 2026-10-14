@@ -29,4 +29,4 @@ The optional overlay targets a host-native Gateway. A containerized Gateway or r
 
 ## Consequences
 
-The local overlay renders with unchanged filesystem and process restrictions. Complete installation, encrypted speech and coordinated replacement must still pass through this exact Compose path before it becomes a supported calling deployment. Other routes and platforms retain separate evidence requirements.
+The local overlay renders with unchanged filesystem and process restrictions. Complete installation, encrypted speech and coordinated replacement must pass through this exact Compose path before it becomes a supported calling deployment. The 2026-10-15 [operator integration](../operator-compose-integration.md) records those passes, including actual model replies and bounded longer image output. Other routes and platforms retain separate evidence requirements.

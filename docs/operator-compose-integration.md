@@ -34,6 +34,18 @@ These development-host timings include input playback, recognition, model infere
 
 The ignored default report is `.cache/speech/released-client-operator-result.json`; actual inference writes `released-client-operator-live-result.json`. `MATRIX_CALL_OPERATOR_REPLACEMENT=0 pnpm verify:operator-setup` instead checks leave/rejoin without replacing workers and writes `released-client-operator-rejoin-result.json`.
 
+## Longer image replies
+
+`MATRIX_CALL_LIVE_MODEL_FILE=/absolute/private/model.json pnpm verify:operator-setup-live-long` requests a longer spoken explanation while retaining the same public composition, released application, authenticated readiness/replacement, encrypted controls and independent histories. All three turns and sequential cleanup pass with the same inspected browser image and actual model/runtime/thinking level above.
+
+| Call / language | Reply characters | Successful pieces | Generated speech | First audio |
+| --- | --- | --- | --- | --- |
+| First / Korean | 199 | 4 | 28.16 s | 34.11 s |
+| First / English | 311 | 6 | 20.56 s | 20.52 s |
+| After replacement / Korean | 201 | 4 | 28.14 s | 38.98 s |
+
+The complete non-whitespace model text must reach successful synthesis requests in order. Every piece stays within ten seconds and the total within sixty seconds; a long turn must actually exceed ten seconds and use multiple pieces. Playback must finish before the next input. The optional long fixture allows 75 seconds for observing completion of bounded output; ordinary completion remains 30 seconds, and production request/whole-turn deadlines remain unchanged. The source login stays read-only; the temporary access-only snapshot and disposable profiles were removed after validation. The separate ignored report is `released-client-operator-live-long-result.json`.
+
 ## Limits and observed failures
 
 The initial no-replacement run passed Korean/English but timed out receiving second-call output; its browser stop also returned 143 instead of zero. That trace lacked the later passive worker diagnostics. The subsequent diagnosed no-replacement run passed without a production-code change. Its success does not establish a cause or fix for the first failure. Retain sustained-call/input/network stability as separate investigation.
@@ -41,5 +53,7 @@ The initial no-replacement run passed Korean/English but timed out receiving sec
 An updated readiness run confirmed availability before speech and rejection after backend replacement, then failed Gateway control authentication. The Gateway had negotiated the old worker's audience before that worker was replaced. Explicitly restarting Gateway control while the worker is absent is required; automatic audience adoption would violate the ownership boundary. The passing fixture exercises this recovery with authentication and discovery rules unchanged.
 
 Another attempt passed the functional checks but failed because concurrent cleanup removed a Compose container before its own cleanup command completed. Fixture cleanup now closes Gateway, browser, speech and application sequentially and attempts every close even after an error. A nonzero container exit or OOM still fails the test.
+
+The first long actual-model attempt delivered all three replies but failed an arbitrary minimum-character assertion on the last reply. A requested character count is model guidance, not the speech segmentation contract. The passing rerun instead requires complete synthesis text, actual output above ten seconds and multiple bounded completed publications. Identity, encryption, per-piece/total duration and production deadlines were not relaxed.
 
 This test does not establish a separate-namespace HTTPS proxy route, physical microphone quality, arbitrary clients or target-server resource/latency results. Installation of a published registry package remains a distinct final distribution check. See [readiness](readiness.md), [operator setup](operator-setup.md) and [release readiness](release-readiness.md).

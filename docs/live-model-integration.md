@@ -1,6 +1,6 @@
 # Optional live model integration
 
-Checked locally: 2026-10-14. This workflow tests an existing operator login in disposable infrastructure. It does not install or configure a production calling service.
+Checked locally: 2026-10-15. This workflow tests an existing operator login in disposable infrastructure. It does not install or configure a production calling service.
 
 ## Private configuration
 
@@ -105,11 +105,19 @@ The authentication check changes only the access token in a disposable, refresh-
 
 Both local checks passed. The input login and source auth store remain unchanged, and the altered copy and Gateway profiles are removed on completion.
 
+## Operator composition with longer image replies
+
+The [operator Compose check](operator-compose-integration.md#longer-image-replies) now supplies complete runtime completion observation for the browser image and passes the combined released-application/image/actual-model path from an empty Gateway/profile. Run `pnpm verify:operator-setup-live` or `pnpm verify:operator-setup-live-long` with the same private `MATRIX_CALL_LIVE_MODEL_FILE`. Required settings never fall back to a fixture; the ordinary operator check remains account-free.
+
+The long image run passes Korean 199/201-character replies in four pieces each, before and after coordinated service replacement, and an English 311-character reply in six pieces. Generated speech is 28.16/28.14 seconds for Korean and 20.56 seconds for English. Complete synthesis-input, actual application playback, current identity/encryption, eleven encrypted controls and two independent host histories all pass. The old agent/speech audiences return 401; readiness changes from 200 to 503 and back to 200 after explicit recovery. The image keeps its device profile and sandbox, and all cleanup completes without OOM or nonzero container exit.
+
+This adds longer image evidence separately from the earlier native-only long mode; it does not erase the intermittent failures recorded above. The access-only input snapshot and disposable profiles were removed after the successful run. Reports contain lengths, hashes and model/history metadata, never generated text or credentials.
+
 ## Limits
 
 The operator's source login and production configuration remain unchanged. Snapshot state is temporary, has no refresh owner and is removed on completion; the operator removes the input snapshot after testing. No production Matrix messages, calls or plugin deployment are part of this workflow. The separate [released-client live mode](released-client-integration.md#optional-actual-model) also passes ten encrypted chat controls and three actual model-backed speech turns across two independent calls with the same configured model/runtime/thinking level.
 
-The native adapter still uses delegated, tool-free ingress. Broader provider failures and reconnect behavior, sustained calls, human pronunciation quality, target-server resources, operator enrollment and restored-image interoperability with a released application remain release work. Speech remains bounded by the piece and whole-turn limits in [ADR 0016](adr/0016-bounded-segmented-speech.md); unrestricted answer lengths are unavailable. See [release readiness](release-readiness.md).
+The native adapter still uses delegated, tool-free ingress. Broader provider/network failures, sustained calls, human pronunciation quality, target-server resources, automatic enrollment and other deployment/client modes remain outside the initial alpha evidence. Speech remains bounded by the piece and whole-turn limits in [ADR 0016](adr/0016-bounded-segmented-speech.md); unrestricted answer lengths are unavailable. See [release readiness](release-readiness.md).
 
 ## Ordinary checks
 
