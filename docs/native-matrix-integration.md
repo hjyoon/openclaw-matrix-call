@@ -51,4 +51,6 @@ These are one development-host run with the multilingual `base` model and a dete
 
 ## Remaining work
 
-Actual model-backed spoken responses, model failure/long-response handling, live Matrix chat command entry, sustained-call stability, coordinated replacement, clean operator enrollment/setup and released-client interoperability still gate a calling release. Recognition, enrollment and later-input inconsistencies observed during development remain investigations. The native channel and worker continue to report assistant readiness unavailable.
+The optional [live-model check](live-model-integration.md) now passes concise actual `gpt-6.1-sol` responses through this encrypted speech path in both worker runtimes, with verified host history and fresh sessions. Its separate report records actual inference; ordinary CI continues to use the deterministic provider.
+
+Real-model abort/failure and long-response handling, live Matrix chat command entry, sustained-call stability, coordinated replacement, clean operator enrollment/setup and released-client interoperability still gate a calling release. Recognition, enrollment and later-input inconsistencies observed during development remain investigations. The native channel and worker continue to report assistant readiness unavailable.

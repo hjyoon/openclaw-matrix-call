@@ -48,7 +48,7 @@ The native test launcher adds a passive worklet-message probe that counts chunks
 
 ## Limits
 
-The tested focus mode is the explicit standalone OpenID endpoint. Homeserver-mediated MSC4195 discovery/authorization is not covered. The default check uses signed speech/agent protocol fixtures and 22,050 Hz synthesized PCM. The extended check runs real speech engines with actual Matrix identity and encrypted transport; its agent remains a deterministic fixture. Separate [speech image checks](speech-integration.md) cover both model sizes. Broader recognition quality, target-server latency, SAS enrollment UI and model-backed call dispatch remain unfinished.
+The tested focus mode is the explicit standalone OpenID endpoint. Homeserver-mediated MSC4195 discovery/authorization is not covered. The default check uses signed speech/agent protocol fixtures and 22,050 Hz synthesized PCM. The extended check runs real speech engines with actual Matrix identity and encrypted transport; its agent remains a deterministic fixture. Separate [speech image checks](speech-integration.md) cover both model sizes. The optional [live-model check](live-model-integration.md) additionally verifies concise actual model responses and host history through encrypted speech in both worker modes. Broader recognition quality, target-server latency, SAS enrollment UI and unrestricted model-response handling remain unfinished.
 
 Intermittent cold enrollment and later-input timeouts occurred in development runs. The successful controlled-clip check does not establish that those stability cases are resolved; sustained calls, membership renewal, quiet speech and arbitrary pauses still need investigation.
 
