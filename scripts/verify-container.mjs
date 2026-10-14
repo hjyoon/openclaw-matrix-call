@@ -34,7 +34,7 @@ try {
   }
   assert.equal(response.status, 200);
   const health = await response.json();
-  assert.equal(health.ready, false);
+  assert.equal(health.ready, undefined);
   assert.deepEqual(health.transports, []);
   assert.equal((await fetch(`${endpoint}/readyz`)).status, 503);
   const uid = await exec("docker", ["exec", container, "id", "-u"]);
