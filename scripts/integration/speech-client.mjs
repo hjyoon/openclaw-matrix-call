@@ -95,6 +95,36 @@ try {
   assert.equal(services.state.syntheses, 0);
   await assistant.endSession();
 
+  const longSpeech = [];
+  for (const [language, text] of [
+    ["ko", "안녕하세요. 지금은 긴 음성 답변을 여러 조각으로 나누어 안전하게 전달하는 기능을 확인하고 있습니다. 각 조각을 말하기 전에 사용자의 권한을 다시 확인하고 통화가 끝나면 남은 작업을 취소합니다. 같은 모델 답변을 처음부터 다시 요청하지 않고 전체 대화 기록에는 원래 답변을 한 번만 저장합니다."],
+    ["en", "This longer spoken response checks that an assistant can deliver a complete answer in several bounded pieces. Each piece requires fresh caller verification before generation and playback, and ending the call cancels all remaining speech. The full answer stays in conversation history once, without repeating the model request or silently truncating its words."],
+  ]) {
+    await assert.rejects(speech.synthesize(text, new AbortController().signal), (error) => error.code === "synthesis-too-long");
+    const segments = []; let modelCalls = 0; let current;
+    const store = new MemoryConversationStore(1);
+    const long = new VoiceAssistant({ policy: { owners: ["@fixture:example.org"], rooms: [reference.roomId], agents: ["speech-fixture"] },
+      agentId: "speech-fixture", store, timeoutMs: 90_000,
+      verifier: { async verify(input) { return { ...input, userId: "@fixture:example.org", deviceId: "FIXTURE", expiresAtMs: Date.now() + 30_000, deviceVerified: true, mediaEncrypted: true }; } },
+      recognition: { async transcribe() { return "Read the complete prepared speech"; } },
+      agent: { id: "long-speech-fixture", historyMode: "messages", async reply() { modelCalls++; return { text }; } },
+      synthesis: { async synthesize(piece, signal) { current = piece; return speech.synthesize(piece, signal); } },
+      transport: { async publish(audio) {
+        const rms = Math.sqrt(audio.samples.reduce((sum, sample) => sum + sample * sample, 0) / audio.samples.length) / 32768;
+        assert(rms > 0.005); assert(audio.samples.length <= audio.sampleRate * 10);
+        segments.push({ text: current, seconds: audio.samples.length / audio.sampleRate, rms });
+      } },
+    });
+    try {
+      assert.equal(await long.receive(reference, { samples: new Int16Array([100]), sampleRate: 16000, channels: 1 }), "replied");
+      assert.equal(modelCalls, 1); assert(segments.length > 1);
+      assert.equal(segments.map((segment) => segment.text).join("").replace(/\s/g, ""), text.replace(/\s/g, ""));
+      const seconds = segments.reduce((sum, segment) => sum + segment.seconds, 0);
+      assert(seconds > 10 && seconds <= 60);
+      longSpeech.push({ language, characters: text.length, segments: segments.length, seconds, rejectedSingleResult: true });
+    } finally { await long.endSession(); }
+  }
+
   const controller = new AbortController();
   const audio = decodeWav(await readFile(path.join(root, "fixtures/jfk-en.wav")));
   const pending = speech.transcribe(audio, controller.signal);
@@ -114,6 +144,6 @@ try {
   await waitFor(async () => !(await readdir("/tmp")).some((entry) => entry.startsWith("matrix-call-speech-")), "Canceled input WAV remains on disk");
   const after = await speech.synthesize("Hello", new AbortController().signal);
   after.samples.fill(0);
-  console.log(JSON.stringify({ event: "speech-integration-passed", results, canceledChild: true, busyRejected: true, inputRemoved: true,
+  console.log(JSON.stringify({ event: "speech-integration-passed", results, longSpeech, canceledChild: true, busyRejected: true, inputRemoved: true,
     agent: "signed deterministic fixture", identity: "fixture", transport: "fixture" }));
 } finally { await assistant.endSession(); await services.close(); }

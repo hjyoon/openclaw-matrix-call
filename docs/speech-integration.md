@@ -12,6 +12,17 @@ Across the serial and concurrent development-host checks, each service used the 
 
 The container check also starts a separate peer in the service's network namespace. It can reach loopback health but cannot see the model or secret mounts, and an unsigned synthesis request is rejected. Sharing loopback connectivity does not share credentials or filesystems.
 
+## Longer local synthesis
+
+The same standalone check sends prepared Korean and English responses that exceed the engine's ten-second single-result limit. A direct request must return the authenticated, request-bound `synthesis-too-long` result. The portable coordinator then delivers each complete response through sequential bounded pieces, verifying authority before generation and publication. Only that explicit duration result permits subdivision; ordinary failures are terminal. The agent fixture is called once per response, and concatenated synthesis inputs must preserve every non-whitespace character.
+
+| Language | Prepared characters | Successful pieces | Generated speech |
+| --- | --- | --- | --- |
+| Korean | 164 | 3 | 24.66 s |
+| English | 359 | 6 | 21.72 s |
+
+These local `base`-model checks passed with the real speech image. Each piece is non-silent and at most ten seconds; the coordinator allows at most 64 synthesis attempts and 60 seconds of generated audio within the turn deadline. Identity, agent and output transport are fixtures. This establishes actual signed engine limits and complete bounded synthesis, not audible pronunciation quality or Matrix delivery. See [ADR 0016](adr/0016-bounded-segmented-speech.md) and the separate [live model evidence](live-model-integration.md).
+
 ## Combined encrypted Matrix check
 
 `pnpm verify:matrix-speech` uses the same speech image with `base` and the production browser image. Korean and English public clips travel through an encrypted Matrix microphone, real capture and participant verification, actual recognition/synthesis engines and encrypted output. The agent service remains a deterministic fixture; Matrix identity and transport are real. Both the native driver and restored image pass two-turn history, fresh conversation state, child cancellation on leave, input-file removal and shutdown checks.
