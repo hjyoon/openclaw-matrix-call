@@ -1,6 +1,6 @@
 # Marketplace distribution checks
 
-Checked: 2026-10-14. Package validation and archive generation pass. A calling release is still gated by [release readiness](release-readiness.md); these checks do not publish or upload a package.
+Checked: 2026-10-15. Package validation and archive generation pass. Publication remains gated by [release readiness](release-readiness.md); these checks do not publish or upload a package.
 
 ## Reproducible candidate
 
@@ -27,6 +27,12 @@ The packed inventory is restricted to seven files: package/manifest metadata, en
 
 ## Publication boundary
 
-The report currently records `published: false`, `uploaded: false` and `callingReleaseReady: false`. [Worker image candidates](worker-image-distribution.md) are separate compressed Docker archives with their own source/version labels, manifest checks, immutable image IDs and checksum/report. CI produces both candidate artifacts without a registry publication; compare their source commits and versions before release. Full operator setup, declared client/protocol scope, replacement and input stability must be reviewed before producing an installable calling alpha.
+Candidate reports record `published: false`, `uploaded: false` and `readinessAssessment: "manual"`. These fields describe the local build/inspection operation, not a subsequent public release. The tools do not automatically certify calling readiness. [Worker image candidates](worker-image-distribution.md) are separate compressed Docker archives with their own source/version labels, manifest checks, immutable image IDs and checksum/report. CI produces both artifacts without a registry publication; compare their source commits and versions before release. Review the declared client/protocol/deployment scope and its actual integration results, preserve known stability limits, and require the final source's CI to pass before publishing an experimental alpha.
 
 After those gates pass, a publisher with access to the `hjyoon` namespace can perform a manual authenticated first publication. Initial publication establishes the package before trusted GitHub publishing can be configured. Future registry publication should require its terminal public result, not treat a staged upload as success. No registry login, token creation or real publication is performed by CI or these development checks.
+
+## Public-name installation check
+
+After the exact version is public, run `pnpm verify:registry-install`. It uses `clawhub:@hjyoon/openclaw-matrix-call@0.1.0-alpha.1` in a fresh disposable supported profile, checks loaded package name/version and the recorded `clawhub` origin, and runs the same installed agent-service/worker-control checks as archive installation. It does not fall back to the local archive or another version. Failed registry security or install policy is terminal; this check does not bypass it. The default `pnpm check` continues to use local archives without registry availability or publisher credentials.
+
+Verify public registry file hashes/source metadata against the inspected candidate as a separate distribution check. Model profiles, Matrix credentials and worker data are never part of the registry package. Worker image/checksum/report assets remain paired GitHub downloads rather than a plugin dependency fetched at runtime.

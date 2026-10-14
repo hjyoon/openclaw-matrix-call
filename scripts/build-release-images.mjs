@@ -58,7 +58,7 @@ if (!preview) {
   assert.equal((await exec("git", ["status", "--porcelain=v1"], { cwd: root })).stdout.trim(), "", "Source tree changed during the build");
 }
 const report = { version: metadata.version, sourceCommit, sourceDirty, preview, platform: "linux/amd64", archive, sha256,
-  bytes: (await stat(filename)).size, images, uploaded: false, published: false, callingReleaseReady: false };
+  bytes: (await stat(filename)).size, images, uploaded: false, published: false, readinessAssessment: "manual" };
 await writeFile(path.join(directory, "SHA256SUMS"), `${sha256}  ${archive}\n`);
 await writeFile(path.join(directory, "release-report.json"), JSON.stringify(report, null, 2) + "\n");
 console.log(JSON.stringify({ event: "release-images-built", ...report }));

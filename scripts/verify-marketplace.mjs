@@ -30,6 +30,6 @@ const sha256 = createHash("sha256").update(await readFile(path.join(directory, a
 await writeFile(path.join(directory, "SHA256SUMS"), `${sha256}  ${archive}\n`);
 const report = { package: metadata.name, version: metadata.version, sourceCommit: commit, archive, sha256, files: contents,
   inspector: "clawhub@0.23.3", targetOpenClaw: "2026.10.2", validation: inspected.status, summary: inspected.summary,
-  dryRun: true, uploaded: false, published: false, callingReleaseReady: false };
+  dryRun: true, uploaded: false, published: false, readinessAssessment: "manual" };
 await writeFile(path.join(directory, "release-report.json"), JSON.stringify(report, null, 2) + "\n");
 console.log(JSON.stringify({ event: "marketplace-package-verified", ...report }));

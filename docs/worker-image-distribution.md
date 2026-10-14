@@ -21,7 +21,7 @@ The packer checks the archive's actual manifest and hashes both embedded configu
 
 ## CI and loading
 
-The speech CI job builds these images before exercising speech and encrypted Matrix calls, verifies and reloads the exact archive, and runs the [released application against the restored browser image](released-client-integration.md#browser-image). It uploads `inspected-worker-image-candidate` only after every check passes. The plugin candidate is a separate artifact. Compare both reports' version and source commit before preparing a release. CI artifacts support review; they do not establish a public registry package, an approved calling release or a supported operator deployment.
+The speech CI job builds these images before exercising speech and encrypted Matrix calls, verifies and reloads the exact archive, and runs the [released application against the restored browser image](released-client-integration.md#browser-image) plus the [operator Compose route](operator-compose-integration.md). It uploads `inspected-worker-image-candidate` only after every check passes. The plugin candidate is a separate artifact. Compare both reports' version and source commit before preparing a release. CI artifacts support review; registry publication and release review remain separate steps. Build reports use `readinessAssessment: "manual"` because image packing does not certify deployment readiness.
 
 On the intended Linux x86-64 Docker host, put the reviewed archive, checksum and report in one directory and run:
 
