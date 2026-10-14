@@ -18,6 +18,8 @@ With the speech/browser images and Chromium installed, `pnpm verify:matrix-chat-
 
 `pnpm verify:marketplace` uses the locked ClawHub inspector, performs a publication dry-run and produces an inspected package archive, checksum and source-bound inventory under `.cache/release/`. It does not publish. See [distribution checks](marketplace-distribution.md).
 
+`pnpm verify:released-client` downloads the checksum-pinned Element Call release, runs its unmodified standalone application and validates real Korean/English speech, pinned devices and independent history after leave/rejoin. It needs the speech image, Chromium and Docker, with no hosted account. The microphone is a controlled browser MediaStream fixture. See [released-client evidence](released-client-integration.md) for its exact mode and limits.
+
 Coverage is enforced per file at 100% for statements, branches, functions, and lines across the plugin, shared core, and worker runtime sources. Generated bundles, dependencies, tests, and build tooling are outside the runtime coverage scope. Build and package checks validate those artifacts separately.
 
 Tests must exercise security decisions, invalid inputs, cancellation, concurrency, failure recovery, and transport boundaries. Full unit coverage does not establish Matrix calling interoperability. The release process also requires a real encrypted call with actual audio.

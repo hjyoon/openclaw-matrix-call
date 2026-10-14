@@ -62,6 +62,6 @@ An optional live-model attempt on 2026-10-14 stopped during initial production-d
 
 The authorization service reaches the real Synapse OpenID userinfo endpoint through a temporary loopback HTTPS proxy. That proxy has a disposable self-signed test certificate, so certificate verification is disabled only inside this isolated test authorization-service container. Production clients retain the TLS requirement; no insecure setting is added to the worker deployment.
 
-No released Matrix client application has an interoperability claim yet. Future checks must cover modern sticky membership, supported client versions, network interruption, concurrent calls, and actual spoken input/output through the complete agent pipeline.
+The separate [Element Call 0.28.0 check](released-client-integration.md) passes actual speech and leave/rejoin in standalone compatibility mode with one trusted backend. Future checks must cover modern sticky membership, supported client versions, network interruption, concurrent calls, and actual spoken input/output through the complete agent pipeline.
 
 GitHub Actions runs media, Matrix protocol-fixture and extended real speech checks in isolated runners. Local development uses the same commands without a GitHub or hosted-vendor account. Test credentials, crypto stores, databases, profiles, and containers are removed afterward. Test containers share host loopback to reach disposable services; production deployment uses the separately checked shared-network-namespace Compose configuration, without host networking.

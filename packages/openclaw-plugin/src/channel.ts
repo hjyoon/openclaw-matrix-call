@@ -52,7 +52,7 @@ export const matrixCallChannel: ChannelPlugin<MatrixCallAccount> = {
     resolveAccount,
     isEnabled: (account) => account.enabled,
     isConfigured: () => false,
-    unconfiguredReason: () => "Assistant readiness and released-client interoperability remain unverified",
+    unconfiguredReason: () => "Assistant readiness and supported deployment setup remain unverified",
     resolveAllowFrom: ({ cfg }) => resolveAccount(cfg).policy?.owners.slice() ?? [],
   },
 };

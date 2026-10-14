@@ -8,7 +8,7 @@ Matrix messaging support does not imply that a client implements a compatible ca
 
 | Protocol | Adapter responsibility | Current implementation |
 | --- | --- | --- |
-| MatrixRTC | Membership, focus discovery, authenticated participant binding, conference media, encryption keys | State-membership SDK peers pass encrypted audio, real speech and explicit OpenID focus authorization; homeserver-mediated discovery, sticky-mode integration and released-client interoperability pending |
+| MatrixRTC | Membership, focus discovery, authenticated participant binding, conference media, encryption keys | State-membership SDK peers pass encrypted audio, real speech and explicit OpenID focus authorization; Element Call 0.28.0 standalone compatibility passes actual speech and leave/rejoin with one trusted backend; broader modes and clients pending |
 | Matrix VoIP | `m.call.*` signaling, SDP/ICE negotiation, party identifiers, direct WebRTC audio | Planned; no audio interoperability claim |
 
 MatrixRTC and legacy Matrix VoIP are separate transports. A client implementing only legacy VoIP must not be treated as a MatrixRTC client, and a legacy invite must not be converted into a conference without an explicit supported negotiation path.
@@ -23,7 +23,7 @@ Both transports must expose the same core participant-verification and audio int
 
 Before a release claims support, record the client and version, homeserver and version, transport protocol, encryption mode, verification flow, and audio results. Include at least one non-Element client where an appropriate implementation exists. Check bidirectional audio, leave/rejoin, key rotation, network interruption, and independent simultaneous calls.
 
-Synthetic SDK peers pass real state-membership MatrixRTC key distribution, encrypted bidirectional audio, device persistence, and restart/rejoin; see [Matrix integration evidence](matrix-integration.md). No released Matrix client application has passed interoperability testing yet. Sticky membership and legacy VoIP remain unverified against real clients.
+Synthetic SDK peers pass real state-membership MatrixRTC key distribution, encrypted bidirectional audio, device persistence, and restart/rejoin; see [Matrix integration evidence](matrix-integration.md). [Element Call 0.28.0](released-client-integration.md) passes actual Korean/English speech and independent history after leave/rejoin in standalone compatibility mode with one trusted backend. Sticky membership and legacy VoIP remain unverified against real clients.
 
 ## Sources
 
