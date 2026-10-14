@@ -18,7 +18,7 @@ Build output and coverage reports are generated locally and are not committed. E
 
 `pnpm build` bundles the portable core, voice coordinator, and HTTP agent/speech adapters under `dist/`, and the native plugin under `packages/openclaw-plugin/dist/`. `pnpm verify:artifacts` loads these outputs, checks native plugin metadata, and verifies that portable bundles have no OpenClaw SDK dependency or other external package requirement. The plugin leaves public OpenClaw SDK imports external so the host supplies the tested SDK.
 
-The OpenClaw adapter's runtime boundary is described in [ADR 0004](adr/0004-delegated-openclaw-ingress.md). Its current turns are delegated and tool-free. SDK registration tests do not establish model-backed execution or RTC audio support.
+The OpenClaw adapter's runtime boundary is described in [ADR 0004](adr/0004-delegated-openclaw-ingress.md). Its current turns are delegated and tool-free. SDK registration tests do not establish model-backed execution or RTC audio support. The optional [live-model check](live-model-integration.md) uses a private access-only snapshot of an existing operator login to verify actual text inference and host-history recall. Its fake-credential validation runs in ordinary `pnpm check`; hosted model access is never required by CI.
 
 When changing the native channel configuration shape, run `pnpm schema:sync` and commit the manifest change with the source change. Artifact verification checks that `channelConfigs.matrix-call.schema` matches the runtime channel schema. This metadata lets a host validate configuration before loading plugin code.
 

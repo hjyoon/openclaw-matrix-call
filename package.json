@@ -13,6 +13,7 @@
     "verify:worker": "node scripts/verify-worker.mjs",
     "verify:plugin": "node scripts/verify-plugin.mjs",
     "verify:live-model": "node scripts/verify-live-model.mjs",
+    "verify:agent-live": "node scripts/verify-agent-live.mjs",
     "verify:container": "node scripts/verify-container.mjs",
     "verify:speech": "node scripts/verify-speech.mjs",
     "verify:speech-compose": "node scripts/verify-speech-compose.mjs",
