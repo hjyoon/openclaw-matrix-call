@@ -212,8 +212,14 @@ try {
     const measurement = await page.evaluate((id) => window.mediaTest.measure(id), identities[1]);
     return measurement.encrypted && measurement.rms > 0.03 && Math.abs(measurement.frequency - 660) < 35;
   }, "rotated remote audio after rejoin");
-  await pages[1].evaluate((id) => window.matrixTest.verify(id), identities[0]);
-  await page.evaluate((id) => window.matrixTest.verify(id), identities[1]);
+  for (const [participant, identity, account] of [[pages[1], identities[0], accounts[0]], [page, identities[1], accounts[1]]]) {
+    await waitFor(async () => {
+      try {
+        const proof = await participant.evaluate((id) => window.matrixTest.verify(id), identity);
+        return proof.userId === account.userId && proof.deviceId === account.deviceId && proof.deviceVerified && proof.mediaEncrypted;
+      } catch { return false; }
+    }, "fresh authenticated participant after rejoin");
+  }
   assert.equal((await restoredControl.request("/v1/media/leave", { sessionId: restoredSession.value.sessionId })).status, 200);
   assert.equal((await controls[1].request("/v1/media/leave", { sessionId: sessions[1] })).status, 200);
   const driver = await verifyBrowserDriver({ root, directory, api, waitFor, homeserver, registrationSecret, roomId: room.room_id,
