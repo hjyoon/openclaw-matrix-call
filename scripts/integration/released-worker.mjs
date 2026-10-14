@@ -9,11 +9,11 @@ import { installRuntimeProbe } from "./browser-diagnostics.mjs";
 
 const exec = promisify(execFile);
 
-export async function startReleasedWorker({ root, data, configFile, controlSecretFile, port, waitFor, composition }) {
+export async function startReleasedWorker({ root, data, configFile, controlSecretFile, port, waitFor, composition, playbackTimeoutMs = 30000 }) {
   const image = process.env.MATRIX_CALL_RELEASED_BROWSER_IMAGE;
   if (!image) {
     const worker = await startBrowserWorker({ MATRIX_CALL_SECRET_FILE: controlSecretFile, MATRIX_CALL_PORT: String(port), MATRIX_CALL_BROWSER_CONFIG: configFile });
-    return { ...worker, evidence: { mode: "native" }, waitForPlayback: () => waitFor(() => !worker.voice.busy, "released-client playback completion"),
+    return { ...worker, evidence: { mode: "native" }, waitForPlayback: () => waitFor(() => !worker.voice.busy, "released-client playback completion", playbackTimeoutMs),
       diagnostics: async () => ({ driverAvailable: worker.driver.available, voiceBusy: worker.voice.busy }), verifySandbox: async () => {} };
   }
   const directory = composition?.directory ?? path.join(data, "worker-container"); await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -102,7 +102,7 @@ chromium.launchPersistentContext = async (...args) => {
           return result.proof;
         },
       },
-      waitForPlayback: (turn) => waitFor(async () => { const value = await state(); return value.resumes >= turn && value.inputs === value.resumes && !value.publishing && !value.failure; }, "released-client image playback completion"),
+      waitForPlayback: (turn) => waitFor(async () => { const value = await state(); return value.resumes >= turn && value.inputs === value.resumes && !value.publishing && !value.failure; }, "released-client image playback completion", playbackTimeoutMs),
       async diagnostics() {
         const value = JSON.parse((await exec("docker", ["inspect", "--format", "{{json .State}}", name])).stdout);
         const logs = await exec("docker", ["logs", name]);

@@ -32,6 +32,9 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
   let app; let speech; let gateway; let worker; let selected; let failure; let report; let replacement;
   const results = [];
   const liveModelFile = process.env.MATRIX_CALL_LIVE_MODEL_FILE;
+  const longReply = process.env.MATRIX_CALL_LIVE_LONG_REPLY === "1";
+  assert(!longReply || liveModelFile, "Long actual model speech requires private live-model settings");
+  const playbackTimeoutMs = longReply ? 75000 : 30000;
   const manifest = JSON.parse(await readFile(path.join(root, "tests/fixtures/speech/manifest.json"), "utf8"));
   try {
     app = await startReleasedClient({ root, directory: data, chromium, account: owner, homeserver, serverName, focusUrl, roomId });
@@ -43,14 +46,19 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
     await writeFile(credentialsFile, JSON.stringify({ baseUrl: homeserver, userId: bot.user_id, deviceId: bot.device_id, accessToken: bot.access_token }), { mode: 0o600 });
     await writeFile(controlSecretFile, randomBytes(32).toString("hex"), { mode: 0o600 }); const workerPort = speech.composition?.controlPort ?? await freePort();
     gateway = await startMatrixGateway({ root, directory: path.join(data, "gateway"), policy: { owners: [owner.user_id], rooms: [roomId], agents: ["main"] },
-      workerUrl: `http://127.0.0.1:${workerPort}`, controlSecretFile, reply: () => manifest[selected].reply, freePort, waitFor, matrixChat, liveModelFile });
+      workerUrl: `http://127.0.0.1:${workerPort}`, controlSecretFile, reply: () => manifest[selected].reply, freePort, waitFor, matrixChat, liveModelFile, longReply });
     await writeFile(agentSecretFile, gateway.agentSecret, { mode: 0o600 }); await writeFile(speechSecretFile, speech.secret, { mode: 0o600 });
     await writeFile(voiceFile, JSON.stringify({ agentId: "main", agent: { baseUrl: gateway.agentUrl, secretFile: agentSecretFile },
       speech: { baseUrl: speech.baseUrl, secretFile: speechSecretFile }, requestTimeoutMs: 70000, timeoutMs: 120000, allowInsecureLoopback: true }), { mode: 0o600 });
     await writeFile(configFile, JSON.stringify({ credentialsFile, profileDir: path.join(data, "worker-profile"), assetDir: path.join(root, "dist/browser-worker/assets"),
       assetPort: await freePort(), owners: [owner.user_id], rooms: [roomId], focusUrls: [focusUrl], sfuUrls: [sfuUrl],
       devices: [{ userId: owner.user_id, deviceId: owner.device_id, ...app.keys }], allowInsecureLoopback: true, voiceFile }), { mode: 0o600 });
-    worker = await startReleasedWorker({ root, data, configFile, controlSecretFile, port: workerPort, waitFor, composition: speech.composition });
+    worker = await startReleasedWorker({ root, data, configFile, controlSecretFile, port: workerPort, waitFor, composition: speech.composition, playbackTimeoutMs });
+    if (speech.composition) {
+      const ready = await fetch(`http://127.0.0.1:${workerPort}/readyz`, { signal: AbortSignal.timeout(5000) });
+      assert.equal(ready.status, 200); assert.deepEqual(await ready.json(), { ready: true });
+      assert.equal(gateway.state.turns.length, 0); assert.equal(speech.state.inputs.length, 0);
+    }
     await waitFor(() => app.page.evaluate(async ({ bot, keys, roomId }) => {
       const client = window.matrixclient; const crypto = client.getCrypto(); crypto.prepareToEncrypt(client.getRoom(roomId));
       const device = (await crypto.getUserDeviceInfo([bot.user_id], false)).get(bot.user_id)?.get(bot.device_id);
@@ -85,16 +93,22 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
         await app.page.getByRole("button", { name: "End call", exact: true }).click();
         if (speech.composition && process.env.MATRIX_CALL_OPERATOR_REPLACEMENT !== "0") {
           const keys = worker.driver.deviceKeys; const before = gateway.state.providerRequests.length;
+          replacement = await gateway.restart();
+          const unavailable = await fetch(`http://127.0.0.1:${workerPort}/readyz`, { signal: AbortSignal.timeout(5000) });
+          assert.equal(unavailable.status, 503);
           await worker.close(); worker = undefined;
-          replacement = { ...await gateway.restart(), ...await speech.restart() };
+          replacement = { ...replacement, ...await speech.restart() };
+          await gateway.restart();
           const voice = JSON.parse(await readFile(voiceFile, "utf8")); voice.speech.baseUrl = speech.baseUrl;
           await writeFile(voiceFile, JSON.stringify(voice), { mode: 0o600 });
-          worker = await startReleasedWorker({ root, data, configFile, controlSecretFile, port: workerPort, waitFor, composition: speech.composition });
+          worker = await startReleasedWorker({ root, data, configFile, controlSecretFile, port: workerPort, waitFor, composition: speech.composition, playbackTimeoutMs });
           assert.deepEqual(worker.driver.deviceKeys, keys);
+          assert.equal((await fetch(`http://127.0.0.1:${workerPort}/readyz`, { signal: AbortSignal.timeout(5000) })).status, 200);
           request = await gateway.control(`http://127.0.0.1:${workerPort}`);
           assert.equal((await request("/v1/media/status", {})).value.session, null);
           assert.equal(gateway.state.providerRequests.length, before);
-          replacement = { ...replacement, persistentWorkerDevice: true, noAutomaticCallOrModelReplay: true };
+          replacement = { ...replacement, persistentWorkerDevice: true, noAutomaticCallOrModelReplay: true,
+            stalePipelineUnavailable: true, freshPipelineReady: true, workerControlReconnected: true };
           console.log(JSON.stringify({ event: "operator-replacement-passed", ...replacement }));
         }
         await app.page.goto(app.url); await app.page.getByRole("button", { name: "Join call", exact: true }).waitFor();
@@ -107,7 +121,7 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
           try { return (await worker.driver.verify(reference, new AbortController().signal)).mediaEncrypted; } catch { return false; }
         }, "released-client encrypted microphone after rejoin");
       }
-      selected = language; const before = gateway.state.turns.length; const started = Date.now();
+      selected = language; const before = gateway.state.turns.length; const firstSynthesis = speech.state.syntheses.length; const started = Date.now();
       const bytes = await readFile(path.join(root, "tests/fixtures/speech", manifest[language].file)); assert.equal(createHash("sha256").update(bytes).digest("hex"), manifest[language].sha256);
       const audio = decodeWav(bytes); const input = audio.samples.subarray(language === "en" ? audio.sampleRate * 5 : 0);
       const peak = input.reduce((maximum, value) => Math.max(maximum, Math.abs(value)), 0); const samples = Array.from(input, (value) => Math.round(value * 0.8 * 32767 / peak));
@@ -124,6 +138,11 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
       assert.equal(turn.caller.userId, owner.user_id); assert.equal(turn.caller.deviceId, owner.device_id); assert(turn.caller.deviceVerified && turn.caller.mediaEncrypted);
       const history = await gateway.conversationEvidence(turn.conversationId); assert.equal(history.userTurns, index === 2 ? 1 : index + 1);
       const reply = gateway.state.replies[before];
+      const synthesized = speech.state.syntheses.slice(firstSynthesis);
+      assert.equal(synthesized.map((part) => part.text).join("").replace(/\s/g, ""), reply.text.replace(/\s/g, ""));
+      assert(synthesized.every((part) => part.seconds <= 10));
+      const outputSeconds = synthesized.reduce((sum, part) => sum + part.seconds, 0); assert(outputSeconds > 0 && outputSeconds <= 60);
+      if (longReply) assert(outputSeconds > 10 && synthesized.length > 1, "Long model output must use multiple bounded publications");
       if (liveModelFile) {
         assert.equal(gateway.state.providerRequests.length, 0);
         assert(language === "ko" ? /[가-힣]/.test(reply.text) : /[a-zA-Z]/.test(reply.text));
@@ -131,7 +150,8 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
       if (index === 0 || index === 2) conversations.push(turn.conversationId);
       if (index === 2) { assert.notEqual(conversations[0], conversations[1]); assert.equal(turn.messages.length, 1); }
       results.push({ call: index === 2 ? 2 : 1, language, peakRms, firstAudioMs, input: speech.state.inputs.at(-1),
-        replyCharacters: reply.text.length, replySha256: createHash("sha256").update(reply.text).digest("hex"), ...history });
+        replyCharacters: reply.text.length, replySha256: createHash("sha256").update(reply.text).digest("hex"),
+        synthesisSegments: synthesized.length, outputSeconds, ...history });
       console.log(JSON.stringify({ event: "released-client-speech-passed", client: app.pin.name, version: app.pin.version, ...results.at(-1) }));
     }
     assert.equal((await request("/v1/media/status", {})).value.session.state, "connected");
@@ -147,22 +167,26 @@ export async function verifyReleasedCall({ root, directory, chromium, api, waitF
       microphone: "controlled browser MediaStream fixture", engines: "real local CPU speech",
       agent: liveModelFile ? "installed Gateway with operator-configured live model" : "installed Gateway with deterministic provider", results,
       leaveAndRejoin: true, persistentClientDevice: true, independentCallHistory: true, encryptedMatrixChat: matrixChat.evidence,
-      coordinatedReplacement: replacement, modelInference: Boolean(liveModelFile) };
+      coordinatedReplacement: replacement, segmentedReplyRequested: longReply, modelInference: Boolean(liveModelFile) };
   } catch (error) {
     failure = error;
     console.log(JSON.stringify({ event: "released-client-call-failed", stage: worker ? "media" : app ? "worker setup" : "client setup", results: results.length,
       diagnostics: app?.diagnostics, worker: await worker?.diagnostics().catch(() => ({ unavailable: true })),
       agentRequests: gateway?.state.turns.length, agentReplies: gateway?.state.replies.length,
+      replyCharacters: gateway?.state.replies.at(-1)?.text.length,
       speechInputs: speech?.state.inputs.length, syntheses: speech?.state.syntheses.length,
       body: await app?.page.locator("body").innerText().then((text) => text.slice(0, 500)).catch(() => "unavailable") }));
   } finally {
-    const cleanup = await Promise.allSettled([gateway?.close(), worker?.close(), speech?.close(), app?.close()]);
-    const rejected = cleanup.filter((result) => result.status === "rejected").map((result) => result.reason);
+    const rejected = [];
+    for (const resource of [gateway, worker, speech, app]) {
+      try { await resource?.close(); } catch (error) { rejected.push(error); }
+    }
     if (rejected.length) failure = new AggregateError([...(failure ? [failure] : []), ...rejected], "Released-client verification cleanup failed");
   }
   if (failure) throw failure;
   await mkdir(path.join(root, ".cache/speech"), { recursive: true });
-  const filename = `released-client${process.env.MATRIX_CALL_OPERATOR_COMPOSE === "1" ? "-operator" : process.env.MATRIX_CALL_RELEASED_BROWSER_IMAGE ? "-image" : ""}${liveModelFile ? "-live" : ""}-result.json`;
+  const operator = process.env.MATRIX_CALL_OPERATOR_COMPOSE === "1" ? `-operator${process.env.MATRIX_CALL_OPERATOR_REPLACEMENT === "0" ? "-rejoin" : ""}` : undefined;
+  const filename = `released-client${operator ?? (process.env.MATRIX_CALL_RELEASED_BROWSER_IMAGE ? "-image" : "")}${liveModelFile ? "-live" : ""}${longReply ? "-long" : ""}-result.json`;
   await writeFile(path.join(root, ".cache/speech", filename), JSON.stringify(report, null, 2) + "\n");
   console.log(JSON.stringify({ event: "released-client-call-passed", ...report }));
   return report;
