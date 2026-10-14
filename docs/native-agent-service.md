@@ -33,6 +33,8 @@ The channel defaults to disabled. An enabled channel requires an explicit policy
 
 The standalone browser worker's external voice configuration can use `agent.baseUrl` set to `http://127.0.0.1:19793` and `agent.secretFile` set to its private copy of that same agent key. A container needs an explicitly configured network route to the Gateway loopback endpoint; an unrelated container's `127.0.0.1` refers to itself. Existing isolated Compose networking is described in [browser worker](browser-worker.md). Native worker control, enrollment and a complete operator setup flow still require implementation.
 
+After service restart or reload, reconnect the worker's agent adapter to negotiate the new audience. Do not replay prior turns while reconnecting; old adapters are intentionally rejected.
+
 ## Authority and lifecycle
 
 The service checks owner, room, logical agent, verified device, encrypted media, current membership expiry and the transcript sender. The dedicated key authenticates a trusted verifier/worker; it does not allow a public client to supply its own identity claims. The conversation UUID is bound to its initial caller and transport identity. Requests cannot rebind an existing OpenClaw session to another user or device.
@@ -46,5 +48,7 @@ Apply the channel section through `openclaw config patch --file <channel-setting
 Start and stop transitions are serialized. Reload of `channels.matrix-call` stops the old listener and cancels its host operation before starting a fresh service audience. Shutdown waits for the operation to settle, including a host that ignores its abort signal. A hung host can therefore delay shutdown or reload; the service never clears the slot merely to admit replacement work. Timeout, disconnect, idempotency and capacity behavior follow the [portable server contract](agent-protocol.md#portable-server-implementation).
 
 Listener installation and every host request use the managed instance's public `api.lifecycle.runInBackgroundContext` runner. This detaches the starting request's async context and selects the instance's current adopted registry after reload. The callback returns its host promise so the instance can drain it. Hosts without this capability are rejected during the runtime startup phase; disposed instances cannot admit new host work.
+
+Gateway shutdown may drain active host work before disposing plugin services. Keep the supervisor's shutdown grace above the configured agent deadline plus host cleanup time; a host that ignores abort can take longer. The [installed Gateway check](agent-integration.md) verifies restart, actual configuration reload and shutdown with a held provider request. Its model endpoint is a deterministic fixture; actual AI inference and a complete spoken call still require separate validation.
 
 The native channel continues to report unconfigured call support and `media: false` because worker control and call entry are unfinished. Signed text ingress alone does not establish voice readiness or released Matrix client interoperability.

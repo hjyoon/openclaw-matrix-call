@@ -12,9 +12,9 @@ Administrator tool execution and general-user approval require a supported host 
 
 | Requirement | Current evidence | Work before a calling alpha |
 | --- | --- | --- |
-| Native package installation | Packed archive installs and loads in a disposable OpenClaw 2026.10.2 profile | Recheck the final connected package on a clean supported Gateway |
-| Gateway-to-worker integration | Optional Gateway-owned signed agent service with explicit loopback configuration, delegated ingress, bounded idempotency and cancellation-safe start/stop/reload; SDK dispatch is unit-tested with an injected runner | Verify the installed service on a running Gateway, connect worker control, and finish native call entry |
-| Model-backed voice response | Signed deterministic agent fixtures exercise identity, history and cancellation | Dispatch through the supported OpenClaw SDK to an operator-configured model; test reply, history, abort and failure |
+| Native package installation | Packed archive installs and runs its signed agent service in a disposable OpenClaw 2026.10.2 Gateway | Recheck the final calling package and complete operator setup from an empty environment |
+| Gateway-to-worker integration | Gateway-owned signed agent service with real public SDK dispatch, bound history, idempotency, provider cancellation/failure, restart/reload audiences and active-turn shutdown | Connect worker control and finish native call entry |
+| Model-backed voice response | Real installed SDK dispatch reaches a deterministic model-provider HTTP fixture; encrypted Matrix speech checks use a separate agent fixture | Connect an operator-configured real model to the spoken path and test reply, history, abort and failure |
 | Real speech in encrypted calls | Korean/English turns pass real local engines through the production driver and restored browser image; leave cancels recognition | Broader input quality, sustained-call stability and target-server latency/resource measurements |
 | Device and service setup | Strict external configuration, persistent private profiles, explicit fingerprint pins, optional local speech Compose | Provide a reproducible enrollment/setup flow with useful configuration diagnostics and preserved device state |
 | Call entry | Signed room-specific media join/leave works in the isolated harness | Provide and test a documented user entry point; automatic incoming-call handling is unavailable |
@@ -25,7 +25,7 @@ Runtime coverage is 100% per non-empty source file. That checks exercised code p
 
 ## Next implementation order
 
-1. Verify the installed native agent service against a running supported Gateway, then connect worker control and native call entry.
+1. Connect native worker control and a documented call entry point to the verified signed agent service.
 2. Verify real model-backed spoken turns through that service and a released compatible Matrix client; investigate intermittent enrollment and later-input failures.
 3. Add setup/enrollment diagnostics and validate the complete instructions from an empty operator environment.
 4. Build and inspect release artifacts, finish marketplace validation and publish a version with its exact supported scope.

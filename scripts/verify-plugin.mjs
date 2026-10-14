@@ -5,6 +5,7 @@ import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { verifyInstalledAgent } from "./integration/openclaw-agent.mjs";
 
 const exec = promisify(execFile);
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -31,6 +32,7 @@ try {
   assert.equal(result[0].status, "loaded");
   assert.equal(result[0].enabled, true);
   console.log("Packed plugin installed and loaded in an isolated OpenClaw profile.");
+  await verifyInstalledAgent({ cli, directory, env });
 } finally {
   await rm(directory, { recursive: true, force: true });
 }
