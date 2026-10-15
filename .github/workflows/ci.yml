@@ -27,7 +27,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
-      - run: docker build -f deployment/worker.Dockerfile -t matrix-call-worker:0.1.0-alpha.3 .
+      - run: docker build -f deployment/worker.Dockerfile -t matrix-call-worker:0.1.0-alpha.4 .
       - run: pnpm verify:container
 
   media:
@@ -47,7 +47,7 @@ jobs:
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: pnpm verify:media
       - run: pnpm build
-      - run: docker build -f deployment/browser-worker.Dockerfile -t matrix-call-browser-worker:0.1.0-alpha.3 .
+      - run: docker build -f deployment/browser-worker.Dockerfile -t matrix-call-browser-worker:0.1.0-alpha.4 .
       - run: pnpm verify:browser-sandbox
       - run: MATRIX_CALL_SELF_CALLS=1 MATRIX_CALL_OUTBOUND=1 pnpm verify:browser-container
 
@@ -67,6 +67,7 @@ jobs:
       - run: pnpm build
       - run: pnpm verify:matrix-commands
       - run: MATRIX_CALL_SELF_CALLS=1 pnpm verify:matrix-commands
+      - run: MATRIX_CALL_SELF_CALLS=1 MATRIX_CALL_THIRD_PARTY_CALLS=1 pnpm verify:matrix-commands
 
   marketplace:
     runs-on: ubuntu-24.04
@@ -117,7 +118,7 @@ jobs:
       - run: pnpm verify:released-client
       - run: sha256sum --check SHA256SUMS
         working-directory: .cache/release-images
-      - run: docker load --input .cache/release-images/matrix-call-images-0.1.0-alpha.3-linux-amd64.tar.gz
+      - run: docker load --input .cache/release-images/matrix-call-images-0.1.0-alpha.4-linux-amd64.tar.gz
       - run: pnpm verify:released-client-image
       - run: pnpm verify:operator-setup
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
