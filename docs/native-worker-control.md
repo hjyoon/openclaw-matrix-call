@@ -89,3 +89,9 @@ The [actual command check](matrix-command-integration.md) passes fifteen Matrix 
 ## General-user self-calls
 
 Source alpha.3 adds explicit `selfCalls` opt-in on both native channel and browser worker. It binds general-user model calls to the trusted Matrix sender, discovers an existing encrypted private room and scopes status/leave to that user. Verified device setup remains required. See [self-calls](self-calls.md) for configuration, enrollment and integration evidence.
+
+## Explicit third-party requests
+
+Alpha.4 adds `channels.matrix-call.thirdPartyCalls: true`, requiring `selfCalls: true`. Any admitted Matrix requester can select an exact recipient ID with `matrix_call`, or use `/matrixcall call-to <recipient-id> <opening-message>` if the host admits that command. Omission still means the requester. Existing self-only installations remain self-only by default. The same alpha.3 worker capability/discovery protocol is used.
+
+Request ownership follows the trusted Matrix sender, while private-room discovery and ephemeral voice authorization follow the recipient. The requester can inspect and leave their requested session; another general user cannot. The callee can hang up through their client. Recipient device verification and exact encrypted two-person-room checks remain mandatory. This does not add scheduling or automatic enrollment. See [ordinary-user calling](self-calls.md) and [ADR 0027](adr/0027-third-party-call-requesters-and-recipients.md).

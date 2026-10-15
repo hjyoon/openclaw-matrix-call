@@ -22,6 +22,12 @@ Reuse the existing signed worker discovery and dial protocol. Its legacy `selfCa
 
 Provide `/matrixcall call-to <recipient-id> <opening-message>` for hosts that admit that command. Natural model invocation remains the ordinary-user path when host slash-command authorization is narrower than Matrix messaging admission.
 
+## Alternatives considered
+
+- Adding all requesters and callees to control owners grants unrelated administrative operations.
+- Treating the callee as the requester loses the authenticated request owner's status and cancellation boundary.
+- Silently broadening existing self-call settings changes recipient permissions on upgrade without an operator decision.
+
 ## Consequences
 
 An ordinary requester can ask the bot to ring another enrolled Matrix recipient, speak after a verified answer and cancel their own request. Recipient readiness is independent of requester readiness. Missing recipient setup fails before dialing. One active call, no automatic retries, and no scheduling remain the limits. Existing installations do not gain third-party dialing merely by updating the package. Real-client outgoing ringing and intelligible speech still require separate evidence.
