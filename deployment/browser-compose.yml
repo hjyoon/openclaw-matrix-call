@@ -3,7 +3,7 @@ services:
     build:
       context: ..
       dockerfile: deployment/browser-worker.Dockerfile
-    image: matrix-call-browser-worker:0.1.0-alpha.1
+    image: matrix-call-browser-worker:0.1.0-alpha.2
     restart: unless-stopped
     init: true
     read_only: true

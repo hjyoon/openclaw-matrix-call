@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const image = process.env.MATRIX_CALL_BROWSER_IMAGE ?? "matrix-call-browser-worker:0.1.0-alpha.1";
+const image = process.env.MATRIX_CALL_BROWSER_IMAGE ?? "matrix-call-browser-worker:0.1.0-alpha.2";
 const probe = `
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";

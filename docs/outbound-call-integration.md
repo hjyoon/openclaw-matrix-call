@@ -1,6 +1,6 @@
 # Outbound MatrixRTC integration
 
-On 2026-10-15, `MATRIX_CALL_OUTBOUND=1 pnpm verify:matrix` passed with disposable accounts and infrastructure. The stack was Synapse 1.162.0, matrix-js-sdk 43.0.0, Chromium 156.0.8078.4, authorization service 0.8.0 and LiveKit 1.13.9. The test uses the production browser worker and signed worker HTTP client.
+On 2026-10-15, `pnpm verify:matrix-outbound` (`MATRIX_CALL_OUTBOUND=1 pnpm verify:matrix`) passed with disposable accounts and infrastructure. The stack was Synapse 1.162.0, matrix-js-sdk 43.0.0, Chromium 156.0.8078.4, authorization service 0.8.0 and LiveKit 1.13.9. The test uses the production browser worker and signed worker HTTP client.
 
 The caller and recipient occupy a private encrypted two-person room with no existing call. A signed dial request causes the recipient's independent SDK browser to receive an actual MatrixRTC `ring` notification, bound to the caller membership and configured lifetime. Before the recipient joins, status is `ringing` and no speech synthesis occurs.
 

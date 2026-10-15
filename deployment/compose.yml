@@ -3,7 +3,7 @@ services:
     build:
       context: ..
       dockerfile: deployment/worker.Dockerfile
-    image: matrix-call-worker:0.1.0-alpha.1
+    image: matrix-call-worker:0.1.0-alpha.2
     init: true
     read_only: true
     cap_drop:

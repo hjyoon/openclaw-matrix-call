@@ -17,7 +17,7 @@ const directory = await mkdtemp(path.join(tmpdir(), "matrix-call-speech-check-")
 const secretFile = path.join(directory, "secret");
 const configFile = path.join(directory, "speech.json");
 const secret = randomBytes(32).toString("hex");
-const image = "matrix-call-speech-worker:0.1.0-alpha.1";
+const image = "matrix-call-speech-worker:0.1.0-alpha.2";
 let container;
 try {
   await writeFile(secretFile, secret, { mode: 0o444 });

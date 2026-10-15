@@ -18,7 +18,7 @@ try {
     "--pids-limit=64", "--memory=256m", "--cpus=0.5",
     "--mount", `type=bind,src=${secretFile},dst=/run/secrets/matrix_call_secret,readonly`,
     "--env", "MATRIX_CALL_HOST=0.0.0.0", "--env", "MATRIX_CALL_SECRET_FILE=/run/secrets/matrix_call_secret",
-    "--publish", "127.0.0.1::19790", "matrix-call-worker:0.1.0-alpha.1",
+    "--publish", "127.0.0.1::19790", "matrix-call-worker:0.1.0-alpha.2",
   ]);
   container = result.stdout.trim();
   const { stdout } = await exec("docker", ["port", container, "19790/tcp"]);
