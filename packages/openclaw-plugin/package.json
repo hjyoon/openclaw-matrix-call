@@ -1,6 +1,6 @@
 {
   "name": "@hjyoon/openclaw-matrix-call",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Experimental Matrix calling integration with portable agent adapters",
   "license": "MIT",
   "type": "module",

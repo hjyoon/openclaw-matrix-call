@@ -1,8 +1,8 @@
 # Matrix Call for OpenClaw
 
-This is an experimental alpha package for OpenClaw 2026.10.2. It registers a Matrix Call channel descriptor, owner-only Matrix `/matrixcall` status/dial/join/leave commands, an optional owner-authorized `matrix_call` model tool and an administrator Gateway RPC. Media requires a separately configured worker.
+This is an experimental alpha package for OpenClaw 2026.10.2. It registers a Matrix Call channel descriptor, owner-only Matrix `/matrixcall` status/dial/join/leave commands, an optional requester-bound `matrix_call` model tool and an administrator Gateway RPC. Media requires a separately configured worker.
 
-The source candidate `0.1.0-alpha.2` adds owner-authorized `matrix_call` model tools and `/matrixcall dial` for assistant-initiated ringing and opening speech. It requires a matching outbound-capable browser worker. This candidate has not been published. See [outbound calls](https://github.com/hjyoon/openclaw-matrix-call/blob/main/docs/outbound-calls.md) for setup and current validation.
+The source candidate `0.1.0-alpha.3` adds opt-in `matrix_call` self-calling for ordinary Matrix users and `/matrixcall dial` for assistant-initiated ringing and opening speech. It requires a matching outbound-capable browser worker. This candidate has not been published. See [outbound calls](https://github.com/hjyoon/openclaw-matrix-call/blob/main/docs/outbound-calls.md) for setup and current validation.
 
 The previous public alpha.1, without outbound calling, can be installed explicitly:
 

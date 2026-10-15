@@ -19,3 +19,5 @@ Keep credentials and runtime state outside the repository. Use isolated test acc
 Document implementation status accurately. Require a real encrypted audio interoperability test before claiming support for a client or calling protocol.
 
 Target Matrix protocols rather than Element-specific UI behavior. Keep MatrixRTC and legacy Matrix VoIP signaling behind separate transport adapters. Publish tested protocol capabilities and client interoperability results; do not infer calling support from Matrix login or messaging alone.
+
+Keep control-owner authority separate from self-call participants. Bind ordinary-user calls to the trusted Matrix sender and a verified private room; preserve device verification and per-caller status/leave boundaries.
