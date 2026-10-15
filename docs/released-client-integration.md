@@ -2,6 +2,8 @@
 
 Checked locally: 2026-10-15. Element Call 0.28.0 passes encrypted Matrix command entry, actual Korean/English speech and leave/rejoin through the production native worker and browser image. This records one supported application configuration, rather than universal Matrix client support.
 
+A separate [installed-client outbound check](installed-client-outbound-audio.md) records operator-heard Korean/English announcements with Element X on iPhone and an existing older backend. It does not provide microphone recognition or model-loop evidence for that client.
+
 ## Reproduction
 
 Use the pinned Node/pnpm versions, Docker, installed test Chromium and the speech image:
