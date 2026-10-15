@@ -10,12 +10,17 @@ describe("browser worker configuration", () => {
     const config = parseBrowserConfig({ ...configuration, owners: [...configuration.owners, ...configuration.owners], rooms: ["!room", "!room"] }, credentials);
     expect(config.assetPort).toBe(19791);
     expect(config.credentials).toEqual(credentials);
-    expect(config.policy).toEqual({ owners: configuration.owners, rooms: ["!room"], focusUrls: configuration.focusUrls, sfuUrls: configuration.sfuUrls, devices: configuration.devices, allowInsecureLoopback: false });
+    expect(config.policy).toEqual({ owners: configuration.owners, rooms: ["!room"], focusUrls: configuration.focusUrls, sfuUrls: configuration.sfuUrls, devices: configuration.devices, allowInsecureLoopback: false, roomAliasFormat: "json-array" });
     for (const value of [config, config.credentials, config.policy, ...Object.values(config.policy).filter(Array.isArray), config.policy.devices[0]]) expect(Object.isFrozen(value)).toBe(true);
   });
 
   it("permits explicitly opted-in loopback endpoints for isolated checks", () => {
     expect(parseBrowserConfig({ ...configuration, allowInsecureLoopback: true, focusUrls: ["http://localhost:8080/"], sfuUrls: ["ws://[::1]:7880/"] }, { ...credentials, baseUrl: "http://127.0.0.1:8008/" }).credentials.baseUrl).toBe("http://127.0.0.1:8008");
+  });
+
+  it("preserves an explicitly selected room alias format and rejects automatic negotiation", () => {
+    expect(parseBrowserConfig({ ...configuration, roomAliasFormat: "legacy-pipe" }, credentials).policy.roomAliasFormat).toBe("legacy-pipe");
+    expect(() => parseBrowserConfig({ ...configuration, roomAliasFormat: "auto" }, credentials)).toThrow();
   });
 
   it.each(["http://focus.example.org", "https://user:password@focus.example.org", "https://focus.example.org?q=1", "https://focus.example.org/#fragment"])("rejects insecure or ambiguous endpoints: %s", (url) => {

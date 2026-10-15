@@ -30,6 +30,7 @@ Number records in order. An accepted ADR is a historical record, not a second in
 | [0020](0020-capture-continuity-on-membership-renewal.md) | Accepted | Preserve bounded capture only across unchanged active membership bindings and nondecreasing lifetimes |
 | [0021](0021-local-gateway-worker-networking.md) | Accepted | Optional explicit host-loopback route for a native Linux Gateway and separately restricted Docker workers |
 | [0022](0022-authenticated-pipeline-readiness.md) | Accepted | Bounded fresh readiness checks with existing service audiences and separate configuration/caller authority |
+| [0023](0023-explicit-legacy-focus-room-encoding.md) | Accepted | Operator-selected older focus room encoding without response-driven fallback |
 
 ## Record format
 

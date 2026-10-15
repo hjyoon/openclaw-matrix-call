@@ -14,6 +14,7 @@ export type BrowserPolicy = Readonly<{
   rooms: readonly string[];
   focusUrls: readonly string[];
   sfuUrls: readonly string[];
+  roomAliasFormat?: "json-array" | "legacy-pipe";
   devices: readonly DevicePin[];
   allowInsecureLoopback: boolean;
 }>;

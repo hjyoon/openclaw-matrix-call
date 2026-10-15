@@ -4,6 +4,8 @@ Status: Accepted
 
 The implementation's legacy discovery-format requirement is refined by [ADR 0018](0018-modern-livekit-transport-config.md). Authorization and credential boundaries below remain current.
 
+[ADR 0023](0023-explicit-legacy-focus-room-encoding.md) adds an explicit operator-selected older room encoding without changing these authorization boundaries.
+
 Date: 2026-10-13
 
 ## Context

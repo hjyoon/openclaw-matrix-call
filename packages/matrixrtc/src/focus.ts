@@ -26,6 +26,7 @@ export interface FocusAuthorizationPort {
 export type OpenIdFocusOptions = Readonly<{
   focusUrls: readonly string[];
   sfuUrls: readonly string[];
+  roomAliasFormat?: "json-array" | "legacy-pipe";
   allowInsecureLoopback?: boolean;
   timeoutMs?: number;
   now?: () => number;
@@ -103,17 +104,19 @@ export class OpenIdFocusAuthorizer implements FocusAuthorizationPort {
   readonly #focuses: ReadonlySet<string>;
   readonly #sfus: ReadonlySet<string>;
   readonly #insecure: boolean;
+  readonly #roomAliasFormat: "json-array" | "legacy-pipe";
   readonly #timeout: number;
   readonly #now: () => number;
   readonly #fetch: typeof globalThis.fetch;
 
-  constructor({ focusUrls, sfuUrls, allowInsecureLoopback = false, timeoutMs = 30_000, now = Date.now, fetch: fetcher = globalThis.fetch.bind(globalThis) }: OpenIdFocusOptions) {
-    if (focusUrls.length < 1 || focusUrls.length > 32 || sfuUrls.length < 1 || sfuUrls.length > 32 || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000) {
+  constructor({ focusUrls, sfuUrls, roomAliasFormat = "json-array", allowInsecureLoopback = false, timeoutMs = 30_000, now = Date.now, fetch: fetcher = globalThis.fetch.bind(globalThis) }: OpenIdFocusOptions) {
+    if (focusUrls.length < 1 || focusUrls.length > 32 || sfuUrls.length < 1 || sfuUrls.length > 32 || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000 || !["json-array", "legacy-pipe"].includes(roomAliasFormat)) {
       throw new FocusAuthorizationError("invalid-config");
     }
     this.#focuses = new Set(focusUrls.map((url) => endpoint(url, false, allowInsecureLoopback)));
     this.#sfus = new Set(sfuUrls.map((url) => endpoint(url, true, allowInsecureLoopback)));
     this.#insecure = allowInsecureLoopback;
+    this.#roomAliasFormat = roomAliasFormat;
     this.#timeout = timeoutMs;
     this.#now = now;
     this.#fetch = fetcher;
@@ -140,7 +143,8 @@ export class OpenIdFocusAuthorizer implements FocusAuthorizationPort {
     };
     if (!current()) throw new FocusAuthorizationError("membership-changed");
     try {
-      const digest = await cancellable(crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([source.roomId, source.slotId]))), bounded);
+      const aliasInput = this.#roomAliasFormat === "legacy-pipe" ? `${source.roomId}|${source.slotId}` : JSON.stringify([source.roomId, source.slotId]);
+      const digest = await cancellable(crypto.subtle.digest("SHA-256", new TextEncoder().encode(aliasInput)), bounded);
       const roomAlias = btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/=+$/, "");
       const token = openIdSchema.safeParse(await cancellable(source.client.getOpenIdToken(), bounded));
       if (!token.success || token.data.matrix_server_name !== member.userId.slice(member.userId.indexOf(":") + 1)) throw new FocusAuthorizationError("invalid-response");

@@ -61,6 +61,32 @@ describe("OpenIdFocusAuthorizer", () => {
     }));
   });
 
+  it("accepts the older backend room encoding only when explicitly configured", async () => {
+    const f = fixture();
+    const legacyRoom = createHash("sha256").update("!room|m.call#ROOM").digest("base64").replace(/=+$/, "");
+    f.fetcher.mockImplementation(async () => response({ url: "wss://sfu.example.org", jwt: jwt({ ...claims, video: { ...claims.video, room: legacyRoom } }) }));
+    await expect(f.authorizer.authorize(f.source, f.signal)).rejects.toThrow("identity-mismatch");
+    const legacy = new OpenIdFocusAuthorizer({ ...f.options, roomAliasFormat: "legacy-pipe" });
+    expect((await legacy.authorize(f.source, f.signal)).identity).toBe(member.participantId);
+    f.fetcher.mockResolvedValue(response());
+    await expect(legacy.authorize(f.source, f.signal)).rejects.toThrow("identity-mismatch");
+  });
+
+  it.each(["room", "participant"])("binds older backend grants to the exact %s", async (mismatch) => {
+    const f = fixture();
+    const legacyRoom = createHash("sha256").update(`${mismatch === "room" ? "!other" : "!room"}|m.call#ROOM`).digest("base64").replace(/=+$/, "");
+    f.fetcher.mockResolvedValue(response({ url: "wss://sfu.example.org", jwt: jwt({ ...claims, sub: mismatch === "participant" ? "other" : member.participantId, video: { ...claims.video, room: legacyRoom } }) }));
+    const legacy = new OpenIdFocusAuthorizer({ ...f.options, roomAliasFormat: "legacy-pipe" });
+    await expect(legacy.authorize(f.source, f.signal)).rejects.toThrow("identity-mismatch");
+  });
+
+  it("rejects untyped room encoding options before obtaining OpenID", () => {
+    const f = fixture();
+    expect(() => new OpenIdFocusAuthorizer({ ...f.options, roomAliasFormat: "auto" as "json-array" })).toThrow("invalid-config");
+    expect(f.getOpenIdToken).not.toHaveBeenCalled();
+    expect(f.fetcher).not.toHaveBeenCalled();
+  });
+
   it("uses real loopback HTTP without an SFU signing key or a Gateway credential", async () => {
     let received: unknown;
     const now = Date.now();

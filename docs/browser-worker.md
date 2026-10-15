@@ -44,6 +44,8 @@ Browser configuration for the supplied Compose file:
 
 Replace every example value. Before initializing crypto, the worker checks the authenticated token's actual user and device with the public Matrix `whoami` API. URLs require HTTPS/WSS. `allowInsecureLoopback: true` permits only loopback HTTP/WS for isolated checks; it does not enable remote plaintext endpoints. Focus and SFU endpoints are explicit trusted configuration; [authorization](focus-authorization.md) never accepts endpoints supplied by a call request.
 
+In source builds after alpha.1, `roomAliasFormat` defaults to `json-array`. An explicitly reviewed authorization service 0.4.1 deployment can select `legacy-pipe`. All trusted focuses in that worker must use the selected encoding. The public alpha.1 worker does not include this option, and older-backend encrypted audio needs separate interoperability evidence.
+
 The persistent profile must be a real directory owned by the worker with mode `0700`. A `0600` manifest binds the homeserver, user, device, stable asset origin, and public keys. Chromium provides exclusive profile locking. Never start two crypto clients against this profile. A new profile cannot enroll a device that already has published keys; restore its entire private profile or issue another new device. Changing the asset port changes the IndexedDB origin and requires an explicit migration, currently unsupported. Keep the port stable when restoring state.
 
 ## Running

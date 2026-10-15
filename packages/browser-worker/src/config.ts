@@ -27,6 +27,7 @@ const configSchema = z.object({
   rooms: z.array(matrixRoomIdSchema).min(1).max(256),
   focusUrls: endpoints,
   sfuUrls: endpoints,
+  roomAliasFormat: z.enum(["json-array", "legacy-pipe"]).default("json-array"),
   devices: z.array(z.object({ userId: mxid, deviceId, ed25519: key, curve25519: key }).strict()).min(1).max(256),
   allowInsecureLoopback: z.boolean().default(false),
 }).strict();
@@ -56,6 +57,7 @@ export function parseBrowserConfig(value: unknown, credentials: unknown) {
     sfuUrls: Object.freeze(config.sfuUrls.map((url) => endpoint(url, ["wss:"], config.allowInsecureLoopback))),
     devices: Object.freeze(devices.map((pin) => Object.freeze(pin))),
     allowInsecureLoopback: config.allowInsecureLoopback,
+    roomAliasFormat: config.roomAliasFormat,
   });
   const matrix: MatrixCredentials = Object.freeze({ ...identity, baseUrl: endpoint(identity.baseUrl, ["https:"], config.allowInsecureLoopback) });
   return Object.freeze({
