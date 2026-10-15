@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { matrixRoomIdSchema } from "@matrix-call/core";
 import type { RtcTransportPort } from "@matrix-call/core";
-import { mediaJoinSchema as joinSchema, mediaLeaveSchema as leaveSchema, mediaStatusRequestSchema as statusSchema } from "./protocol.js";
+import { mediaDialSchema, mediaJoinSchema as joinSchema, mediaLeaveSchema as leaveSchema, mediaStatusRequestSchema as statusSchema, type MediaDialRequest } from "./protocol.js";
 
 export class MediaControlError extends Error {
-  constructor(readonly code: "invalid-request" | "forbidden-room" | "busy" | "not-found" | "closed" | "backend-failed" | "session-reused" | "capacity-exceeded") {
+  constructor(readonly code: "invalid-request" | "forbidden-room" | "forbidden-recipient" | "transport-unavailable" | "busy" | "not-found" | "closed" | "backend-failed" | "session-reused" | "capacity-exceeded") {
     super(code);
     this.name = "MediaControlError";
   }
@@ -17,6 +17,7 @@ type MediaSession = {
   controller: AbortController;
   task: Promise<void>;
   connected: boolean;
+  outbound: boolean;
   cleanup?: Promise<void>;
 };
 
@@ -34,7 +35,8 @@ function cancellable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 
 export class WorkerMediaController {
   readonly #rooms: ReadonlySet<string>;
-  readonly #transport: Pick<RtcTransportPort, "connect" | "disconnect">;
+  readonly #transport: Pick<RtcTransportPort, "connect" | "disconnect"> & { dial?: (request: MediaDialRequest, signal: AbortSignal) => Promise<void> };
+  readonly #recipients: ReadonlySet<string>;
   readonly #timeout: number;
   readonly #maxSessions: number;
   readonly #accepted = new Set<string>();
@@ -42,42 +44,59 @@ export class WorkerMediaController {
   #closed = false;
   #shutdown: Promise<void> | undefined;
 
-  constructor({ rooms, transport, timeoutMs = 30_000, maxSessions = 4096 }: { rooms: readonly string[]; transport: Pick<RtcTransportPort, "connect" | "disconnect">; timeoutMs?: number; maxSessions?: number }) {
+  constructor({ rooms, transport, recipients = [], timeoutMs = 30_000, maxSessions = 4096 }: { rooms: readonly string[]; transport: Pick<RtcTransportPort, "connect" | "disconnect"> & { dial?: (request: MediaDialRequest, signal: AbortSignal) => Promise<void> }; recipients?: readonly string[]; timeoutMs?: number; maxSessions?: number }) {
     const parsed = z.array(matrixRoomIdSchema).min(1).max(256).safeParse(rooms);
     if (!parsed.success || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000 ||
-      !Number.isInteger(maxSessions) || maxSessions < 1 || maxSessions > 65536) throw new MediaControlError("invalid-request");
+        !Number.isInteger(maxSessions) || maxSessions < 1 || maxSessions > 65536 ||
+        !z.array(mediaDialSchema.shape.recipientId).max(256).safeParse(recipients).success) throw new MediaControlError("invalid-request");
     this.#rooms = new Set(parsed.data);
     this.#transport = transport;
     this.#timeout = timeoutMs;
     this.#maxSessions = maxSessions;
+    this.#recipients = new Set(recipients);
   }
+
+  get canDial(): boolean { return Boolean(this.#transport.dial && this.#recipients.size); }
 
   status(value: unknown = {}) {
     if (!statusSchema.safeParse(value).success) throw new MediaControlError("invalid-request");
     const active = this.#active;
     return Object.freeze({ available: !this.#closed, session: active ? Object.freeze({ sessionId: active.id, roomId: active.roomId,
-      state: active.controller.signal.aborted ? "closing" : (active.connected ? "connected" : "connecting"),
+      state: active.controller.signal.aborted ? "closing" : (active.connected ? "connected" : (active.outbound ? "ringing" : "connecting")),
     }) : null });
   }
 
   async join(value: unknown, signal: AbortSignal) {
     const parsed = joinSchema.safeParse(value);
     if (!parsed.success) throw new MediaControlError("invalid-request");
-    if (!this.#rooms.has(parsed.data.roomId)) throw new MediaControlError("forbidden-room");
+    return this.#open(parsed.data, signal);
+  }
+
+  async dial(value: unknown, signal: AbortSignal) {
+    const parsed = mediaDialSchema.safeParse(value);
+    if (!parsed.success) throw new MediaControlError("invalid-request");
+    if (!this.canDial) throw new MediaControlError("transport-unavailable");
+    if (!this.#recipients.has(parsed.data.recipientId)) throw new MediaControlError("forbidden-recipient");
+    return this.#open(parsed.data, signal, parsed.data);
+  }
+
+  async #open(input: { roomId: string; sessionId?: string | undefined }, signal: AbortSignal, outbound?: MediaDialRequest) {
+    if (!this.#rooms.has(input.roomId)) throw new MediaControlError("forbidden-room");
     if (this.#closed || signal.aborted) throw new MediaControlError("closed");
     if (this.#active) throw new MediaControlError("busy");
-    const id = parsed.data.sessionId ?? randomUUID();
+    const id = input.sessionId ?? randomUUID();
     if (this.#accepted.has(id)) throw new MediaControlError("session-reused");
     if (this.#accepted.size >= this.#maxSessions) throw new MediaControlError("capacity-exceeded");
     this.#accepted.add(id);
-    const state: MediaSession = { id, roomId: parsed.data.roomId, controller: new AbortController(), task: Promise.resolve(), connected: false };
+    const state: MediaSession = { id, roomId: input.roomId, controller: new AbortController(), task: Promise.resolve(), connected: false, outbound: Boolean(outbound) };
     this.#active = state;
     const abort = () => state.controller.abort();
     signal.addEventListener("abort", abort, { once: true });
-    const timer = setTimeout(abort, this.#timeout);
+    const timer = setTimeout(abort, outbound ? outbound.ringTimeoutMs + this.#timeout : this.#timeout);
     state.task = Promise.resolve().then(async () => {
       state.controller.signal.throwIfAborted();
-      await this.#transport.connect(state.roomId, state.controller.signal);
+      if (outbound) await this.#transport.dial!(outbound, state.controller.signal);
+      else await this.#transport.connect(state.roomId, state.controller.signal);
       state.controller.signal.throwIfAborted();
       state.connected = true;
     }).catch(async () => {

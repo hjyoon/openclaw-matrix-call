@@ -32,6 +32,7 @@ Number records in order. An accepted ADR is a historical record, not a second in
 | [0022](0022-authenticated-pipeline-readiness.md) | Accepted | Bounded fresh readiness checks with existing service audiences and separate configuration/caller authority |
 | [0023](0023-explicit-legacy-focus-room-encoding.md) | Accepted | Operator-selected older focus room encoding without response-driven fallback |
 | [0024](0024-container-gateway-loopback-networking.md) | Accepted | Optional Gateway-container network sharing with separate worker authority and coordinated replacement |
+| [0025](0025-outbound-call-and-opening-speech.md) | Accepted | Explicit recipient-bound outbound calling and opening speech independent of scheduling |
 
 ## Record format
 
