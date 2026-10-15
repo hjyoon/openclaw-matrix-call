@@ -26,6 +26,8 @@ The worker still handles one call at a time. Other callers receive `busy`; they 
 
 ## Verification
 
-The change passes 1,283 tests with 100% per-file runtime statements, branches, functions and lines. `pnpm verify:matrix-self-calls` passes an actual non-owner call in an encrypted private room outside the configured owner room list, opening audio without an utterance, subsequent non-owner voice input/reply and unanswered cleanup. Speech and model services in this check are authenticated protocol fixtures.
+The change passes 1,284 tests with 100% per-file runtime statements, branches, functions and lines. `pnpm verify:matrix-self-calls` passes an actual non-owner call in an encrypted private room outside the configured owner room list, opening audio without an utterance, subsequent non-owner voice input/reply recipient-hangup cleanup and unanswered cleanup. Speech and model services in this check are authenticated protocol fixtures.
 
 `MATRIX_CALL_SELF_CALLS=1 pnpm verify:matrix-commands` passes actual Matrix chat through the installed native Gateway with an ordinary sender, private-room discovery and a model tool invocation. A forged administrator role and a third-party recipient do not cause a dial. The run records 18 chat replies, two outgoing dials, three ordinary joins and five completed disconnects. Its media/model are fixtures and its chat is unencrypted. Installed-client ringing and real speech require separate evidence.
+
+The [installed deployment](installed-self-calls.md) enables public bot mention/DM admission, preserves administrator authority and records exact runtime hashes and remaining phone-test limits.

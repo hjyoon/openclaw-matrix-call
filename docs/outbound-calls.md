@@ -21,3 +21,5 @@ The [installed alpha.2 candidate](installed-client-outbound-call.md) is ready wi
 ## Ordinary callers
 
 Alpha.3 adds opt-in [authenticated self-calls](self-calls.md). Every admitted Matrix sender can request a call to themselves after private-room and device setup. Model status and leave are scoped to that caller; administrator management remains separate.
+
+The [installed alpha.3 self-call deployment](installed-self-calls.md) enables this policy for ordinary Matrix requesters while preserving existing administrator permissions and device verification.
