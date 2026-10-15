@@ -663,3 +663,15 @@ describe("private self-call room discovery", () => {
     finally { await f.runtime.close(); }
   });
 });
+
+it("ends an answered outbound call when its exact recipient leaves", async () => {
+  const f = await outboundReady(); await f.runtime.connect("!room", { recipientId: f.remote.userId, ringTimeoutMs: 20000 });
+  try {
+    f.session.memberships = [f.local, f.remote]; await admit(f); await f.runtime.recipient(f.remote.userId);
+    f.session.emit(MatrixRTCSessionEvent.MembershipsChanged);
+    expect(f.runtime.status().connected).toBe(true);
+    f.session.memberships = [f.local]; f.session.emit(MatrixRTCSessionEvent.MembershipsChanged);
+    await vi.waitFor(() => expect(f.media.close).toHaveBeenCalled());
+    expect(f.runtime.status().connected).toBe(false);
+  } finally { await f.runtime.close(); }
+});

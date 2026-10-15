@@ -31,7 +31,7 @@ type ActiveCall = {
   closing: Promise<void> | undefined;
   input: VerifiedAudioInbox;
   playing: boolean;
-  outbound: Readonly<{ recipientId: string; expiresAtMs: number }> | undefined;
+  outbound: { recipientId: string; expiresAtMs: number; participantId?: string } | undefined;
 };
 
 export async function waitUntil(predicate: () => boolean, signal: AbortSignal): Promise<void> {
@@ -197,6 +197,7 @@ export class BrowserMatrixRuntime {
     let captureMemberships = memberships();
     const changed = (): void => {
       const current = memberships();
+      if (call.outbound?.participantId && !current.some((member) => member.participantId === call.outbound!.participantId)) { fail("recipient-left"); return; }
       if (!this.#localMembership(call) || !retainCapture(captureMemberships, current, Date.now())) call.input.reset();
       captureMemberships = current;
       refresh();
@@ -257,6 +258,7 @@ export class BrowserMatrixRuntime {
     const proof = await this.verify(reference, call.controller.signal);
     if (proof.userId !== recipientId) throw new Error("Outbound recipient identity changed");
     if (Date.now() >= call.outbound.expiresAtMs) throw new Error("Outbound answer deadline expired");
+    call.outbound.participantId = member.rtcBackendIdentity;
     return Object.freeze(reference);
   }
 

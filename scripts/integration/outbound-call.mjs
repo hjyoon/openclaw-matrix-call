@@ -93,9 +93,14 @@ export async function verifyOutboundCall({ root, directory, chromium, api, waitF
       await peer.evaluate(() => window.mediaTest.finishObservation());
       assert.equal(services.state.turns[0].caller.userId, recipient.userId);
     }
-    await client.leave(result.value.sessionId, signal());
-    assert.equal((await client.status(signal())).session, null);
-    await peer.evaluate(async () => { await window.matrixTest.leave(); await window.mediaTest.close(); });
+    if (selfCalls) {
+      await peer.evaluate(async () => { await window.matrixTest.leave(); await window.mediaTest.close(); });
+      await waitFor(async () => (await client.status(signal())).session === null, "recipient hangup releases the shared call slot");
+    } else {
+      await client.leave(result.value.sessionId, signal());
+      assert.equal((await client.status(signal())).session, null);
+      await peer.evaluate(async () => { await window.matrixTest.leave(); await window.mediaTest.close(); });
+    }
     await assert.rejects(client.dial({ ...input, ringTimeoutMs: 1000 }, signal()), (error) => error.code === "backend-failed");
     await waitFor(async () => (await client.status(signal())).session === null, "unanswered exact-session cleanup");
     assert.equal(services.state.syntheses, selfCalls ? 2 : 1, "An unanswered call must not synthesize an opening");
