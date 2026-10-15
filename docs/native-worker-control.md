@@ -39,6 +39,7 @@ Send these literal commands as the message body in a DM, or in a dedicated allow
 | Command | Result |
 | --- | --- |
 | `/matrixcall` or `/matrixcall status` | Worker availability and current permitted session |
+| `/matrixcall dial !room:example.org @owner:example.org Good morning!` | Source builds after alpha.1: ring the configured recipient and speak after a verified answer |
 | `/matrixcall join !room:example.org` | Open media in an explicitly configured room and return its session UUID |
 | `/matrixcall leave <session-uuid>` | Close that exact current session after backend cleanup |
 
@@ -50,9 +51,16 @@ The Gateway entry point is `matrixcall.control`, registered with `operator.admin
 
 ```sh
 openclaw gateway call matrixcall.control --params '{"operation":"status"}' --json
+openclaw gateway call matrixcall.control --params '{"operation":"dial","roomId":"!room:example.org","recipientId":"@owner:example.org","message":"Good morning!","ringTimeoutMs":20000}' --json
 openclaw gateway call matrixcall.control --params '{"operation":"join","roomId":"!room:example.org"}' --json
 openclaw gateway call matrixcall.control --params '{"operation":"leave","sessionId":"<session-uuid>"}' --json
 ```
+
+## Model tool in source builds after alpha.1
+
+The optional `matrix_call` tool accepts `dial`, `status` and exact-session `leave`. Add only `matrix_call` to `tools.alsoAllow` when the selected host tool profile requires explicit opt-in. The V2 tool factory requires host-provided `messageChannel: matrix`, `senderIsOwner: true`, an exact configured owner `requesterSenderId` and live `assertInvocationCurrent`. A retained tool rechecks that authority before effects and after asynchronous work. No request argument supplies identity or permissions. Delegated voice ingress remains tool-free and cannot use this entry.
+
+The tool advertises the configured room and recipient IDs. Initially recipients must be configured owners and have a dedicated encrypted two-person room with the bot. Adding someone to the owner policy grants control authority; do not use that as a substitute for a future separate non-owner recipient policy. A matching worker must advertise signed outbound capability. Use a control timeout long enough for ringing, connection and opening speech; the installed setup uses 90000 ms. Errors do not authorize retries. Scheduling and calls to arbitrary contacts are not implemented. See [outbound calls](outbound-calls.md).
 
 Use the returned UUID for leave. A missing or different UUID is rejected, rather than closing whichever session currently occupies the worker. The configured target-room policy applies to join and to status/leave; an independently started session in another room is not exposed. Errors contain only fixed codes. No agent tool is registered by this control entry point.
 

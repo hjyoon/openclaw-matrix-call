@@ -18,7 +18,8 @@ describe("native SDK registration", () => {
     const registerCommand = vi.fn();
     const registerService = vi.fn();
     const registerGatewayMethod = vi.fn();
-    const api = { registrationMode, registerChannel, registerCommand, registerService, registerGatewayMethod, lifecycle: {} } as unknown as OpenClawPluginApi;
+    const registerTool = vi.fn();
+    const api = { registrationMode, registerChannel, registerCommand, registerService, registerGatewayMethod, registerTool, lifecycle: {} } as unknown as OpenClawPluginApi;
     plugin.register(api);
     expect(plugin.id).toBe("matrix-call");
     expect(plugin.channelPlugin).toBe(matrixCallChannel);
@@ -27,13 +28,14 @@ describe("native SDK registration", () => {
       expect(registerChannel).toHaveBeenCalledWith({ plugin: matrixCallChannel });
     } else expect(registerChannel).not.toHaveBeenCalled();
     if (registrationMode === "full" || registrationMode === "tool-discovery") {
+      expect(registerTool).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ contextVersion: 2, create: expect.any(Function) }), { name: "matrix_call", optional: true });
       const command = registerCommand.mock.calls[0]![0];
       expect(command.name).toBe("matrixcall");
       expect(command.requireAuth).toBe(true);
       expect(command.channels).toEqual(["matrix"]);
       const result = await command.handler({ channel: "matrix", isAuthorizedSender: true, senderId: policy.owners[0] } as PluginCommandContext);
       expect(result.text).toContain("forbidden");
-    } else expect(registerCommand).not.toHaveBeenCalled();
+    } else { expect(registerCommand).not.toHaveBeenCalled(); expect(registerTool).not.toHaveBeenCalled(); }
     if (registrationMode === "full") {
       expect(registerService.mock.calls.map(([service]) => service.id)).toEqual(["matrix-call-agent", "matrix-call-worker"]);
       expect(registerGatewayMethod).toHaveBeenCalledWith("matrixcall.control", expect.any(Function), { scope: "operator.admin", profileAccess: "independent" });
@@ -45,7 +47,7 @@ describe("native SDK registration", () => {
     [(): boolean => { throw new Error("private transport error"); }, "control-failed"],
   ] as const)("requires current Gateway authority and redacts transport errors %#", async (authority, reason) => {
     const registerGatewayMethod = vi.fn();
-    plugin.register({ registrationMode: "full", registerChannel: vi.fn(), registerCommand: vi.fn(), registerService: vi.fn(), registerGatewayMethod, lifecycle: {} } as unknown as OpenClawPluginApi);
+    plugin.register({ registrationMode: "full", registerChannel: vi.fn(), registerCommand: vi.fn(), registerService: vi.fn(), registerGatewayMethod, registerTool: vi.fn(), lifecycle: {} } as unknown as OpenClawPluginApi);
     const handler = registerGatewayMethod.mock.calls[0]![1];
     const respond = vi.fn();
     await handler({ params: { operation: "status" }, respond, hasCurrentClientAuthority: authority });
@@ -68,7 +70,7 @@ describe("native SDK registration", () => {
     const registerService = vi.fn<OpenClawPluginApi["registerService"]>();
     const registerGatewayMethod = vi.fn<OpenClawPluginApi["registerGatewayMethod"]>();
     const runInBackgroundContext = <T>(operation: () => T): T => operation();
-    plugin.register({ registrationMode: "full", registerChannel: vi.fn(), registerCommand: vi.fn(), registerService, registerGatewayMethod, lifecycle: { runInBackgroundContext } } as unknown as OpenClawPluginApi);
+    plugin.register({ registrationMode: "full", registerChannel: vi.fn(), registerCommand: vi.fn(), registerService, registerGatewayMethod, registerTool: vi.fn(), lifecycle: { runInBackgroundContext } } as unknown as OpenClawPluginApi);
     const service = registerService.mock.calls[1]![0] as OpenClawPluginService;
     const handler = registerGatewayMethod.mock.calls[0]![1];
     const respond = vi.fn();

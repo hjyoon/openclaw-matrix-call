@@ -13,6 +13,7 @@ export default defineChannelPluginEntry({
   plugin: matrixCallChannel,
   registerFull(api) {
     const control = createNativeWorkerControl(api);
+    api.registerTool(control.tool, { name: "matrix_call", optional: true });
     api.registerCommand({
       name: "matrixcall",
       description: "Control configured Matrix Call worker media",

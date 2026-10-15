@@ -7,6 +7,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawPluginApi, PluginCommandContext } from "openclaw/plugin-sdk/channel-core";
 import type { OpenClawPluginServiceContext } from "openclaw/plugin-sdk/plugin-entry";
+import type { AnyAgentTool, OpenClawPluginToolContext } from "openclaw/plugin-sdk/core";
 import { createNativeWorkerControl, NativeControlError } from "../../packages/openclaw-plugin/src/control.js";
 import { createWorkerServer, WorkerHttpClient, WorkerHttpError, WorkerMediaController } from "../../packages/worker/src/index.js";
 
@@ -16,12 +17,12 @@ const join = { operation: "join", roomId: policy.rooms[0]! };
 const authorized = () => {};
 const signal = () => new AbortController().signal;
 
-async function fixture(limits = {}) {
+async function fixture(limits = {}, outbound = false) {
   const directory = await mkdtemp(path.join(tmpdir(), "matrix-call-control-test-"));
   const secretFile = path.join(directory, "worker.secret");
   await writeFile(secretFile, secret + "\n", { mode: 0o600 });
-  const transport = { connect: vi.fn(async (_room: string, _signal: AbortSignal) => {}), disconnect: vi.fn(async () => {}) };
-  const media = new WorkerMediaController({ rooms: [...policy.rooms, "!other:example.org"], transport });
+  const transport = { connect: vi.fn(async (_room: string, _signal: AbortSignal) => {}), disconnect: vi.fn(async () => {}), dial: vi.fn(async (_request: unknown, _signal: AbortSignal) => {}) };
+  const media = new WorkerMediaController({ rooms: [...policy.rooms, "!other:example.org"], transport: outbound ? transport : { connect: transport.connect, disconnect: transport.disconnect }, recipients: outbound ? policy.owners : [] });
   const { server } = createWorkerServer(secret, media);
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -349,5 +350,127 @@ describe("native worker control", () => {
 
   it.each([{ maxPending: 0 }, { maxPending: 257 }, { maxPending: 1.5 }, { maxOwned: 0 }, { maxOwned: 65537 }, { maxOwned: 1.5 }])("rejects invalid admission bounds %#", (limits) => {
     expect(() => createNativeWorkerControl({ lifecycle: { registerRuntimeLifecycle: vi.fn() } }, limits)).toThrow("invalid-request");
+  });
+});
+
+describe("native outbound control and agent tool", () => {
+  const dial = { operation: "dial", roomId: policy.rooms[0]!, recipientId: policy.owners[0]!, message: "Wake up. Good morning!" };
+  const context = (overrides: Partial<OpenClawPluginToolContext<2>> = {}): OpenClawPluginToolContext<2> => ({
+    messageChannel: "matrix", requesterSenderId: policy.owners[0]!, senderIsOwner: true, assertInvocationCurrent: vi.fn(), ...overrides,
+  });
+  const tool = (test: Awaited<ReturnType<typeof fixture>>, ctx = context()) => test.control.tool.create(ctx) as AnyAgentTool;
+
+  it("dials an exact owner through signed HTTP and cleans up its owned session", async () => {
+    const test = await fixture({}, true);
+    try {
+      await test.control.service.start(test.context);
+      const result = await test.control.execute(dial, authorized) as { sessionId: string };
+      expect(result).toMatchObject({ roomId: dial.roomId, state: "connected", recipientId: dial.recipientId, openingMessageDelivered: true });
+      expect(test.transport.dial).toHaveBeenCalledExactlyOnceWith({ roomId: dial.roomId, recipientId: dial.recipientId, message: dial.message, ringTimeoutMs: 20_000, sessionId: result.sessionId }, expect.any(AbortSignal));
+      expect(test.transport.connect).not.toHaveBeenCalled();
+      await test.control.service.stop!(test.context);
+      expect(test.media.status().session).toBeNull();
+    } finally { await test.cleanup(); }
+  });
+
+  it.each([
+    { recipientId: "@visitor:example.org" }, { roomId: "!unlisted" }, { recipientId: "invalid" },
+    { message: " " }, { ringTimeoutMs: 999 }, { ringTimeoutMs: 60001 }, { role: "owner" }, { sessionId: randomUUID() },
+  ])("refuses invalid or unauthorized outbound arguments before ringing %#", async (overrides) => {
+    const test = await fixture({}, true);
+    try {
+      await test.control.service.start(test.context);
+      await expect(test.control.execute({ ...dial, ...overrides }, authorized)).rejects.toBeInstanceOf(NativeControlError);
+      expect(test.transport.dial).not.toHaveBeenCalled();
+    } finally { await test.cleanup(); }
+  });
+
+  it("releases unsupported requests and bounds admitted outbound ownership", async () => {
+    const test = await fixture({ maxOwned: 1 });
+    try {
+      await test.control.service.start(test.context);
+      for (let i = 0; i < 2; i++) await expect(test.control.execute(dial, authorized)).rejects.toThrow("transport-unavailable");
+      await test.control.execute(join, authorized);
+      await expect(test.control.execute(dial, authorized)).rejects.toThrow("capacity-exceeded");
+    } finally { await test.cleanup(); }
+  });
+
+  it("accepts a literal owner dial command and preserves opening words", async () => {
+    const test = await fixture({}, true);
+    try {
+      await test.control.service.start(test.context);
+      const result = await test.command(`dial ${dial.roomId} ${dial.recipientId} ${dial.message}`);
+      expect(result.text).toContain('"openingMessageDelivered":true');
+      expect(test.transport.dial.mock.calls[0]![0]).toMatchObject({ message: dial.message });
+      expect((await test.command(`dial ${dial.roomId} ${dial.recipientId}`)).text).toContain("Usage:");
+    } finally { await test.cleanup(); }
+  });
+
+  it.each([
+    { messageChannel: "telegram" }, { messageChannel: undefined }, { senderIsOwner: false }, { senderIsOwner: undefined },
+    { requesterSenderId: undefined }, { requesterSenderId: "@visitor:example.org" },
+  ])("omits the model tool without trusted Matrix owner context %#", async (overrides) => {
+    const test = await fixture({}, true);
+    try {
+      await test.control.service.start(test.context);
+      expect(tool(test, context(overrides as Partial<OpenClawPluginToolContext<2>>))).toBeNull();
+      expect(test.transport.dial).not.toHaveBeenCalled();
+    } finally { await test.cleanup(); }
+  });
+
+  it("hides the tool until the service has a live policy", async () => {
+    const test = await fixture({}, true);
+    try {
+      expect(tool(test)).toBeNull();
+      await test.control.service.start(test.context);
+      expect(tool(test)).not.toBeNull();
+      await test.control.service.stop!(test.context);
+      expect(tool(test)).toBeNull();
+    } finally { await test.cleanup(); }
+  });
+
+  it("exposes a bounded model-visible tool and returns only confirmed opening delivery", async () => {
+    const test = await fixture({}, true);
+    try {
+      await test.control.service.start(test.context);
+      const ctx = context(); const call = tool(test, ctx);
+      expect(test.control.tool.contextVersion).toBe(2);
+      expect(call.name).toBe("matrix_call");
+      expect(call.parameters).toMatchObject({ type: "object", required: ["operation"], additionalProperties: false });
+      expect(call.getExecutionTimeoutMs!(dial)).toBe(300_000);
+      const result = await call.execute("call-1", dial);
+      expect(result.details).toMatchObject({ openingMessageDelivered: true, recipientId: dial.recipientId });
+      expect(ctx.assertInvocationCurrent).toHaveBeenCalled();
+      expect((await call.execute("call-2", { operation: "status" })).details).toMatchObject({ session: { state: "connected" } });
+      const sessionId = test.media.status().session!.sessionId;
+      expect((await call.execute("call-3", { operation: "leave", sessionId })).details).toEqual({ closed: true });
+    } finally { await test.cleanup(); }
+  });
+
+  it.each([null, join, { ...dial, senderIsOwner: true }])("rejects malformed model arguments independently of the advertised schema %#", async (input) => {
+    const test = await fixture({}, true);
+    try {
+      await test.control.service.start(test.context);
+      const result = await tool(test).execute("call", input);
+      expect(result).toMatchObject({ isError: true, details: { error: "invalid-request" } });
+      expect(test.transport.dial).not.toHaveBeenCalled();
+    } finally { await test.cleanup(); }
+  });
+
+  it.each(["host-revoked", "owner-revoked", "failed", "cancelled"])("rechecks retained invocation authority and redacts %s", async (kind) => {
+    const test = await fixture({}, true);
+    try {
+      await test.control.service.start(test.context);
+      const ctx = context(); const call = tool(test, ctx);
+      if (kind === "host-revoked") ctx.assertInvocationCurrent = () => { throw new Error("private revoked invocation"); };
+      if (kind === "owner-revoked") ctx.requesterSenderId = "@visitor:example.org";
+      if (kind === "failed") test.transport.dial.mockRejectedValueOnce(new Error("private backend failure"));
+      const abort = new AbortController(); if (kind === "cancelled") abort.abort();
+      const result = await call.execute("call", dial, abort.signal);
+      expect(result).toMatchObject({ isError: true });
+      expect(JSON.stringify(result)).not.toContain("private");
+      expect(result.content).toEqual([{ type: "text", text: expect.stringContaining("Do not retry automatically") }]);
+      if (kind !== "failed") expect(test.transport.dial).not.toHaveBeenCalled();
+    } finally { await test.cleanup(); }
   });
 });

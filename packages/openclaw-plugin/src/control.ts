@@ -3,15 +3,19 @@ import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import type { OpenClawPluginApi, PluginCommandContext } from "openclaw/plugin-sdk/channel-core";
 import type { OpenClawPluginService } from "openclaw/plugin-sdk/plugin-entry";
+import { jsonResult, type OpenClawPluginToolFactory, type AnyAgentTool } from "openclaw/plugin-sdk/core";
 import { readSecretFileSync } from "openclaw/plugin-sdk/secret-file";
 import { matrixRoomIdSchema, type CallPolicy } from "@matrix-call/core";
-import { WorkerHttpClient, WorkerHttpError } from "@matrix-call/worker";
+import { WorkerHttpClient, WorkerHttpError, mediaDialSchema } from "@matrix-call/worker";
 import { matrixCallChannel } from "./channel.js";
 
+const statusSchema = z.strictObject({ operation: z.literal("status") });
+const dialSchema = mediaDialSchema.omit({ sessionId: true }).extend({ operation: z.literal("dial") });
+const leaveSchema = z.strictObject({ operation: z.literal("leave"), sessionId: z.uuid().transform((value) => value.toLowerCase()) });
+const toolSchema = z.discriminatedUnion("operation", [statusSchema, dialSchema, leaveSchema]);
 const controlSchema = z.discriminatedUnion("operation", [
-  z.strictObject({ operation: z.literal("status") }),
+  statusSchema, dialSchema, leaveSchema,
   z.strictObject({ operation: z.literal("join"), roomId: matrixRoomIdSchema }),
-  z.strictObject({ operation: z.literal("leave"), sessionId: z.uuid().transform((value) => value.toLowerCase()) }),
 ]);
 
 type State = {
@@ -93,19 +97,26 @@ export function createNativeWorkerControl(api: Pick<OpenClawPluginApi, "lifecycl
     const current = state;
     if (!current || current.controller.signal.aborted) throw new NativeControlError("worker-unavailable");
     if (current.pending.size >= maxPending) throw new WorkerHttpError("busy");
-    if (parsed.data.operation === "join" && current.owned.size >= maxOwned) throw new WorkerHttpError("capacity-exceeded");
+    if ((parsed.data.operation === "join" || parsed.data.operation === "dial") && current.owned.size >= maxOwned) throw new WorkerHttpError("capacity-exceeded");
     const signal = callerSignal ? AbortSignal.any([current.controller.signal, callerSignal]) : current.controller.signal;
     const assertCurrent = () => { signal.throwIfAborted(); assertAuthorized(); };
     const operation = async () => {
       assertCurrent();
       const input = parsed.data;
-      if (input.operation === "join") {
+      if (input.operation === "join" || input.operation === "dial") {
         if (!current.policy.rooms.includes(input.roomId)) throw new NativeControlError("forbidden");
+        if (input.operation === "dial" && !current.policy.owners.includes(input.recipientId)) throw new NativeControlError("forbidden");
         const id = randomUUID();
         current.owned.add(id);
-        try { const result = await current.client.join(input.roomId, signal, id); assertCurrent(); return result; }
+        try {
+          const result = input.operation === "join"
+            ? await current.client.join(input.roomId, signal, id)
+            : await current.client.dial({ roomId: input.roomId, recipientId: input.recipientId, message: input.message, ringTimeoutMs: input.ringTimeoutMs }, signal, id);
+          assertCurrent();
+          return input.operation === "dial" ? Object.freeze({ ...result, recipientId: input.recipientId, openingMessageDelivered: true }) : result;
+        }
         catch (error) {
-          if (error instanceof WorkerHttpError && ["busy", "session-reused", "capacity-exceeded", "forbidden-room", "invalid-request"].includes(error.code)) current.owned.delete(id);
+          if (error instanceof WorkerHttpError && ["busy", "session-reused", "capacity-exceeded", "forbidden-room", "forbidden-recipient", "transport-unavailable", "invalid-request"].includes(error.code)) current.owned.delete(id);
           throw error;
         }
       }
@@ -127,6 +138,40 @@ export function createNativeWorkerControl(api: Pick<OpenClawPluginApi, "lifecycl
     finally { current.pending.delete(pending); }
   };
 
+  const tool: OpenClawPluginToolFactory<2> = {
+    contextVersion: 2,
+    create(context) {
+      const allowed = () => context.messageChannel === "matrix" && context.senderIsOwner === true &&
+        Boolean(context.requesterSenderId && state?.policy.owners.includes(context.requesterSenderId));
+      if (!allowed()) return null;
+      const assertAuthorized = () => { context.assertInvocationCurrent(); if (!allowed()) throw new NativeControlError("forbidden"); };
+      return {
+        name: "matrix_call", label: "Matrix Call", catalogMode: "direct-only",
+        description: "Call a configured Matrix recipient, ring their client, and speak the opening message after a verified answer without waiting for them to speak. Use only for an explicit owner request. Requires a configured private two-person room. No automatic retries or scheduling. Status and exact-session leave are also available.",
+        parameters: { type: "object", additionalProperties: false, required: ["operation"], properties: {
+          operation: { type: "string", enum: ["dial", "status", "leave"] },
+          roomId: { type: "string", enum: [...state!.policy.rooms], description: "Configured private two-person Matrix room ID for dial" },
+          recipientId: { type: "string", enum: [...state!.policy.owners], description: "Exact configured recipient Matrix user ID for dial" },
+          message: { type: "string", minLength: 1, maxLength: 1000, description: "Opening words to speak after the recipient answers" },
+          ringTimeoutMs: { type: "integer", minimum: 1000, maximum: 60000 },
+          sessionId: { type: "string", description: "Exact active session UUID, required for leave" },
+        } } as AnyAgentTool["parameters"],
+        getExecutionTimeoutMs: () => 300_000,
+        async execute(_id, value, signal) {
+          try {
+            assertAuthorized();
+            const input = toolSchema.safeParse(value);
+            if (!input.success) throw new NativeControlError("invalid-request");
+            return jsonResult(await execute(input.data, assertAuthorized, signal));
+          } catch (error) {
+            const code = nativeControlErrorCode(error);
+            return { content: [{ type: "text", text: `Matrix Call control unavailable: ${code}. Do not retry automatically.` }], details: { error: code }, isError: true };
+          }
+        },
+      };
+    },
+  };
+
   const command = async (context: PluginCommandContext) => {
     const assertAuthorized = () => {
       if ((context.channelId ?? context.channel) !== "matrix" || !context.isAuthorizedSender || !context.senderId || !state?.policy.owners.includes(context.senderId)) throw new NativeControlError("forbidden");
@@ -138,13 +183,14 @@ export function createNativeWorkerControl(api: Pick<OpenClawPluginApi, "lifecycl
       if (parts.length === 1 && parts[0] === "status") request = { operation: "status" };
       else if (parts.length === 2 && parts[0] === "join") request = { operation: "join", roomId: parts[1] };
       else if (parts.length === 2 && parts[0] === "leave") request = { operation: "leave", sessionId: parts[1] };
-      else return { text: "Usage: /matrixcall status | join <room-id> | leave <session-id>" };
+      else if (parts.length >= 4 && parts[0] === "dial") request = { operation: "dial", roomId: parts[1], recipientId: parts[2], message: parts.slice(3).join(" ") };
+      else return { text: "Usage: /matrixcall status | dial <room-id> <recipient-id> <opening-message> | join <room-id> | leave <session-id>" };
       const result = await execute(request, assertAuthorized);
-      return { text: `Matrix Call media control: ${JSON.stringify(result)}. Assistant readiness remains unverified.` };
+      return { text: `Matrix Call media control: ${JSON.stringify(result)}. ${parts[0] === "dial" ? "Opening speech sent after a verified answer." : "Assistant readiness remains unverified."}` };
     } catch (error) {
       const code = nativeControlErrorCode(error);
       return { text: `Matrix Call control unavailable: ${code}` };
     }
   };
-  return Object.freeze({ service, execute, command });
+  return Object.freeze({ service, execute, command, tool });
 }
