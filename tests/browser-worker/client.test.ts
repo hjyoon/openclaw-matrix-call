@@ -78,7 +78,7 @@ describe("Matrix browser device initialization", () => {
   it("marks only explicitly compared owner device keys as verified", async () => {
     const f = fixture();
     await enrollPinnedDevices(f.sdk, f.setup);
-    expect(f.cryptoApi.getUserDeviceInfo).toHaveBeenCalledWith([f.pin.userId], false);
+    expect(f.cryptoApi.getUserDeviceInfo).toHaveBeenCalledWith([f.pin.userId], true);
     expect(f.cryptoApi.setDeviceVerified).toHaveBeenCalledWith(f.pin.userId, f.pin.deviceId, true);
   });
 

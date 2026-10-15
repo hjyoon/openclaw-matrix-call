@@ -1,6 +1,6 @@
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -22,7 +22,7 @@ async function fixture() {
   await writeFile(secret, "ab".repeat(32), { mode: 0o600 });
   await writeFile(identity, JSON.stringify(credentials), { mode: 0o600 });
   await writeFile(config, JSON.stringify({ ...configuration, credentialsFile: identity }));
-  const driver = { available: true, waitForRecipient: vi.fn(async (_userId: string, _signal: AbortSignal): Promise<ParticipantReference> => ({ roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: "speaker" })), verify: vi.fn(async (reference: ParticipantReference) => ({ ...reference, userId: configuration.owners[0]!, deviceId: "OWNER", expiresAtMs: Date.now() + 30000, mediaEncrypted: true, deviceVerified: true })), publish: vi.fn(async (_audio: PcmAudio) => {}), onAudio: vi.fn((_listener: (reference: ParticipantReference, audio: PcmAudio) => Promise<void>) => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), close: vi.fn(async () => {}), onEnded: vi.fn((_listener: () => Promise<void>) => {}) };
+  const driver = { available: true, recipientRoom: vi.fn(async (_recipient: string, _preferred: string | undefined, _signal: AbortSignal) => "!private"), waitForRecipient: vi.fn(async (_userId: string, _signal: AbortSignal): Promise<ParticipantReference> => ({ roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: "speaker" })), verify: vi.fn(async (reference: ParticipantReference) => ({ ...reference, userId: configuration.owners[0]!, deviceId: "OWNER", expiresAtMs: Date.now() + 30000, mediaEncrypted: true, deviceVerified: true })), publish: vi.fn(async (_audio: PcmAudio) => {}), onAudio: vi.fn((_listener: (reference: ParticipantReference, audio: PcmAudio) => Promise<void>) => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), close: vi.fn(async () => {}), onEnded: vi.fn((_listener: () => Promise<void>) => {}) };
   start.mockReset().mockResolvedValue(driver);
   const agent = { id: "http-test", historyMode: "messages", check: vi.fn(async (_signal: AbortSignal) => {}), reply: vi.fn(async (_turn: AgentTurn) => ({ text: "Agent reply" })) };
   const speech = { check: vi.fn(async (_signal: AbortSignal) => {}), transcribe: vi.fn(async () => "Transcript"), synthesize: vi.fn(async () => ({ samples: new Int16Array([1, 2]), sampleRate: 16_000, channels: 1 as const })) };
@@ -241,5 +241,33 @@ describe("browser worker application", () => {
       expect(JSON.parse(log.mock.calls[0]![0] as string)).toEqual({ event: "browser-worker-started", voiceEnabled: false, port: (worker.server.address() as { port: number }).port });
       expect(JSON.stringify(log.mock.calls)).not.toContain(credentials.accessToken);
     } finally { await worker.close(); await f.clean(); }
+  });
+});
+
+describe("self-call browser application", () => {
+  it("uses a separate per-call voice policy for an ordinary recipient", async () => {
+    const f = await fixture(); await f.enableVoice();
+    const path = f.env.MATRIX_CALL_BROWSER_CONFIG;
+    await writeFile(path, JSON.stringify({ ...JSON.parse(await readFile(path, "utf8")), selfCalls: true }));
+    const userId = "@visitor:example.org";
+    f.driver.verify.mockImplementation(async (reference) => ({ ...reference, userId, deviceId: "VISITOR", expiresAtMs: Date.now() + 30000, mediaEncrypted: true, deviceVerified: true }));
+    const worker = await startBrowserWorker(f.env);
+    try {
+      expect(await worker.media.recipientRoom({ recipientId: userId }, new AbortController().signal)).toMatchObject({ roomId: "!private" });
+      await worker.media.dial({ recipientId: userId, roomId: "!private", message: "Hello.", selfCall: true }, new AbortController().signal);
+      expect(f.driver.connect).toHaveBeenCalledWith("!private", expect.any(AbortSignal), { recipientId: userId, ringTimeoutMs: 20000, selfCall: true });
+      await f.driver.onAudio.mock.calls[0]![0]({ roomId: "!private", rtcSessionId: "m.call#ROOM", participantId: "visitor" }, { samples: new Int16Array([1]), sampleRate: 16000, channels: 1 });
+      expect(f.agent.reply.mock.calls[0]![0].caller.userId).toBe(userId);
+    } finally { await worker.close(); await f.clean(); }
+  });
+
+  it.each(["Recipient device verification required", "Private encrypted two-person room required", "private backend detail", null])("reports a bounded room-discovery error: %s", async (reason) => {
+    const f = await fixture(); await f.enableVoice();
+    const path = f.env.MATRIX_CALL_BROWSER_CONFIG;
+    await writeFile(path, JSON.stringify({ ...JSON.parse(await readFile(path, "utf8")), selfCalls: true }));
+    f.driver.recipientRoom.mockRejectedValueOnce(reason === null ? null : new Error(reason));
+    const worker = await startBrowserWorker(f.env);
+    try { await expect(worker.media.recipientRoom({ recipientId: "@visitor:example.org" }, new AbortController().signal)).rejects.toThrow(reason?.includes("verification") ? "verification-required" : reason?.includes("two-person") ? "private-room-required" : "backend-failed"); }
+    finally { await worker.close(); await f.clean(); }
   });
 });

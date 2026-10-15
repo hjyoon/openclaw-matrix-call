@@ -145,6 +145,15 @@ export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
     }
   }
 
+  async recipientRoom(recipientId: string, preferredRoomId: string | undefined, signal: AbortSignal): Promise<string> {
+    signal.throwIfAborted();
+    if (this.#closed) throw new Error("Browser driver is unavailable");
+    const roomId = await this.#page.evaluate(({ recipientId, preferredRoomId }) => window.matrixCall.recipientRoom(recipientId, preferredRoomId), { recipientId, preferredRoomId });
+    signal.throwIfAborted();
+    if (this.#closed) throw new Error("Browser driver is unavailable");
+    return roomId;
+  }
+
   async publish(audio: PcmAudio, signal: AbortSignal): Promise<void> {
     validatePcm(audio); signal.throwIfAborted();
     if (!this.#connected) throw new Error("Browser driver is unavailable");

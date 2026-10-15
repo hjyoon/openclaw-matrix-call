@@ -58,3 +58,9 @@ describe("browser worker configuration", () => {
     } finally { await rm(directory, { recursive: true, force: true }); }
   });
 });
+
+it("enrolls compared non-owner devices only with explicit self-call support", () => {
+  const value = { ...configuration, selfCalls: true, devices: [{ ...configuration.devices[0]!, userId: "@visitor:example.org" }] };
+  expect(parseBrowserConfig(value, credentials).policy.selfCalls).toBe(true);
+  expect(() => parseBrowserConfig({ ...value, selfCalls: false }, credentials)).toThrow("Invalid browser worker device pins");
+});

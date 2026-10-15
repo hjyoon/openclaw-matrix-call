@@ -18,7 +18,7 @@ function fixture() {
   const log = vi.spyOn(console, "info").mockImplementation(() => {});
   const config = parseBrowserConfig(configuration, credentials);
   const keys = { ed25519: "A".repeat(43), curve25519: "B".repeat(43) };
-  const runtime = { recipient: vi.fn(async (_id: string): Promise<ParticipantReference | null> => null), takeAudio: vi.fn(async (): Promise<BrowserUtterance | null> => null), resumeAudio: vi.fn(async () => {}), initialize: vi.fn(async () => keys), prepare: vi.fn(async () => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), publish: vi.fn(async () => {}), verify: vi.fn(async (reference: object) => ({ ...reference, userId: "@owner:example.org", deviceId: "OWNER", expiresAtMs: Date.now() + 10_000, deviceVerified: true, mediaEncrypted: true })), status: vi.fn(() => ({ connected: true })) };
+  const runtime = { recipientRoom: vi.fn(async (_recipientId: string, _preferredRoomId: string | undefined) => "!private"), recipient: vi.fn(async (_id: string): Promise<ParticipantReference | null> => null), takeAudio: vi.fn(async (): Promise<BrowserUtterance | null> => null), resumeAudio: vi.fn(async () => {}), initialize: vi.fn(async () => keys), prepare: vi.fn(async () => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), publish: vi.fn(async () => {}), verify: vi.fn(async (reference: object) => ({ ...reference, userId: "@owner:example.org", deviceId: "OWNER", expiresAtMs: Date.now() + 10_000, deviceVerified: true, mediaEncrypted: true })), status: vi.fn(() => ({ connected: true })) };
   vi.stubGlobal("window", { createMatrixCall: vi.fn(() => runtime) });
   const page = { goto: vi.fn(async () => {}), waitForFunction: vi.fn(async (fn: () => boolean) => { expect(fn()).toBe(true); }), evaluate: vi.fn(async (fn: (arg: unknown) => unknown, arg: unknown) => fn(arg)), close: vi.fn(async () => {}) };
   const spare = { close: vi.fn(async () => {}) };
@@ -330,5 +330,22 @@ describe("persistent production browser driver", () => {
     g.runtime.publish.mockImplementation(async () => { cancel.abort(); });
     await expect(second.publish(pcm, cancel.signal)).rejects.toThrow();
     await vi.advanceTimersByTimeAsync(0); await second.close();
+  });
+});
+
+describe("self-call room driver", () => {
+  it.each(["ready", "pre-abort", "closed", "late-abort", "late-close"])("fences room discovery when %s", async (kind) => {
+    const f = fixture(); const driver = await BrowserDriver.start(f.config); const controller = new AbortController();
+    if (kind === "pre-abort") controller.abort(new Error("cancelled"));
+    if (kind === "closed") await driver.close();
+    if (kind === "late-abort" || kind === "late-close") f.runtime.recipientRoom.mockImplementationOnce(async () => {
+      if (kind === "late-abort") controller.abort(new Error("cancelled")); else await driver.close();
+      return "!private";
+    });
+    try {
+      const result = driver.recipientRoom("@visitor:example.org", "!source", controller.signal);
+      if (kind === "ready") { expect(await result).toBe("!private"); expect(f.runtime.recipientRoom).toHaveBeenCalledWith("@visitor:example.org", "!source"); }
+      else await expect(result).rejects.toThrow();
+    } finally { await driver.close(); }
   });
 });

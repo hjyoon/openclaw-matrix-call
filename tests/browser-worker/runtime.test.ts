@@ -28,16 +28,16 @@ function member(userId: string, deviceId: string): CallMembership {
   return { userId, deviceId, eventId: `$${userId}-${deviceId}`, memberId: `${userId}:${deviceId}`, rtcBackendIdentity: `${userId}:${deviceId}`, createdTs: () => created, getAbsoluteExpiry: () => undefined, getTransport: () => ({ type: "livekit", livekit_service_url: configuration.focusUrls[0], livekit_alias: "!room" }) } as unknown as CallMembership;
 }
 
-function fixture(captureAudio = false) {
-  const config = parseBrowserConfig(configuration, credentials);
+function fixture(captureAudio = false, selfCalls?: boolean) {
+  const config = parseBrowserConfig({ ...configuration, ...(selfCalls === undefined ? {} : { selfCalls }) }, credentials);
   const setup: BrowserSetup = { credentials: config.credentials, policy: config.policy, expectedKeys: undefined, captureAudio };
   const pin = setup.policy.devices[0]!;
   const local = member(credentials.userId, credentials.deviceId);
   const remote = member(pin.userId, pin.deviceId);
   const session = Object.assign(new EventEmitter(), { slotId: "m.call#ROOM", memberships: [local, remote], isJoined: vi.fn(() => true), joinRTCSession: vi.fn(), leaveRoomSession: vi.fn(async () => true), getOldestMembership: vi.fn(() => local) });
   const cryptoApi = { getOwnDeviceKeys: vi.fn(async () => ({ ed25519: "C".repeat(43), curve25519: "D".repeat(43) })), getUserDeviceInfo: vi.fn(async () => new Map([[pin.userId, new Map([[pin.deviceId, new Device({ userId: pin.userId, deviceId: pin.deviceId, algorithms: [], keys: new Map([[`ed25519:${pin.deviceId}`, pin.ed25519], [`curve25519:${pin.deviceId}`, pin.curve25519]]) })]])]])), setDeviceVerified: vi.fn(async () => {}), prepareToEncrypt: vi.fn(), getDeviceVerificationStatus: vi.fn(async () => new DeviceVerificationStatus({ localVerified: true })) };
-  const room = { getMyMembership: () => "join", hasEncryptionStateEvent: () => true, loadMembersIfNeeded: vi.fn(async () => {}), getJoinedMemberCount: vi.fn(() => 2), getMembersWithMembership: vi.fn(() => [{ userId: credentials.userId }, { userId: pin.userId }]) };
-  const client = Object.assign(new EventEmitter(), { whoami: vi.fn(async () => ({ user_id: credentials.userId, device_id: credentials.deviceId })), downloadKeysForUsers: vi.fn(async () => ({ failures: {}, device_keys: {} })), initRustCrypto: vi.fn(async () => {}), getCrypto: () => cryptoApi, startClient: vi.fn(async () => {}), stopClient: vi.fn(), getSyncState: vi.fn(() => SyncState.Prepared), getRoom: vi.fn(() => room), getUserId: () => credentials.userId, getDeviceId: () => credentials.deviceId, encryptAndSendToDevice: vi.fn(async () => {}), matrixRTC: { getRoomSession: () => session } });
+  const room = { roomId: "!room", getMyMembership: vi.fn(() => "join"), hasEncryptionStateEvent: vi.fn(() => true), loadMembersIfNeeded: vi.fn(async () => {}), getJoinedMemberCount: vi.fn(() => 2), getMembersWithMembership: vi.fn(() => [{ userId: credentials.userId }, { userId: pin.userId }]) };
+  const client = Object.assign(new EventEmitter(), { getRooms: vi.fn(() => [room]), whoami: vi.fn(async () => ({ user_id: credentials.userId, device_id: credentials.deviceId })), downloadKeysForUsers: vi.fn(async () => ({ failures: {}, device_keys: {} })), initRustCrypto: vi.fn(async () => {}), getCrypto: () => cryptoApi, startClient: vi.fn(async () => {}), stopClient: vi.fn(), getSyncState: vi.fn(() => SyncState.Prepared), getRoom: vi.fn(() => room), getUserId: () => credentials.userId, getDeviceId: () => credentials.deviceId, encryptAndSendToDevice: vi.fn(async () => {}), matrixRTC: { getRoomSession: () => session } });
   const publication = { kind: Track.Kind.Audio, isEncrypted: true, isSubscribed: true, track: { mediaStreamTrack: { readyState: "live" } }, setSubscribed: vi.fn((value: boolean) => { publication.isSubscribed = value; }) };
   const mediaRoom = Object.assign(new EventEmitter(), { state: ConnectionState.Connected, isE2EEEnabled: true, remoteParticipants: new Map([[remote.rtcBackendIdentity, { identity: remote.rtcBackendIdentity, trackPublications: new Map([["audio", publication]]) }]]) });
   const media = { room: mediaRoom, startCapture: vi.fn(async (_listener: (identity: string, audio: PcmAudio) => void, _permitted: (identity: string) => boolean, _failure: () => void) => {}), resetCapture: vi.fn(), connect: vi.fn(async () => {}), suspend: vi.fn(), resume: vi.fn(), publish: vi.fn(async () => {}), close: vi.fn(async () => {}) };
@@ -388,7 +388,7 @@ describe("production Matrix browser runtime", () => {
     await expect(f.runtime.connect("!unknown")).rejects.toThrow("not configured");
     f.client.getRoom.mockReturnValue(undefined as never);
     await expect(f.runtime.connect("!room")).rejects.toThrow("Joined encrypted");
-    f.client.getRoom.mockReturnValue({ ...f.room, getMyMembership: () => "join", hasEncryptionStateEvent: () => true });
+    f.client.getRoom.mockReturnValue({ ...f.room, getMyMembership: vi.fn(() => "join"), hasEncryptionStateEvent: vi.fn(() => true) });
     f.session.slotId = "m.call#OTHER";
     await expect(f.runtime.connect("!room")).rejects.toThrow("slot is not supported");
     await f.runtime.close();
@@ -602,5 +602,64 @@ describe("production Matrix browser runtime", () => {
     complete(); await Promise.all([one, two]);
     expect(f.media.close).toHaveBeenCalledOnce();
     await f.runtime.close();
+  });
+});
+
+describe("private self-call room discovery", () => {
+  it("resolves an encrypted two-person room and explicitly authorizes a non-owner only for that outbound call", async () => {
+    const f = await ready(fixture(false, true));
+    const userId = "@visitor:example.org";
+    f.room.roomId = "!private";
+    f.room.getMembersWithMembership.mockReturnValue([{ userId }, { userId: credentials.userId }]);
+    const devices = await f.cryptoApi.getUserDeviceInfo();
+    f.cryptoApi.getUserDeviceInfo.mockResolvedValue(new Map([[userId, devices.get(f.remote.userId)!]]));
+    f.session.memberships = [f.local];
+    f.session.joinRTCSession.mockImplementation(() => { f.session.emit(MatrixRTCSessionEvent.DidSendCallNotification, { event_id: "$ring", notification_type: "ring", slot_id: "m.call#ROOM", "m.relates_to": { event_id: f.local.eventId } }); });
+    try {
+      expect(await f.runtime.recipientRoom(userId)).toBe("!private");
+      expect(f.cryptoApi.getUserDeviceInfo).toHaveBeenLastCalledWith([userId], true);
+      await f.runtime.connect("!private", { recipientId: userId, ringTimeoutMs: 20000, selfCall: true });
+      expect(f.session.joinRTCSession).toHaveBeenCalled();
+    } finally { await f.runtime.close(); }
+  });
+
+  it.each(["unprepared", "disabled", "stopped", "self", "invalid", "capacity"])("rejects unavailable discovery: %s", async (kind) => {
+    const f = fixture(false, kind !== "disabled");
+    if (kind !== "unprepared") await ready(f);
+    if (kind === "stopped") await f.runtime.close();
+    if (kind === "capacity") f.client.getRooms.mockReturnValue(Array(257).fill(f.room));
+    try {
+      await expect(f.runtime.recipientRoom(kind === "self" ? credentials.userId : kind === "invalid" ? "invalid" : f.remote.userId)).rejects.toThrow();
+    } finally { await f.runtime.close(); }
+  });
+
+  it.each(["unencrypted", "not-joined", "group", "missing-user", "missing-bot", "wrong-count"])("does not select a %s room", async (kind) => {
+    const f = await ready(fixture(false, true));
+    if (kind === "unencrypted") f.room.hasEncryptionStateEvent.mockReturnValue(false);
+    if (kind === "not-joined") f.room.getMyMembership.mockReturnValue("leave");
+    if (kind === "group") f.room.getJoinedMemberCount.mockReturnValue(3);
+    if (kind === "missing-user") f.room.getMembersWithMembership.mockReturnValue([{ userId: credentials.userId }, { userId: "@other:example.org" }]);
+    if (kind === "missing-bot") f.room.getMembersWithMembership.mockReturnValue([{ userId: f.remote.userId }, { userId: "@other:example.org" }]);
+    if (kind === "wrong-count") f.room.getMembersWithMembership.mockReturnValue([{ userId: f.remote.userId }]);
+    try { await expect(f.runtime.recipientRoom(f.remote.userId)).rejects.toThrow("Private encrypted two-person room required"); }
+    finally { await f.runtime.close(); }
+  });
+
+  it.each(["missing-user", "empty", "unverified", "unknown"])("keeps device verification mandatory: %s", async (kind) => {
+    const f = await ready(fixture(false, true));
+    if (kind === "missing-user") f.cryptoApi.getUserDeviceInfo.mockResolvedValue(new Map());
+    if (kind === "empty") f.cryptoApi.getUserDeviceInfo.mockResolvedValue(new Map([[f.remote.userId, new Map()]]));
+    if (kind === "unverified") f.cryptoApi.getDeviceVerificationStatus.mockResolvedValue(new DeviceVerificationStatus({ localVerified: false }));
+    if (kind === "unknown") f.cryptoApi.getDeviceVerificationStatus.mockResolvedValue(undefined as never);
+    try { await expect(f.runtime.recipientRoom(f.remote.userId)).rejects.toThrow("Recipient device verification required"); }
+    finally { await f.runtime.close(); }
+  });
+
+  it("prefers the trusted current private room and otherwise sorts candidates deterministically", async () => {
+    const f = await ready(fixture(false, true));
+    const a = { ...f.room, roomId: "!a" }; const b = { ...f.room, roomId: "!b" }; const c = { ...f.room, roomId: "!c" };
+    f.client.getRooms.mockReturnValue([b, c, a]);
+    try { expect(await f.runtime.recipientRoom(f.remote.userId, "!c")).toBe("!c"); expect(await f.runtime.recipientRoom(f.remote.userId)).toBe("!a"); }
+    finally { await f.runtime.close(); }
   });
 });

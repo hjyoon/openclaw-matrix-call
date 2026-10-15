@@ -24,6 +24,7 @@ const configSchema = z.object({
   assetPort: z.number().int().min(1024).max(65_535).default(19791),
   voiceFile: absolutePath.optional(),
   owners: z.array(mxid).min(1).max(256),
+  selfCalls: z.boolean().optional(),
   rooms: z.array(matrixRoomIdSchema).min(1).max(256),
   focusUrls: endpoints,
   sfuUrls: endpoints,
@@ -47,7 +48,7 @@ export function parseBrowserConfig(value: unknown, credentials: unknown) {
   const owners = [...new Set(config.owners)];
   const rooms = [...new Set(config.rooms)];
   const devices = config.devices;
-  if (devices.some((pin) => !owners.includes(pin.userId)) ||
+  if (devices.some((pin) => !owners.includes(pin.userId) && !config.selfCalls) ||
       new Set(devices.map((pin) => JSON.stringify([pin.userId, pin.deviceId]))).size !== devices.length) {
     throw new Error("Invalid browser worker device pins");
   }
@@ -58,6 +59,7 @@ export function parseBrowserConfig(value: unknown, credentials: unknown) {
     devices: Object.freeze(devices.map((pin) => Object.freeze(pin))),
     allowInsecureLoopback: config.allowInsecureLoopback,
     roomAliasFormat: config.roomAliasFormat,
+    ...(config.selfCalls === undefined ? {} : { selfCalls: config.selfCalls }),
   });
   const matrix: MatrixCredentials = Object.freeze({ ...identity, baseUrl: endpoint(identity.baseUrl, ["https:"], config.allowInsecureLoopback) });
   return Object.freeze({

@@ -2,7 +2,7 @@ export type DeviceKeys = Readonly<{ ed25519: string; curve25519: string }>;
 
 export type DevicePin = DeviceKeys & Readonly<{ userId: string; deviceId: string }>;
 
-export type BrowserDial = Readonly<{ recipientId: string; ringTimeoutMs: number }>;
+export type BrowserDial = Readonly<{ recipientId: string; ringTimeoutMs: number; selfCall?: boolean | undefined }>;
 
 export type MatrixCredentials = Readonly<{
   baseUrl: string;
@@ -19,6 +19,7 @@ export type BrowserPolicy = Readonly<{
   roomAliasFormat?: "json-array" | "legacy-pipe";
   devices: readonly DevicePin[];
   allowInsecureLoopback: boolean;
+  selfCalls?: boolean;
 }>;
 
 export type BrowserSetup = Readonly<{

@@ -112,9 +112,32 @@ export class BrowserMatrixRuntime {
       roomId: this.#call?.roomId ?? null, connected: this.#call?.connected === true && !this.#call.controller.signal.aborted });
   }
 
+  async recipientRoom(recipientId: string, preferredRoomId?: string): Promise<string> {
+    if (!this.#prepared || this.#stopped || !this.#setup.policy.selfCalls || recipientId === this.#setup.credentials.userId || !/^@[^:\s]+:[^\s]+$/.test(recipientId)) throw new Error("Self calling is unavailable");
+    const rooms = this.#client.getRooms();
+    if (rooms.length > 256) throw new Error("Room discovery capacity exceeded");
+    const candidates = rooms.filter((room) => joinedEncryptedRoom(this.#client, room.roomId) && room.getJoinedMemberCount() === 2)
+      .sort((a, b) => Number(b.roomId === preferredRoomId) - Number(a.roomId === preferredRoomId) || a.roomId.localeCompare(b.roomId));
+    const signal = AbortSignal.timeout(30_000);
+    for (const room of candidates) {
+      await cancelable(room.loadMembersIfNeeded(), signal);
+      const members = room.getMembersWithMembership("join");
+      if (members.length !== 2 || !members.some((member) => member.userId === recipientId) || !members.some((member) => member.userId === this.#setup.credentials.userId)) continue;
+      const cryptoApi = this.#client.getCrypto()!;
+      cryptoApi.prepareToEncrypt(room);
+      const devices = await cancelable(cryptoApi.getUserDeviceInfo([recipientId], true), signal);
+      for (const deviceId of devices.get(recipientId)?.keys() ?? []) {
+        const proof = await cancelable(cryptoApi.getDeviceVerificationStatus(recipientId, deviceId), signal);
+        if (proof?.isVerified()) return room.roomId;
+      }
+      throw new Error("Recipient device verification required");
+    }
+    throw new Error("Private encrypted two-person room required");
+  }
+
   async connect(roomId: string, outbound?: BrowserDial): Promise<void> {
     if (!this.#prepared || this.#stopped || this.#call) throw new Error("Matrix runtime is unavailable or busy");
-    if (!this.#setup.policy.rooms.includes(roomId)) throw new Error("Matrix room is not configured");
+    if (!(outbound?.selfCall && this.#setup.policy.selfCalls) && !this.#setup.policy.rooms.includes(roomId)) throw new Error("Matrix room is not configured");
     const room = joinedEncryptedRoom(this.#client, roomId);
     if (!room) throw new Error("Joined encrypted Matrix room is unavailable");
     const session = this.#client.matrixRTC.getRoomSession(room);
@@ -123,7 +146,7 @@ export class BrowserMatrixRuntime {
     if (outbound) {
       const members = room.getMembersWithMembership("join");
       const { userId, deviceId } = this.#setup.credentials;
-      if (outbound.recipientId === userId || !this.#setup.policy.owners.includes(outbound.recipientId) ||
+      if (outbound.recipientId === userId || (!(outbound.selfCall && this.#setup.policy.selfCalls) && !this.#setup.policy.owners.includes(outbound.recipientId)) ||
           !Number.isInteger(outbound.ringTimeoutMs) || outbound.ringTimeoutMs < 1000 || outbound.ringTimeoutMs > 60_000 ||
           room.getJoinedMemberCount() !== 2 || members.length !== 2 || !members.some((member) => member.userId === userId) ||
           !members.some((member) => member.userId === outbound.recipientId)) throw new Error("Outbound recipient requires an authorized two-party room");
