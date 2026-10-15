@@ -5,7 +5,7 @@ import { BrowserDriver } from "../../packages/browser-worker/src/driver.js";
 import { parseBrowserConfig } from "../../packages/browser-worker/src/config.js";
 import { configuration, credentials } from "../fixtures/browser.js";
 import type { BrowserUtterance } from "../../packages/browser-worker/src/inbox.js";
-import type { PcmAudio } from "../../packages/core/src/index.js";
+import type { ParticipantReference, PcmAudio } from "../../packages/core/src/index.js";
 
 const { launch, assetFactory, profileFactory } = vi.hoisted(() => ({ launch: vi.fn(), assetFactory: vi.fn(), profileFactory: vi.fn() }));
 vi.mock("playwright-core", () => ({ chromium: { launchPersistentContext: launch } }));
@@ -18,7 +18,7 @@ function fixture() {
   const log = vi.spyOn(console, "info").mockImplementation(() => {});
   const config = parseBrowserConfig(configuration, credentials);
   const keys = { ed25519: "A".repeat(43), curve25519: "B".repeat(43) };
-  const runtime = { takeAudio: vi.fn(async (): Promise<BrowserUtterance | null> => null), resumeAudio: vi.fn(async () => {}), initialize: vi.fn(async () => keys), prepare: vi.fn(async () => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), publish: vi.fn(async () => {}), verify: vi.fn(async (reference: object) => ({ ...reference, userId: "@owner:example.org", deviceId: "OWNER", expiresAtMs: Date.now() + 10_000, deviceVerified: true, mediaEncrypted: true })), status: vi.fn(() => ({ connected: true })) };
+  const runtime = { recipient: vi.fn(async (_id: string): Promise<ParticipantReference | null> => null), takeAudio: vi.fn(async (): Promise<BrowserUtterance | null> => null), resumeAudio: vi.fn(async () => {}), initialize: vi.fn(async () => keys), prepare: vi.fn(async () => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), publish: vi.fn(async () => {}), verify: vi.fn(async (reference: object) => ({ ...reference, userId: "@owner:example.org", deviceId: "OWNER", expiresAtMs: Date.now() + 10_000, deviceVerified: true, mediaEncrypted: true })), status: vi.fn(() => ({ connected: true })) };
   vi.stubGlobal("window", { createMatrixCall: vi.fn(() => runtime) });
   const page = { goto: vi.fn(async () => {}), waitForFunction: vi.fn(async (fn: () => boolean) => { expect(fn()).toBe(true); }), evaluate: vi.fn(async (fn: (arg: unknown) => unknown, arg: unknown) => fn(arg)), close: vi.fn(async () => {}) };
   const spare = { close: vi.fn(async () => {}) };
@@ -33,6 +33,44 @@ const pcm = { samples: new Int16Array([-1, 0, 1]), sampleRate: 16_000, channels:
 const reference = { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: "remote" };
 
 describe("persistent production browser driver", () => {
+  it("requests ringing explicitly and waits for a verified recipient reference", async () => {
+    const f = fixture(); const driver = await BrowserDriver.start(f.config);
+    const outbound = { recipientId: "@owner:example.org", ringTimeoutMs: 20000 };
+    try {
+      await driver.connect("!room", signal(), outbound);
+      expect(f.runtime.connect).toHaveBeenCalledWith("!room", outbound);
+      f.runtime.recipient.mockResolvedValueOnce(null).mockResolvedValueOnce(reference);
+      const pending = driver.waitForRecipient(outbound.recipientId, signal());
+      await vi.advanceTimersByTimeAsync(100);
+      expect(await pending).toEqual(reference);
+      expect(f.runtime.recipient).toHaveBeenCalledWith(outbound.recipientId);
+    } finally { await driver.close(); }
+  });
+
+  it("rejects an unavailable or already cancelled recipient wait", async () => {
+    const f = fixture(); const driver = await BrowserDriver.start(f.config);
+    try {
+      await expect(driver.waitForRecipient("@owner:example.org", signal())).rejects.toThrow("changed");
+      const controller = new AbortController(); controller.abort(new Error("cancelled"));
+      await expect(driver.waitForRecipient("@owner:example.org", controller.signal)).rejects.toThrow("cancelled");
+    } finally { await driver.close(); }
+  });
+
+  it.each(["before-poll", "during-check", "replacement", "abort"])("fences an outbound answer after %s", async (stage) => {
+    const f = fixture(); const driver = await BrowserDriver.start(f.config); const controller = new AbortController();
+    await driver.connect("!room", signal());
+    try {
+      if (stage !== "before-poll") f.runtime.recipient.mockImplementationOnce(async () => {
+        if (stage === "abort") controller.abort(new Error("cancelled"));
+        else { await driver.disconnect(); if (stage === "replacement") await driver.connect("!room", signal()); }
+        return reference;
+      });
+      const pending = expect(driver.waitForRecipient("@owner:example.org", controller.signal)).rejects.toThrow(stage === "abort" ? "cancelled" : "changed");
+      if (stage === "before-poll") { await vi.advanceTimersByTimeAsync(0); await driver.disconnect(); }
+      await vi.advanceTimersByTimeAsync(100); await pending;
+    } finally { await driver.close(); }
+  });
+
   it("hands only private verified PCM to one listener and resumes capture after completion", async () => {
     const f = fixture(); const driver = await BrowserDriver.start(f.config, undefined, true);
     expect((f.page.evaluate.mock.calls[0]![1] as { captureAudio: boolean }).captureAudio).toBe(true);

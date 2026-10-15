@@ -2,6 +2,8 @@ export type DeviceKeys = Readonly<{ ed25519: string; curve25519: string }>;
 
 export type DevicePin = DeviceKeys & Readonly<{ userId: string; deviceId: string }>;
 
+export type BrowserDial = Readonly<{ recipientId: string; ringTimeoutMs: number }>;
+
 export type MatrixCredentials = Readonly<{
   baseUrl: string;
   userId: string;

@@ -25,7 +25,7 @@ afterEach(() => { vi.useRealTimers(); });
 
 function member(userId: string, deviceId: string): CallMembership {
   const created = Date.now() - 1000;
-  return { userId, deviceId, memberId: `${userId}:${deviceId}`, rtcBackendIdentity: `${userId}:${deviceId}`, createdTs: () => created, getAbsoluteExpiry: () => undefined, getTransport: () => ({ type: "livekit", livekit_service_url: configuration.focusUrls[0], livekit_alias: "!room" }) } as unknown as CallMembership;
+  return { userId, deviceId, eventId: `$${userId}-${deviceId}`, memberId: `${userId}:${deviceId}`, rtcBackendIdentity: `${userId}:${deviceId}`, createdTs: () => created, getAbsoluteExpiry: () => undefined, getTransport: () => ({ type: "livekit", livekit_service_url: configuration.focusUrls[0], livekit_alias: "!room" }) } as unknown as CallMembership;
 }
 
 function fixture(captureAudio = false) {
@@ -36,7 +36,7 @@ function fixture(captureAudio = false) {
   const remote = member(pin.userId, pin.deviceId);
   const session = Object.assign(new EventEmitter(), { slotId: "m.call#ROOM", memberships: [local, remote], isJoined: vi.fn(() => true), joinRTCSession: vi.fn(), leaveRoomSession: vi.fn(async () => true), getOldestMembership: vi.fn(() => local) });
   const cryptoApi = { getOwnDeviceKeys: vi.fn(async () => ({ ed25519: "C".repeat(43), curve25519: "D".repeat(43) })), getUserDeviceInfo: vi.fn(async () => new Map([[pin.userId, new Map([[pin.deviceId, new Device({ userId: pin.userId, deviceId: pin.deviceId, algorithms: [], keys: new Map([[`ed25519:${pin.deviceId}`, pin.ed25519], [`curve25519:${pin.deviceId}`, pin.curve25519]]) })]])]])), setDeviceVerified: vi.fn(async () => {}), prepareToEncrypt: vi.fn(), getDeviceVerificationStatus: vi.fn(async () => new DeviceVerificationStatus({ localVerified: true })) };
-  const room = { getMyMembership: () => "join", hasEncryptionStateEvent: () => true };
+  const room = { getMyMembership: () => "join", hasEncryptionStateEvent: () => true, loadMembersIfNeeded: vi.fn(async () => {}), getJoinedMemberCount: vi.fn(() => 2), getMembersWithMembership: vi.fn(() => [{ userId: credentials.userId }, { userId: pin.userId }]) };
   const client = Object.assign(new EventEmitter(), { whoami: vi.fn(async () => ({ user_id: credentials.userId, device_id: credentials.deviceId })), downloadKeysForUsers: vi.fn(async () => ({ failures: {}, device_keys: {} })), initRustCrypto: vi.fn(async () => {}), getCrypto: () => cryptoApi, startClient: vi.fn(async () => {}), stopClient: vi.fn(), getSyncState: vi.fn(() => SyncState.Prepared), getRoom: vi.fn(() => room), getUserId: () => credentials.userId, getDeviceId: () => credentials.deviceId, encryptAndSendToDevice: vi.fn(async () => {}), matrixRTC: { getRoomSession: () => session } });
   const publication = { kind: Track.Kind.Audio, isEncrypted: true, isSubscribed: true, track: { mediaStreamTrack: { readyState: "live" } }, setSubscribed: vi.fn((value: boolean) => { publication.isSubscribed = value; }) };
   const mediaRoom = Object.assign(new EventEmitter(), { state: ConnectionState.Connected, isE2EEEnabled: true, remoteParticipants: new Map([[remote.rtcBackendIdentity, { identity: remote.rtcBackendIdentity, trackPublications: new Map([["audio", publication]]) }]]) });
@@ -45,10 +45,15 @@ function fixture(captureAudio = false) {
   const authorizer = { authorize: vi.fn(async (_source: FocusAuthorizationSource, _signal: AbortSignal) => grant) };
   sdkFactory.mockReturnValue(client); mediaFactory.mockReturnValue(media); focusFactory.mockReturnValue(authorizer);
   const runtime = new BrowserMatrixRuntime(setup, client as unknown as MatrixClient, () => media as unknown as BrowserMedia, authorizer);
-  return { setup, runtime, client, cryptoApi, session, local, remote, media, authorizer, grant, publication };
+  return { setup, runtime, client, cryptoApi, session, local, remote, media, authorizer, grant, publication, room };
 }
 
 async function ready(f = fixture()) { await f.runtime.initialize(); await f.runtime.prepare(); return f; }
+async function outboundReady() {
+  const f = await ready(); f.session.memberships = [f.local];
+  f.session.joinRTCSession.mockImplementation(() => { f.session.emit(MatrixRTCSessionEvent.DidSendCallNotification, { event_id: "$ring", notification_type: "ring", slot_id: "m.call#ROOM", "m.relates_to": { event_id: f.local.eventId } }); });
+  return f;
+}
 const pcm = { samples: new Int16Array([1]), sampleRate: 16_000, channels: 1 as const };
 const signal = () => new AbortController().signal;
 
@@ -61,6 +66,110 @@ async function admit(f: Awaited<ReturnType<typeof ready>>) {
 }
 
 describe("production Matrix browser runtime", () => {
+  it("bounds membership loading before device enrollment", async () => {
+    const f = fixture(); await f.runtime.initialize();
+    const controller = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(controller.signal);
+    f.room.loadMembersIfNeeded.mockImplementationOnce(() => new Promise(() => {}));
+    const pending = expect(f.runtime.prepare()).rejects.toThrow("membership loading cancelled");
+    await vi.waitFor(() => expect(f.room.loadMembersIfNeeded).toHaveBeenCalled());
+    controller.abort(new Error("membership loading cancelled")); await pending;
+    expect(f.cryptoApi.setDeviceVerified).not.toHaveBeenCalled(); await f.runtime.close();
+  });
+
+  it.each(["unknown", "self", "fractional", "short", "long", "count", "members", "missing-self", "missing-recipient"])("rejects an unsafe outbound room or target: %s", async (state) => {
+    const f = await ready(); f.session.memberships = [f.local];
+    const outbound = { recipientId: f.remote.userId, ringTimeoutMs: 20000 };
+    if (state === "unknown") outbound.recipientId = "@unknown:example.org";
+    if (state === "self") outbound.recipientId = credentials.userId;
+    if (state === "fractional") outbound.ringTimeoutMs = 1000.5;
+    if (state === "short") outbound.ringTimeoutMs = 999;
+    if (state === "long") outbound.ringTimeoutMs = 60001;
+    if (state === "count") f.room.getJoinedMemberCount.mockReturnValue(3);
+    if (state === "members") f.room.getMembersWithMembership.mockReturnValue([{ userId: credentials.userId }]);
+    if (state === "missing-self") f.room.getMembersWithMembership.mockReturnValue([{ userId: f.remote.userId }, { userId: "@unknown:example.org" }]);
+    if (state === "missing-recipient") f.room.getMembersWithMembership.mockReturnValue([{ userId: credentials.userId }, { userId: "@unknown:example.org" }]);
+    try {
+      await expect(f.runtime.connect("!room", outbound)).rejects.toThrow("two-party room");
+      expect(f.session.joinRTCSession).not.toHaveBeenCalled();
+    } finally { await f.runtime.close(); }
+  });
+
+  it("does not ring a room that already has a call", async () => {
+    const f = await ready();
+    try {
+      await expect(f.runtime.connect("!room", { recipientId: f.remote.userId, ringTimeoutMs: 20000 })).rejects.toThrow("already has an active call");
+      expect(f.session.joinRTCSession).not.toHaveBeenCalled();
+    } finally { await f.runtime.close(); }
+  });
+
+  it("rings a dedicated room and waits for current verified encrypted recipient media", async () => {
+    const f = await outboundReady();
+    await expect(f.runtime.recipient(f.remote.userId)).rejects.toThrow("unavailable");
+    await f.runtime.connect("!room", { recipientId: f.remote.userId, ringTimeoutMs: 20000 });
+    try {
+      expect(f.session.joinRTCSession).toHaveBeenCalledWith(expect.anything(), expect.anything(), undefined, expect.objectContaining({ notificationType: "ring", notificationLifetimeMs: 20000, callIntent: "audio", manageMediaKeys: false }));
+      await expect(f.runtime.recipient("@other:example.org")).rejects.toThrow("unavailable");
+      expect(await f.runtime.recipient(f.remote.userId)).toBeNull();
+      f.session.memberships = [f.local, f.remote];
+      expect(await f.runtime.recipient(f.remote.userId)).toBeNull();
+      await admit(f);
+      const remoteMedia = f.media.room.remoteParticipants.get(f.remote.rtcBackendIdentity)!;
+      f.media.room.remoteParticipants.clear();
+      expect(await f.runtime.recipient(f.remote.userId)).toBeNull();
+      f.media.room.remoteParticipants.set(f.remote.rtcBackendIdentity, remoteMedia);
+      const reference = await f.runtime.recipient(f.remote.userId);
+      expect(reference).toEqual({ roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: f.remote.rtcBackendIdentity });
+      expect(Object.isFrozen(reference)).toBe(true);
+      f.session.memberships = [f.local, f.remote, member(f.remote.userId, "SECOND")];
+      await expect(f.runtime.recipient(f.remote.userId)).rejects.toThrow("ambiguous");
+    } finally { await f.runtime.close(); }
+  });
+
+  it.each(["expired", "late-proof", "wrong-user"])("rejects an outbound answer that is %s", async (state) => {
+    vi.useFakeTimers(); const f = await outboundReady();
+    await f.runtime.connect("!room", { recipientId: f.remote.userId, ringTimeoutMs: 1000 });
+    try {
+      f.session.memberships = [f.local, f.remote]; await admit(f);
+      if (state === "expired") await vi.advanceTimersByTimeAsync(1000);
+      else {
+        const reference = { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: f.remote.rtcBackendIdentity };
+        const proof = await f.runtime.verify(reference, signal());
+        vi.spyOn(f.runtime, "verify").mockImplementationOnce(async () => {
+          if (state === "late-proof") await vi.advanceTimersByTimeAsync(1000);
+          return { ...proof, userId: state === "wrong-user" ? "@other:example.org" : proof.userId };
+        });
+      }
+      await expect(f.runtime.recipient(f.remote.userId)).rejects.toThrow(state === "wrong-user" ? "identity changed" : "deadline expired");
+    } finally { await f.runtime.close(); }
+  });
+
+  it("does not expose an ordinary joined call as an outbound answer", async () => {
+    const f = await ready(); await f.runtime.connect("!room");
+    try { await expect(f.runtime.recipient(f.remote.userId)).rejects.toThrow("unavailable"); }
+    finally { await f.runtime.close(); }
+  });
+
+  it("requires a notification acknowledgement bound to this call membership", async () => {
+    vi.useFakeTimers(); const f = await ready(); f.session.memberships = [f.local];
+    const pending = f.runtime.connect("!room", { recipientId: f.remote.userId, ringTimeoutMs: 20000 });
+    const valid = { event_id: "$ring", notification_type: "ring", slot_id: "m.call#ROOM", "m.relates_to": { event_id: f.local.eventId } };
+    await vi.advanceTimersByTimeAsync(0);
+    for (const notice of [{ ...valid, notification_type: "notification" }, { ...valid, slot_id: "other" }, { ...valid, event_id: "" }, { ...valid, "m.relates_to": undefined }, { ...valid, "m.relates_to": { event_id: "$other" } }]) {
+      f.session.emit(MatrixRTCSessionEvent.DidSendCallNotification, notice);
+      await vi.advanceTimersByTimeAsync(100); expect(f.media.connect).not.toHaveBeenCalled();
+    }
+    f.session.memberships = [];
+    f.session.emit(MatrixRTCSessionEvent.DidSendCallNotification, valid);
+    await vi.advanceTimersByTimeAsync(100); expect(f.media.connect).not.toHaveBeenCalled();
+    f.session.memberships = [f.local];
+    f.session.emit(MatrixRTCSessionEvent.DidSendCallNotification, valid);
+    await vi.advanceTimersByTimeAsync(100); await pending;
+    expect(f.media.connect).toHaveBeenCalledOnce();
+    await f.runtime.close();
+    expect(f.session.listenerCount(MatrixRTCSessionEvent.DidSendCallNotification)).toBe(0);
+  });
+
   it.each([
     [new Error("MatrixRTC local membership is unavailable"), "local-membership"],
     [new Error("MatrixRTC listener is not authorized"), "listener-policy"],
@@ -264,7 +373,7 @@ describe("production Matrix browser runtime", () => {
     await expect(f.runtime.connect("!unknown")).rejects.toThrow("not configured");
     f.client.getRoom.mockReturnValue(undefined as never);
     await expect(f.runtime.connect("!room")).rejects.toThrow("Joined encrypted");
-    f.client.getRoom.mockReturnValue({ getMyMembership: () => "join", hasEncryptionStateEvent: () => true });
+    f.client.getRoom.mockReturnValue({ ...f.room, getMyMembership: () => "join", hasEncryptionStateEvent: () => true });
     f.session.slotId = "m.call#OTHER";
     await expect(f.runtime.connect("!room")).rejects.toThrow("slot is not supported");
     await f.runtime.close();

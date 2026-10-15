@@ -4,7 +4,7 @@ import { startAssetServer } from "./assets.js";
 import { openDeviceProfile } from "./profile.js";
 import { validatePcm } from "./audio.js";
 import type { parseBrowserConfig } from "./config.js";
-import type { DeviceKeys } from "./types.js";
+import type { BrowserDial, DeviceKeys } from "./types.js";
 
 export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
   readonly #context: BrowserContext;
@@ -110,7 +110,7 @@ export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
     finally { this.#checking = false; }
   }
 
-  async connect(roomId: string, signal: AbortSignal): Promise<void> {
+  async connect(roomId: string, signal: AbortSignal, outbound?: BrowserDial): Promise<void> {
     signal.throwIfAborted();
     if (this.#closed || this.#connected || this.#opening || this.#disconnecting) throw new Error("Browser driver is unavailable or busy");
     this.#opening = true;
@@ -118,7 +118,8 @@ export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
     const abort = (): void => { void this.close().then(() => this.#notify()).catch(() => {}); };
     signal.addEventListener("abort", abort, { once: true });
     try {
-      await this.#page.evaluate((roomId) => window.matrixCall.connect(roomId), roomId);
+      if (outbound) await this.#page.evaluate(({ roomId, outbound }) => window.matrixCall.connect(roomId, outbound), { roomId, outbound });
+      else await this.#page.evaluate((roomId) => window.matrixCall.connect(roomId), roomId);
       signal.throwIfAborted();
       if (this.#closed || generation !== this.#generation) throw new Error("Browser driver connection changed");
       this.#connected = true;
@@ -129,6 +130,19 @@ export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
       console.info(JSON.stringify({ event: "browser-call-failed", reason }));
       throw error;
     } finally { this.#opening = false; signal.removeEventListener("abort", abort); }
+  }
+
+  async waitForRecipient(recipientId: string, signal: AbortSignal): Promise<ParticipantReference> {
+    const generation = this.#generation;
+    for (;;) {
+      signal.throwIfAborted();
+      if (!this.#connected || generation !== this.#generation) throw new Error("Outbound call changed while waiting for an answer");
+      const reference = await this.#page.evaluate((id) => window.matrixCall.recipient(id), recipientId);
+      signal.throwIfAborted();
+      if (!this.#connected || generation !== this.#generation) throw new Error("Outbound call changed while checking an answer");
+      if (reference) return reference;
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    }
   }
 
   async publish(audio: PcmAudio, signal: AbortSignal): Promise<void> {

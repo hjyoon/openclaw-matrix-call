@@ -12,4 +12,6 @@ The operation shares the existing call slot and retained session-ID ledger. Stat
 
 ## Implementation status
 
-The portable contract, authenticated client/server and bounded controller are implemented and covered by actual signed HTTP tests. Browser ringing, answer verification, first speech and native agent entry are under implementation. The installed public alpha.1 remains unchanged and does not implement this operation. No live incoming-call notification has been sent for this change yet.
+The portable contract, authenticated client/server, bounded controller and browser implementation are covered by automated tests. The browser sends a MatrixRTC ringing notification bound to its own current membership and waits for the SDK's successful-send event. It accepts an answer only from the configured recipient's verified device, in an encrypted two-person room without an existing call. It then synthesizes and publishes the opening message without a microphone utterance or agent turn. Incoming utterances remain paused during the opening sequence.
+
+The native agent entry and real outbound interoperability checks are under implementation. The installed public alpha.1 remains unchanged and does not implement this operation. No live incoming-call notification has been sent for this change yet.

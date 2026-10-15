@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import { MemoryConversationStore, RequestAuthenticator } from "@matrix-call/core";
 import { HttpAgentAdapter } from "../../agent-http/src/index.js";
 import { HttpSpeechAdapter } from "../../speech-http/src/index.js";
-import { VoiceAssistant } from "../../voice/src/index.js";
-import { startWorker, readWorkerConfig, WorkerMediaController } from "../../worker/src/index.js";
+import { VoiceAssistant, speakReply } from "../../voice/src/index.js";
+import { startWorker, readWorkerConfig, WorkerMediaController, type MediaDialRequest } from "../../worker/src/index.js";
 import { readBrowserConfig } from "./config.js";
 import { BrowserDriver } from "./driver.js";
 import { readVoiceConfig } from "./voice-config.js";
@@ -31,13 +31,30 @@ export async function startBrowserWorker(env: NodeJS.ProcessEnv = process.env) {
     agentId: voiceConfig.agentId, agent: ports.agent, store: new MemoryConversationStore(1),
     recognition: ports.speech, synthesis: ports.speech, verifier: driver, transport: driver, timeoutMs: voiceConfig.timeoutMs,
   }) : undefined;
+  let opening = false;
+  const outbound = ports ? {
+    async dial(request: MediaDialRequest, signal: AbortSignal) {
+      opening = true;
+      try {
+        await voice!.endSession();
+        await driver.connect(request.roomId, signal, { recipientId: request.recipientId, ringTimeoutMs: request.ringTimeoutMs });
+        const reference = await driver.waitForRecipient(request.recipientId, signal);
+        await speakReply(request.message, { synthesis: ports.speech, transport: driver, verify: async () => {
+          const proof = await driver.verify(reference, signal);
+          if (proof.userId !== request.recipientId) throw new Error("Outbound recipient identity changed");
+          return proof;
+        } }, signal);
+      } finally { opening = false; }
+    },
+  } : {};
   const transport = {
+    ...outbound,
     async connect(roomId: string, signal: AbortSignal) { await voice?.endSession(); await driver.connect(roomId, signal); },
     async disconnect() { try { await voice?.endSession(); } finally { await driver.disconnect(); } },
   };
-  const media = new WorkerMediaController({ rooms: config.policy.rooms, transport });
+  const media = new WorkerMediaController({ rooms: config.policy.rooms, transport, recipients: ports ? config.policy.owners : [] });
   try {
-    if (voice) driver.onAudio(async (reference, audio) => { await voice.receive(reference, audio); });
+    if (voice) driver.onAudio(async (reference, audio) => { if (!opening) await voice.receive(reference, audio); });
     const worker = await startWorker(env, media, async () => { try { await voice?.endSession(); } finally { await driver.close(); } }, async (signal) => {
       if (!ports || !driver.available) return false;
       await Promise.all([ports.agent.check(signal), ports.speech.check(signal)]);

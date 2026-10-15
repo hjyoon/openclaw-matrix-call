@@ -22,7 +22,7 @@ async function fixture() {
   await writeFile(secret, "ab".repeat(32), { mode: 0o600 });
   await writeFile(identity, JSON.stringify(credentials), { mode: 0o600 });
   await writeFile(config, JSON.stringify({ ...configuration, credentialsFile: identity }));
-  const driver = { available: true, verify: vi.fn(async (reference: ParticipantReference) => ({ ...reference, userId: configuration.owners[0]!, deviceId: "OWNER", expiresAtMs: Date.now() + 30000, mediaEncrypted: true, deviceVerified: true })), publish: vi.fn(async (_audio: PcmAudio) => {}), onAudio: vi.fn((_listener: (reference: ParticipantReference, audio: PcmAudio) => Promise<void>) => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), close: vi.fn(async () => {}), onEnded: vi.fn((_listener: () => Promise<void>) => {}) };
+  const driver = { available: true, waitForRecipient: vi.fn(async (_userId: string, _signal: AbortSignal): Promise<ParticipantReference> => ({ roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: "speaker" })), verify: vi.fn(async (reference: ParticipantReference) => ({ ...reference, userId: configuration.owners[0]!, deviceId: "OWNER", expiresAtMs: Date.now() + 30000, mediaEncrypted: true, deviceVerified: true })), publish: vi.fn(async (_audio: PcmAudio) => {}), onAudio: vi.fn((_listener: (reference: ParticipantReference, audio: PcmAudio) => Promise<void>) => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), close: vi.fn(async () => {}), onEnded: vi.fn((_listener: () => Promise<void>) => {}) };
   start.mockReset().mockResolvedValue(driver);
   const agent = { id: "http-test", historyMode: "messages", check: vi.fn(async (_signal: AbortSignal) => {}), reply: vi.fn(async (_turn: AgentTurn) => ({ text: "Agent reply" })) };
   const speech = { check: vi.fn(async (_signal: AbortSignal) => {}), transcribe: vi.fn(async () => "Transcript"), synthesize: vi.fn(async () => ({ samples: new Int16Array([1, 2]), sampleRate: 16_000, channels: 1 as const })) };
@@ -37,6 +37,61 @@ async function fixture() {
 }
 
 describe("browser worker application", () => {
+  it("rings the configured recipient and speaks first without microphone input or inference", async () => {
+    const f = await fixture(); await f.enableVoice(); const worker = await startBrowserWorker(f.env);
+    const request = { roomId: "!room", recipientId: configuration.owners[0], message: "Good morning." };
+    try {
+      const result = await worker.media.dial(request, new AbortController().signal);
+      expect(result.state).toBe("connected"); expect(worker.media.canDial).toBe(true);
+      expect(f.driver.connect).toHaveBeenCalledWith("!room", expect.any(AbortSignal), { recipientId: request.recipientId, ringTimeoutMs: 20000 });
+      expect(f.driver.waitForRecipient).toHaveBeenCalledWith(request.recipientId, expect.any(AbortSignal));
+      expect(f.speech.synthesize).toHaveBeenCalledWith("Good morning.", expect.any(AbortSignal));
+      expect(f.driver.publish).toHaveBeenCalledOnce(); expect(f.driver.verify).toHaveBeenCalledTimes(2);
+      expect(f.speech.transcribe).not.toHaveBeenCalled(); expect(f.agent.reply).not.toHaveBeenCalled();
+      expect(f.driver.waitForRecipient.mock.invocationCallOrder[0]).toBeLessThan(f.speech.synthesize.mock.invocationCallOrder[0]!);
+      await worker.media.leave({ sessionId: result.sessionId });
+    } finally { await worker.close(); await f.clean(); }
+  });
+
+  it("waits for the opening announcement before accepting a microphone turn", async () => {
+    const f = await fixture(); await f.enableVoice(); const worker = await startBrowserWorker(f.env);
+    let answer!: (reference: ParticipantReference) => void;
+    f.driver.waitForRecipient.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+    const reference = { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: "speaker" };
+    const audio = { samples: new Int16Array([1]), sampleRate: 16000, channels: 1 as const };
+    try {
+      const pending = worker.media.dial({ roomId: "!room", recipientId: configuration.owners[0], message: "Hello." }, new AbortController().signal);
+      await vi.waitFor(() => expect(f.driver.waitForRecipient).toHaveBeenCalled());
+      await f.driver.onAudio.mock.calls[0]![0](reference, audio);
+      expect(f.speech.transcribe).not.toHaveBeenCalled();
+      answer(reference); await pending;
+      await f.driver.onAudio.mock.calls[0]![0](reference, audio);
+      expect(f.speech.transcribe).toHaveBeenCalledOnce(); expect(f.agent.reply).toHaveBeenCalledOnce();
+    } finally { await worker.close(); await f.clean(); }
+  });
+
+  it("does not synthesize or publish an opening after recipient identity changes", async () => {
+    const f = await fixture(); await f.enableVoice(); const worker = await startBrowserWorker(f.env);
+    f.driver.verify.mockImplementationOnce(async (reference) => ({ ...reference, userId: "@other:example.org", deviceId: "OTHER", expiresAtMs: Date.now() + 30000, mediaEncrypted: true, deviceVerified: true }));
+    try {
+      await expect(worker.media.dial({ roomId: "!room", recipientId: configuration.owners[0], message: "Private greeting." }, new AbortController().signal)).rejects.toThrow("backend-failed");
+      expect(f.speech.synthesize).not.toHaveBeenCalled(); expect(f.driver.publish).not.toHaveBeenCalled();
+      expect(f.driver.disconnect).toHaveBeenCalledOnce(); expect(worker.media.status().session).toBeNull();
+    } finally { await worker.close(); await f.clean(); }
+  });
+
+  it("cancels ringing and cleans its exact session before any announcement", async () => {
+    const f = await fixture(); await f.enableVoice(); const worker = await startBrowserWorker(f.env);
+    f.driver.waitForRecipient.mockImplementationOnce(async (_id, signal) => new Promise((_resolve, reject) => { signal.addEventListener("abort", () => reject(new Error("cancelled")), { once: true }); }));
+    try {
+      const pending = expect(worker.media.dial({ roomId: "!room", recipientId: configuration.owners[0], message: "Hello." }, new AbortController().signal)).rejects.toThrow("closed");
+      await vi.waitFor(() => expect(f.driver.waitForRecipient).toHaveBeenCalled());
+      await worker.media.leave({ sessionId: worker.media.status().session!.sessionId }); await pending;
+      expect(f.driver.disconnect).toHaveBeenCalledOnce(); expect(f.speech.synthesize).not.toHaveBeenCalled();
+      expect(worker.media.status().session).toBeNull();
+    } finally { await worker.close(); await f.clean(); }
+  });
+
   it("reports readiness only for a live driver and authenticated voice services without running a turn", async () => {
     const f = await fixture(); await f.enableVoice(); const worker = await startBrowserWorker(f.env);
     try {

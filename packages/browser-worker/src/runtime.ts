@@ -1,14 +1,16 @@
 import { ClientEvent, EventType, type MatrixClient, type ReceivedToDeviceMessage } from "matrix-js-sdk";
 import { MatrixRTCSessionEvent, type MatrixRTCSession } from "matrix-js-sdk/lib/matrixrtc/index.js";
+import type { IRTCNotificationContent } from "matrix-js-sdk/lib/matrixrtc/types.js";
 import { RoomEvent, Track } from "livekit-client";
 import type { ParticipantReference, PcmAudio } from "@matrix-call/core";
 import { MatrixMediaKeyProvider, VerifiedMatrixRtcKeys, MatrixRtcParticipantVerifier, membershipSnapshot, OpenIdFocusAuthorizer, FocusAuthorizationError, type FocusAuthorizationPort, type FocusAuthorizationSource, type OutboundKeySource } from "../../matrixrtc/src/index.js";
 import { createMatrixClient, enrollPinnedDevices, initializeMatrixClient, joinedEncryptedRoom } from "./client.js";
 import { createBrowserMedia, type BrowserMedia } from "./media.js";
 import { MatrixPublicationGuard, MatrixPublicationChangedError } from "./guard.js";
-import type { BrowserSetup } from "./types.js";
+import type { BrowserDial, BrowserSetup } from "./types.js";
 import { VerifiedAudioInbox } from "./inbox.js";
 import { retainCapture } from "./capture-authority.js";
+import { cancelable } from "../../voice/src/cancellation.js";
 
 type ActiveCall = {
   roomId: string;
@@ -24,10 +26,12 @@ type ActiveCall = {
   mediaFailed: () => void;
   encryptionFailed: (error: Error) => void;
   subscribe: () => void;
+  notified: (notice: { event_id: string } & IRTCNotificationContent) => void;
   timer: ReturnType<typeof setInterval> | undefined;
   closing: Promise<void> | undefined;
   input: VerifiedAudioInbox;
   playing: boolean;
+  outbound: Readonly<{ recipientId: string; expiresAtMs: number }> | undefined;
 };
 
 export async function waitUntil(predicate: () => boolean, signal: AbortSignal): Promise<void> {
@@ -96,8 +100,10 @@ export class BrowserMatrixRuntime {
 
   async prepare(): Promise<void> {
     if (!this.#initialized || this.#stopped) throw new Error("Matrix runtime is unavailable");
-    await waitUntil(() => this.#setup.policy.rooms.every((id) => Boolean(joinedEncryptedRoom(this.#client, id))), AbortSignal.timeout(30_000));
-    await enrollPinnedDevices(this.#client, this.#setup);
+    const signal = AbortSignal.timeout(30_000);
+    await waitUntil(() => this.#setup.policy.rooms.every((id) => Boolean(joinedEncryptedRoom(this.#client, id))), signal);
+    await cancelable(Promise.all(this.#setup.policy.rooms.map((id) => this.#client.getRoom(id)!.loadMembersIfNeeded())), signal);
+    await enrollPinnedDevices(this.#client, this.#setup, signal);
     this.#prepared = true;
   }
 
@@ -106,7 +112,7 @@ export class BrowserMatrixRuntime {
       roomId: this.#call?.roomId ?? null, connected: this.#call?.connected === true && !this.#call.controller.signal.aborted });
   }
 
-  async connect(roomId: string): Promise<void> {
+  async connect(roomId: string, outbound?: BrowserDial): Promise<void> {
     if (!this.#prepared || this.#stopped || this.#call) throw new Error("Matrix runtime is unavailable or busy");
     if (!this.#setup.policy.rooms.includes(roomId)) throw new Error("Matrix room is not configured");
     const room = joinedEncryptedRoom(this.#client, roomId);
@@ -114,11 +120,29 @@ export class BrowserMatrixRuntime {
     const session = this.#client.matrixRTC.getRoomSession(room);
     const slotId = session.slotId;
     if (slotId !== "m.call#ROOM") throw new Error("MatrixRTC slot is not supported");
+    if (outbound) {
+      const members = room.getMembersWithMembership("join");
+      const { userId, deviceId } = this.#setup.credentials;
+      if (outbound.recipientId === userId || !this.#setup.policy.owners.includes(outbound.recipientId) ||
+          !Number.isInteger(outbound.ringTimeoutMs) || outbound.ringTimeoutMs < 1000 || outbound.ringTimeoutMs > 60_000 ||
+          room.getJoinedMemberCount() !== 2 || members.length !== 2 || !members.some((member) => member.userId === userId) ||
+          !members.some((member) => member.userId === outbound.recipientId)) throw new Error("Outbound recipient requires an authorized two-party room");
+      if (session.memberships.some((member) => member.userId !== userId || member.deviceId !== deviceId)) throw new Error("MatrixRTC room already has an active call");
+    }
     const provider = new MatrixMediaKeyProvider();
     const media = this.#mediaFactory(provider);
     const memberships = () => session.memberships.map(membershipSnapshot);
-    const keys = new VerifiedMatrixRtcKeys({ roomId, owners: this.#setup.policy.owners, memberships, now: Date.now }, provider);
-    const source: OutboundKeySource = { roomId, owners: this.#setup.policy.owners, memberships, client: this.#client,
+    const { userId, deviceId } = this.#setup.credentials;
+    const own = () => memberships().filter((member) => member.userId === userId && member.deviceId === deviceId);
+    let notificationSent = false;
+    const notified = (notice: { event_id: string } & IRTCNotificationContent): void => {
+      const local = session.memberships.filter((member) => member.userId === userId && member.deviceId === deviceId);
+      if (notice.notification_type === "ring" && notice.slot_id === slotId && notice.event_id &&
+          notice["m.relates_to"]?.event_id && local.length === 1 && notice["m.relates_to"].event_id === local[0]!.eventId) notificationSent = true;
+    };
+    const listeners = outbound ? [outbound.recipientId] : this.#setup.policy.owners;
+    const keys = new VerifiedMatrixRtcKeys({ roomId, owners: listeners, memberships, now: Date.now }, provider);
+    const source: OutboundKeySource = { roomId, owners: listeners, memberships, client: this.#client,
       isJoined: () => session.isJoined(), now: Date.now, sink: provider };
     const controller = new AbortController();
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]);
@@ -157,24 +181,26 @@ export class BrowserMatrixRuntime {
     const input = new VerifiedAudioInbox({ verify: (reference, signal) => this.verify(reference, signal) },
       (reference) => this.#call === call && call.connected && !controller.signal.aborted && this.#localMembership(call) && keys.hasCurrentKey(reference.participantId),
       () => media.resetCapture());
-    const call: ActiveCall = { roomId, session, media, keys, guard, controller, connected: false, receive, changed, stateFailed, mediaFailed, encryptionFailed, subscribe, timer: undefined, closing: undefined, input, playing: false };
+    const call: ActiveCall = { roomId, session, media, keys, guard, controller, connected: false, receive, changed, stateFailed, mediaFailed, encryptionFailed, subscribe, notified, timer: undefined, closing: undefined, input, playing: false,
+      outbound: outbound && { recipientId: outbound.recipientId, expiresAtMs: Date.now() + outbound.ringTimeoutMs } };
     this.#call = call;
     this.#client.on(ClientEvent.ReceivedToDeviceMessage, receive);
     session.on(MatrixRTCSessionEvent.MembershipsChanged, changed);
     session.on(MatrixRTCSessionEvent.MembershipManagerError, stateFailed);
+    session.on(MatrixRTCSessionEvent.DidSendCallNotification, notified);
     media.room.on(RoomEvent.Disconnected, mediaFailed);
     media.room.on(RoomEvent.EncryptionError, encryptionFailed);
     media.room.on(RoomEvent.TrackPublished, subscribe);
-    const { userId, deviceId } = this.#setup.credentials;
-    const own = () => memberships().filter((member) => member.userId === userId && member.deviceId === deviceId);
     try {
       if (this.#setup.captureAudio) await media.startCapture((identity, audio) => {
         void input.accept({ roomId, rtcSessionId: slotId, participantId: identity }, audio).catch(() => fail("capture"));
       }, (identity) => input.listening && call.connected && !controller.signal.aborted && this.#localMembership(call) && keys.hasCurrentKey(identity), () => fail("capture"));
       session.joinRTCSession({ userId, deviceId, memberId: `${userId}:${deviceId}` }, [
         { type: "livekit", livekit_service_url: this.#setup.policy.focusUrls[0]!, livekit_alias: roomId },
-      ], undefined, { manageMediaKeys: false, callIntent: "audio", membershipEventExpiryMs: 60_000, delayedLeaveEventDelayMs: 5_000, delayedLeaveEventRestartMs: 2_000 });
+      ], undefined, { manageMediaKeys: false, callIntent: "audio", membershipEventExpiryMs: 60_000, delayedLeaveEventDelayMs: 5_000, delayedLeaveEventRestartMs: 2_000,
+        ...(outbound ? { notificationType: "ring" as const, notificationLifetimeMs: outbound.ringTimeoutMs } : {}) });
       await waitUntil(() => session.isJoined() && own().length === 1, signal);
+      if (outbound) await waitUntil(() => notificationSent, signal);
       await refreshPublication(guard, signal);
       const grant = await authorizeFocus(this.#authorizer, { roomId, slotId, client: this.#client,
         focus: () => { const oldest = session.getOldestMembership(); return oldest?.getTransport(oldest); },
@@ -191,6 +217,21 @@ export class BrowserMatrixRuntime {
       await this.#disconnect(call);
       throw error;
     }
+  }
+
+  async recipient(recipientId: string): Promise<ParticipantReference | null> {
+    const call = this.#call;
+    if (!call?.connected || call.controller.signal.aborted || call.outbound?.recipientId !== recipientId) throw new Error("Outbound call is unavailable");
+    if (Date.now() >= call.outbound.expiresAtMs) throw new Error("Outbound answer deadline expired");
+    const members = call.session.memberships.filter((member) => member.userId === recipientId);
+    if (members.length > 1) throw new Error("Outbound recipient membership is ambiguous");
+    const member = members[0];
+    if (!member || !call.keys.hasCurrentKey(member.rtcBackendIdentity) || !call.media.room.remoteParticipants.has(member.rtcBackendIdentity)) return null;
+    const reference = { roomId: call.roomId, rtcSessionId: "m.call#ROOM", participantId: member.rtcBackendIdentity };
+    const proof = await this.verify(reference, call.controller.signal);
+    if (proof.userId !== recipientId) throw new Error("Outbound recipient identity changed");
+    if (Date.now() >= call.outbound.expiresAtMs) throw new Error("Outbound answer deadline expired");
+    return Object.freeze(reference);
   }
 
   async publish(audio: PcmAudio, signal: AbortSignal): Promise<void> {
@@ -244,6 +285,7 @@ export class BrowserMatrixRuntime {
     this.#client.off(ClientEvent.ReceivedToDeviceMessage, call.receive);
     call.session.off(MatrixRTCSessionEvent.MembershipsChanged, call.changed);
     call.session.off(MatrixRTCSessionEvent.MembershipManagerError, call.stateFailed);
+    call.session.off(MatrixRTCSessionEvent.DidSendCallNotification, call.notified);
     call.media.room.off(RoomEvent.Disconnected, call.mediaFailed);
     call.media.room.off(RoomEvent.EncryptionError, call.encryptionFailed);
     call.media.room.off(RoomEvent.TrackPublished, call.subscribe);
