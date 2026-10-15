@@ -8,6 +8,7 @@ import { once } from "node:events";
 import { startTestVoiceServices } from "./voice-services.mjs";
 
 export async function verifyOutboundCall({ root, directory, chromium, api, waitFor, homeserver, registrationSecret, origin, focusUrl, sfuUrl }) {
+  const selfCalls = process.env.MATRIX_CALL_SELF_CALLS === "1";
   const { startBrowserWorker } = await import(pathToFileURL(path.join(root, "dist/browser-worker/index.js")));
   const { WorkerHttpClient } = await import(pathToFileURL(path.join(root, "dist/worker/index.js")));
   const accounts = [];
@@ -26,6 +27,7 @@ export async function verifyOutboundCall({ root, directory, chromium, api, waitF
     power_level_content_override: { users: { [bot.userId]: 100 } },
   }, recipient.accessToken);
   await api(`${homeserver}/_matrix/client/v3/join/${encodeURIComponent(roomId)}`, "POST", {}, bot.accessToken);
+  const baselineRoom = selfCalls ? await api(`${homeserver}/_matrix/client/v3/createRoom`, "POST", { preset: "private_chat", initial_state: [{ type: "m.room.encryption", state_key: "", content: { algorithm: "m.megolm.v1.aes-sha2" } }] }, bot.accessToken) : undefined;
   const data = path.join(directory, "outbound"); await mkdir(data, { mode: 0o700 });
   const context = await chromium.launchPersistentContext(path.join(data, "recipient"), { headless: true, chromiumSandbox: true, args: ["--autoplay-policy=no-user-gesture-required"] });
   let worker;
@@ -47,13 +49,14 @@ export async function verifyOutboundCall({ root, directory, chromium, api, waitF
     const portServer = createServer(); portServer.listen(0, "127.0.0.1"); await once(portServer, "listening");
     const assetPort = portServer.address().port; await new Promise((resolve) => portServer.close(resolve));
     await writeFile(files.config, JSON.stringify({ credentialsFile: files.credentialsFile, profileDir: path.join(data, "profile"), assetDir: path.join(root, "dist/browser-worker/assets"),
-      assetPort, owners: [recipient.userId], rooms: [roomId], focusUrls: [focusUrl], sfuUrls: [sfuUrl],
+      assetPort, owners: [selfCalls ? bot.userId : recipient.userId], rooms: [baselineRoom?.room_id ?? roomId], selfCalls, focusUrls: [focusUrl], sfuUrls: [sfuUrl],
       devices: [{ userId: recipient.userId, deviceId: recipient.deviceId, ...keys }], allowInsecureLoopback: true, voiceFile: files.voiceFile }));
     worker = await startBrowserWorker({ MATRIX_CALL_SECRET_FILE: files.secret, MATRIX_CALL_PORT: "0", MATRIX_CALL_BROWSER_CONFIG: files.config });
     await waitFor(() => peer.evaluate(({ userId, deviceId, keys }) => window.matrixTest.trust(userId, deviceId, keys), { ...bot, keys: worker.driver.deviceKeys }), "outbound bot device enrollment");
     const client = await WorkerHttpClient.connect({ baseUrl: `http://127.0.0.1:${worker.server.address().port}`, secret, allowInsecureLoopback: true, timeoutMs: 90_000 });
     assert(client.outboundCalls);
-    const input = { roomId, recipientId: recipient.userId, message: "Fixture agent response", ringTimeoutMs: 30_000 };
+    if (selfCalls) assert.equal(await client.recipientRoom({ recipientId: recipient.userId }, signal()), roomId);
+    const input = { roomId, recipientId: recipient.userId, message: "Fixture agent response", ringTimeoutMs: 30_000, ...(selfCalls ? { selfCall: true } : {}) };
     const pending = client.dial(input, signal()).then((value) => ({ value }), (error) => ({ error }));
     await waitFor(async () => (await peer.evaluate(({ roomId, botId }) => window.matrixTest.ringNotifications(roomId, botId), { roomId, botId: bot.userId })).length === 1, "real MatrixRTC ringing notification");
     const [notice] = await peer.evaluate(({ roomId, botId }) => window.matrixTest.ringNotifications(roomId, botId), { roomId, botId: bot.userId });
@@ -79,15 +82,26 @@ export async function verifyOutboundCall({ root, directory, chromium, api, waitF
     const result = await pending; if (result.error) throw result.error;
     assert.equal(result.value.state, "connected");
     assert.equal(services.state.turns.length, 0); assert.equal(services.state.transcriptions.length, 0); assert.equal(services.state.syntheses, 1);
+    if (selfCalls) {
+      await peer.evaluate(() => window.mediaTest.observe("outbound"));
+      await peer.evaluate(() => window.mediaTest.sound(880));
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      await peer.evaluate(() => window.mediaTest.silence());
+      await waitFor(() => services.state.turns.length === 1, "non-owner voice turn with scoped participant policy");
+      await waitFor(async () => { const audio = await peer.evaluate((id) => window.mediaTest.measure(id), identity); return audio.encrypted && audio.rms > 0.03 && Math.abs(audio.frequency - 1320) < 35; }, "non-owner encrypted voice reply");
+      await waitFor(() => !worker.voice.busy, "non-owner voice completion");
+      await peer.evaluate(() => window.mediaTest.finishObservation());
+      assert.equal(services.state.turns[0].caller.userId, recipient.userId);
+    }
     await client.leave(result.value.sessionId, signal());
     assert.equal((await client.status(signal())).session, null);
     await peer.evaluate(async () => { await window.matrixTest.leave(); await window.mediaTest.close(); });
     await assert.rejects(client.dial({ ...input, ringTimeoutMs: 1000 }, signal()), (error) => error.code === "backend-failed");
     await waitFor(async () => (await client.status(signal())).session === null, "unanswered exact-session cleanup");
-    assert.equal(services.state.syntheses, 1, "An unanswered call must not synthesize an opening");
+    assert.equal(services.state.syntheses, selfCalls ? 2 : 1, "An unanswered call must not synthesize an opening");
     assert.equal(services.state.invalidRequests, 0);
     console.log(JSON.stringify({ event: "outbound-call-verified", ringingNotification: true, verifiedAnswer: true, encryptedOpening: true, microphoneUtterances: 0, modelTurns: 0, unansweredCleanup: true }));
-    return { outboundCall: true, verifiedOutboundAnswer: true, openingWithoutMicrophone: true, unansweredCleanup: true };
+    return { outboundCall: true, verifiedOutboundAnswer: true, openingWithoutMicrophone: true, unansweredCleanup: true, nonOwnerSelfCall: selfCalls, nonOwnerVoice: selfCalls };
   } finally {
     await worker?.close(); await services?.close(); await context.close();
   }
