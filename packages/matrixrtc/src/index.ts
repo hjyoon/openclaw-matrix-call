@@ -3,6 +3,8 @@ export { VerifiedMatrixRtcKeys } from "./verified-keys.js";
 export type { ParticipantKeySink, RtcMembership, VerifiedKeySource } from "./verified-keys.js";
 export { MatrixRtcParticipantVerifier, membershipSnapshot } from "./participants.js";
 export type { MatrixParticipantSource } from "./participants.js";
+export { MatrixRtcRecipientVerifier } from "./recipients.js";
+export type { MatrixRecipientSource, VerifiedMatrixRecipient } from "./recipients.js";
 export { publishMatrixRtcKey } from "./outbound-key.js";
 export type { OutboundKeySource } from "./outbound-key.js";
 export { FocusAuthorizationError, OpenIdFocusAuthorizer } from "./focus.js";

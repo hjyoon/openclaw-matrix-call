@@ -4,6 +4,7 @@ import { EventType, MatrixEvent } from "matrix-js-sdk";
 import { CallMembership } from "matrix-js-sdk/lib/matrixrtc/index.js";
 import { DeviceVerificationStatus, type CryptoApi } from "matrix-js-sdk/lib/crypto-api/index.js";
 import { MatrixRtcParticipantVerifier, membershipSnapshot, type MatrixParticipantSource } from "../../packages/matrixrtc/src/participants.js";
+import { MatrixRtcRecipientVerifier } from "../../packages/matrixrtc/src/recipients.js";
 
 const reference = { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: "@alice:example.org:ALICE" };
 
@@ -146,5 +147,76 @@ describe("MatrixRtcParticipantVerifier", () => {
     const { source, verifier, signal } = await fixture();
     source.now.mockReturnValue(now);
     await expect(verifier.verify(reference, signal)).rejects.toThrow("Invalid MatrixRTC clock");
+  });
+});
+
+describe("MatrixRtcRecipientVerifier", () => {
+  it("authorizes an enrolled listener without an incoming key or microphone track and keeps input verification strict", async () => {
+    const f = await fixture();
+    f.source.keys.hasCurrentKey.mockReturnValue(false);
+    f.participant.trackPublications.clear();
+    const verifier = new MatrixRtcRecipientVerifier(f.source);
+    const proof = await verifier.verify(reference, f.signal);
+    expect(proof).toEqual({ ...reference, userId: "@alice:example.org", deviceId: "ALICE", expiresAtMs: 130_000, deviceVerified: true });
+    expect(Object.isFrozen(proof)).toBe(true);
+    expect(proof).not.toHaveProperty("mediaEncrypted");
+    expect(f.source.keys.hasCurrentKey).not.toHaveBeenCalled();
+    await expect(f.verifier.verify(reference, f.signal)).rejects.toThrow("encrypted media");
+    f.source.keys.hasCurrentKey.mockReturnValue(true);
+    await expect(f.verifier.verify(reference, f.signal)).rejects.toThrow("encrypted audio");
+    await verifier.verify(reference, f.signal);
+    expect(f.getDeviceVerificationStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("never extends expiry and bounds an expiry-free membership", async () => {
+    const f = await fixture(); const verifier = new MatrixRtcRecipientVerifier(f.source);
+    f.source.now.mockReturnValue(190_000);
+    expect((await verifier.verify(reference, f.signal)).expiresAtMs).toBe(200_000);
+    const modern = await member(true);
+    f.source.session.memberships = [modern];
+    f.source.media.remoteParticipants.set(modern.rtcBackendIdentity, { ...f.participant, identity: modern.rtcBackendIdentity } as unknown as RemoteParticipant);
+    expect((await verifier.verify({ ...reference, participantId: modern.rtcBackendIdentity }, f.signal)).expiresAtMs).toBe(220_000);
+  });
+
+  it.each(["room", "slot", "unsupported", "disconnected", "plaintext", "missing-member", "ambiguous", "missing-sfu", "identity", "crypto", "unknown", "unverified"])("rejects an unauthorized listener with %s evidence", async (kind) => {
+    const f = await fixture(); const ref = { ...reference };
+    if (kind === "room") ref.roomId = "!other";
+    if (kind === "slot") ref.rtcSessionId = "m.call#other";
+    if (kind === "unsupported") { f.source.session.slotId = "m.call#other"; ref.rtcSessionId = "m.call#other"; }
+    if (kind === "disconnected") f.source.media.state = ConnectionState.Disconnected;
+    if (kind === "plaintext") f.source.media.isE2EEEnabled = false;
+    if (kind === "missing-member") f.source.session.memberships = [];
+    if (kind === "ambiguous") f.source.session.memberships.push(f.source.session.memberships[0]!);
+    if (kind === "missing-sfu") f.source.media.remoteParticipants.clear();
+    if (kind === "identity") f.participant.identity = "other";
+    if (kind === "crypto") f.source.client.getCrypto = () => undefined as unknown as CryptoApi;
+    if (kind === "unknown") f.source.client.getCrypto = () => ({ getDeviceVerificationStatus: async () => null }) as unknown as CryptoApi;
+    if (kind === "unverified") f.getDeviceVerificationStatus.mockResolvedValue(new DeviceVerificationStatus({ localVerified: false }));
+    await expect(new MatrixRtcRecipientVerifier(f.source).verify(ref, f.signal)).rejects.toThrow("MatrixRTC");
+  });
+
+  it.each(["clock-fraction", "clock-negative", "clock-overflow", "created-fraction", "created-negative", "created-future", "expiry-fraction", "expired"])("rejects invalid listener lifetime: %s", async (kind) => {
+    const f = await fixture(); const current = f.source.session.memberships[0]!;
+    if (kind === "clock-fraction") f.source.now.mockReturnValue(100000.5);
+    if (kind === "clock-negative") f.source.now.mockReturnValue(-1);
+    if (kind === "clock-overflow") f.source.now.mockReturnValue(Number.MAX_SAFE_INTEGER);
+    if (kind === "created-fraction") vi.spyOn(current, "createdTs").mockReturnValue(90000.5);
+    if (kind === "created-negative") vi.spyOn(current, "createdTs").mockReturnValue(-1);
+    if (kind === "created-future") vi.spyOn(current, "createdTs").mockReturnValue(100001);
+    if (kind === "expiry-fraction") vi.spyOn(current, "getAbsoluteExpiry").mockReturnValue(200000.5);
+    if (kind === "expired") vi.spyOn(current, "getAbsoluteExpiry").mockReturnValue(100000);
+    await expect(new MatrixRtcRecipientVerifier(f.source).verify(reference, f.signal)).rejects.toThrow("MatrixRTC");
+  });
+
+  it.each(["before", "after", "changed", "expired"])("fences listener verification that is %s", async (kind) => {
+    const f = await fixture(); const controller = new AbortController();
+    if (kind === "before") controller.abort(new Error("cancelled"));
+    f.getDeviceVerificationStatus.mockImplementationOnce(async () => {
+      if (kind === "after") controller.abort(new Error("cancelled"));
+      if (kind === "changed") vi.spyOn(f.source.session.memberships[0]!, "createdTs").mockReturnValue(90001);
+      if (kind === "expired") f.source.now.mockReturnValue(200000);
+      return new DeviceVerificationStatus({ localVerified: true });
+    });
+    await expect(new MatrixRtcRecipientVerifier(f.source).verify(reference, controller.signal)).rejects.toThrow();
   });
 });
