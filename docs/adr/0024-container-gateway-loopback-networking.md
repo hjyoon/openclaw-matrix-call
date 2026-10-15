@@ -24,3 +24,5 @@ Keep the workers in a separate included Compose file within the same project. St
 ## Consequences
 
 This optional route shares network access and service lifetime dependencies. It does not share process/filesystem authority or grant a Gateway token to workers. A Gateway container replacement requires coordinated worker replacement and fresh capability negotiation. Current deployment evidence establishes signed readiness and control with an enrolled device; actual installed-client audio remains a separate gate.
+
+The pinned Gateway's live reload can impose a shorter service-start deadline than configured initial discovery. An absent/enrolling browser exceeded its observed 5000 ms deadline. Use a coordinated cold Gateway restart for this replacement path; a saved enabled setting does not establish runtime activation.

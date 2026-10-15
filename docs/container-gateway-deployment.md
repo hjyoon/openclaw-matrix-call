@@ -26,6 +26,8 @@ The native control's discovery budget starts when that service starts, rather th
 
 Shared network namespaces couple replacement: restarting only a worker or recreating only the Gateway can leave a stale authenticated client or an old namespace. Use a coordinated procedure, including exact-session leave when a call is active. A normal process restart preserves no call authority or conversation history.
 
+Re-enabling the channel through a live configuration reload has an additional host deadline. The pinned Gateway enforced a 5000 ms plugin-service startup limit while the browser was still enrolling; the configured 90000 ms control-discovery budget did not extend that limit. The saved setting remained enabled but runtime application failed. Use the coordinated cold Gateway restart above after changing device pins or replacing absent workers. Do not treat a persisted configuration response as successful runtime activation or suppress the host's lifecycle checks. Hot reload with an already available compatible worker is a narrower, separately tested case.
+
 ## Backend and evidence limits
 
 The public alpha.1 paired images were tested with authorization service 0.8.0 and LiveKit 1.13.9. An existing 0.4.1 authorization backend uses a different room encoding. A source build can explicitly select [legacy encoding](focus-authorization.md), identified by its own image tag and source commit; never relabel that image as the immutable public alpha.1 browser archive. Leave shared Matrix/authorization/SFU services unchanged unless separately planning their migration.
