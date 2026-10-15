@@ -64,6 +64,7 @@ assert.equal(plugin.default.id, "matrix-call");
 assert.equal(typeof plugin.default.register, "function");
 const manifest = JSON.parse(await readFile(path.join(root, "packages/openclaw-plugin/openclaw.plugin.json"), "utf8"));
 assert.equal(manifest.id, plugin.default.id);
+assert.deepEqual(manifest.contracts.tools, ["matrix_call"]);
 assert.equal(manifest.version, "0.1.0-alpha.2");
 assert.deepEqual(manifest.channelConfigs["matrix-call"].schema, plugin.matrixCallChannel.configSchema.schema);
 console.log("Standalone bundles, public SDK imports, and plugin metadata verified.");

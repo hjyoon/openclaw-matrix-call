@@ -6,6 +6,9 @@
   "channels": [
     "matrix-call"
   ],
+  "contracts": {
+    "tools": ["matrix_call"]
+  },
   "configSchema": {
     "type": "object",
     "properties": {},
