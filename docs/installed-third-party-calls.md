@@ -1,5 +1,7 @@
 # Installed ordinary-user third-party calling
 
+A subsequent iPhone test rang and joined but had a silent opening. The [receive-only answer repair](installed-client-silent-opening.md) records that failure and the current browser replacement; native policy and package identity below are unchanged.
+
 On 2026-10-15, the existing private Docker deployment received unpublished native candidate `0.1.0-alpha.4`, source `d1d88bc7b92e673a8eb7e561ba47c73536a67e9b`. Its archive SHA-256 is `fccb0eafe35a1582b1a271d6dda12cd9bebb88d0020a1452481fb35f82be6cf8`. Package inspection and publication dry-run passed with no issues or warnings; the package was not published. Public alpha.1 remains unchanged.
 
 The native channel now has `selfCalls: true` and `thirdPartyCalls: true`. Every Matrix sender admitted by the messaging adapter can request a call to another exact Matrix ID. Omission still calls the requester. The recipient needs an existing joined encrypted two-person bot room and a verified device. Device enrollment is independent of administrator authority; other recipients are not automatically trusted.

@@ -40,7 +40,7 @@ The recipient and bot need an existing joined encrypted two-person room and a de
 
 For a new recipient, compare their device ID, Ed25519 signing fingerprint and Curve25519 identity key through a trusted enrollment process, then add the compared device to the browser configuration's `devices` list and perform a coordinated restart. Existing verified devices can be used. Non-owner device pins never grant administrator privileges. Missing recipient setup fails before ringing with `private-room-required` or `verification-required`.
 
-An answer requires the exact recipient, current membership, authenticated media keys and encrypted live audio. Opening speech does not require microphone input. The requester does not need a verified calling device merely to ask the bot to call someone else.
+An answer requires the exact recipient, current valid membership, fresh verified device trust and the matching SFU listener in an encrypted connection. The publication guard distributes outgoing media keys only to verified listeners. Opening speech requires no incoming microphone track, media key or utterance. Actual voice input still requires authenticated incoming keys and encrypted live audio. The requester does not need a verified calling device merely to ask the bot to call someone else. See [ADR 0028](adr/0028-outbound-listener-verification.md).
 
 ## Authority and limits
 
@@ -52,8 +52,10 @@ The worker handles one call at a time. Other attempts receive `busy`. Scheduling
 
 ## Verification
 
-The runtime suite passes 1,293 tests with 100% per-file statements, branches, functions and lines. Tests cover ordinary third-party requests, distinct requester/callee authority, unrelated-user status/leave rejection, self-only default behavior and missing recipient setup before dialing.
+The runtime suite passes 1,334 tests with 100% per-file statements, branches, functions and lines. Tests cover ordinary third-party requests, distinct requester/callee authority, unrelated-user status/leave rejection, self-only default behavior, missing recipient setup before dialing and receive-only answer verification with unchanged input checks.
 
 `MATRIX_CALL_SELF_CALLS=1 MATRIX_CALL_THIRD_PARTY_CALLS=1 pnpm verify:matrix-commands` checks an actual installed Gateway receiving ordinary-user Matrix requests, calling a third enrolled recipient's private room and allowing the requester to cancel through a model tool. Its chat, media and model fixtures do not prove real-client audio. The independent `pnpm verify:matrix-self-calls` check covers real MatrixRTC ringing, encrypted opening audio, subsequent non-owner voice input/reply, recipient hangup and unanswered cleanup against isolated infrastructure and authenticated speech/model fixtures.
+
+The opening check now publishes no recipient microphone track or media key until after encrypted opening audio is received. Both the native driver and the restricted Docker browser pass this regression. Earlier checks published a silent recipient microphone track, which missed this dependency.
 
 The [installed alpha.4 deployment](installed-third-party-calls.md) records exact artifacts, preserved policy, successful readiness and remaining phone-test limits.
