@@ -65,9 +65,7 @@ export async function verifyOutboundCall({ root, directory, chromium, api, waitF
     assert.equal(services.state.syntheses, 0, "Opening speech must wait for the answer");
     await peer.evaluate(({ id, owners, focus }) => window.matrixTest.join(id, owners, focus), { id: roomId, owners: [recipient.userId, bot.userId], focus: focusUrl });
     await waitFor(async () => (await peer.evaluate(() => window.matrixTest.status("ignored"))).members === 2, "outbound answer membership");
-    assert(await peer.evaluate(() => window.matrixTest.rotate(0)));
     await peer.evaluate(({ focus, sfu }) => window.matrixTest.connectAuthorized(focus, sfu), { focus: focusUrl, sfu: sfuUrl });
-    await peer.evaluate(async () => { await window.mediaTest.publish(0); window.mediaTest.silence(); });
     const identity = `${bot.userId}:${bot.deviceId}`;
     try {
       await waitFor(async () => { const audio = await peer.evaluate((id) => window.mediaTest.measure(id), identity); return audio.encrypted && audio.rms > 0.03 && Math.abs(audio.frequency - 1320) < 35; }, "encrypted opening without a microphone utterance");
@@ -80,9 +78,13 @@ export async function verifyOutboundCall({ root, directory, chromium, api, waitF
       throw error;
     }
     const result = await pending; if (result.error) throw result.error;
+    assert.equal((await peer.evaluate(() => window.mediaTest.diagnostics())).localEncrypted.length, 0, "The recipient must publish no microphone track before opening speech");
+    assert.equal((await peer.evaluate(() => window.matrixTest.status("ignored"))).localKey, false, "No recipient media key is required for the opening");
     assert.equal(result.value.state, "connected");
     assert.equal(services.state.turns.length, 0); assert.equal(services.state.transcriptions.length, 0); assert.equal(services.state.syntheses, 1);
     if (selfCalls) {
+      assert(await peer.evaluate(() => window.matrixTest.rotate(0)));
+      await peer.evaluate(async () => { await window.mediaTest.publish(0); window.mediaTest.silence(); });
       await peer.evaluate(() => window.mediaTest.observe("outbound"));
       await peer.evaluate(() => window.mediaTest.sound(880));
       await new Promise((resolve) => setTimeout(resolve, 900));
@@ -105,8 +107,8 @@ export async function verifyOutboundCall({ root, directory, chromium, api, waitF
     await waitFor(async () => (await client.status(signal())).session === null, "unanswered exact-session cleanup");
     assert.equal(services.state.syntheses, selfCalls ? 2 : 1, "An unanswered call must not synthesize an opening");
     assert.equal(services.state.invalidRequests, 0);
-    console.log(JSON.stringify({ event: "outbound-call-verified", ringingNotification: true, verifiedAnswer: true, encryptedOpening: true, microphoneUtterances: 0, modelTurns: 0, unansweredCleanup: true }));
-    return { outboundCall: true, verifiedOutboundAnswer: true, openingWithoutMicrophone: true, unansweredCleanup: true, nonOwnerSelfCall: selfCalls, nonOwnerVoice: selfCalls };
+    console.log(JSON.stringify({ event: "outbound-call-verified", ringingNotification: true, verifiedAnswer: true, encryptedOpening: true, recipientMicrophoneTracksAtOpening: 0, recipientKeysAtOpening: 0, microphoneUtterances: 0, modelTurns: 0, unansweredCleanup: true }));
+    return { outboundCall: true, verifiedOutboundAnswer: true, openingWithoutMicrophone: true, receiveOnlyOpening: true, unansweredCleanup: true, nonOwnerSelfCall: selfCalls, nonOwnerVoice: selfCalls };
   } finally {
     await worker?.close(); await services?.close(); await context.close();
   }
