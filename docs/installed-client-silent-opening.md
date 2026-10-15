@@ -20,4 +20,6 @@ The private repair image is `matrix-call-browser-worker:0.1.0-alpha.4-receive-on
 
 The native alpha.4 package, speech image, administrator/requester/recipient policy, Matrix messaging admission, model authentication and device enrollment are unchanged. Gateway state and the persistent calling profile were backed up before coordinated replacement. Private records are `records/pre-receive-only-backup.json`, `records/receive-only-candidate.json` and `releases/0.1.0-alpha.4/receive-only-browser-d3e45e7.json`.
 
+At `2026-10-15T04:50:41Z`, all four services were healthy, signed control was available and idle, all three authenticated voice/control endpoints were ready, and Matrix messaging was connected. Every running worker bundle/asset matched its reviewed build hash. `records/receive-only-deployment-health.json` records the image identities and preserved configuration checks.
+
 Installed-client ringing is now observed, but opening audibility after this repair requires a new operator result. No unrelated recipient was called during validation.
