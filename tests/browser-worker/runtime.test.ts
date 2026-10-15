@@ -144,6 +144,21 @@ describe("production Matrix browser runtime", () => {
     } finally { await f.runtime.close(); }
   });
 
+  it.each(["no-track", "video", "plaintext", "unsubscribed", "ended", "empty"])("waits for recipient media that is %s before verifying the answer", async (state) => {
+    const f = await outboundReady(); await f.runtime.connect("!room", { recipientId: f.remote.userId, ringTimeoutMs: 20000 });
+    try {
+      f.session.memberships = [f.local, f.remote]; await admit(f);
+      if (state === "no-track") Reflect.deleteProperty(f.publication, "track");
+      if (state === "video") f.publication.kind = Track.Kind.Video;
+      if (state === "plaintext") f.publication.isEncrypted = false;
+      if (state === "unsubscribed") f.publication.isSubscribed = false;
+      if (state === "ended") f.publication.track.mediaStreamTrack.readyState = "ended";
+      if (state === "empty") f.media.room.remoteParticipants.get(f.remote.rtcBackendIdentity)!.trackPublications.clear();
+      const verification = vi.spyOn(f.runtime, "verify");
+      expect(await f.runtime.recipient(f.remote.userId)).toBeNull(); expect(verification).not.toHaveBeenCalled();
+    } finally { await f.runtime.close(); }
+  });
+
   it("does not expose an ordinary joined call as an outbound answer", async () => {
     const f = await ready(); await f.runtime.connect("!room");
     try { await expect(f.runtime.recipient(f.remote.userId)).rejects.toThrow("unavailable"); }

@@ -226,7 +226,10 @@ export class BrowserMatrixRuntime {
     const members = call.session.memberships.filter((member) => member.userId === recipientId);
     if (members.length > 1) throw new Error("Outbound recipient membership is ambiguous");
     const member = members[0];
-    if (!member || !call.keys.hasCurrentKey(member.rtcBackendIdentity) || !call.media.room.remoteParticipants.has(member.rtcBackendIdentity)) return null;
+    if (!member || !call.keys.hasCurrentKey(member.rtcBackendIdentity)) return null;
+    const participant = call.media.room.remoteParticipants.get(member.rtcBackendIdentity);
+    if (!participant || ![...participant.trackPublications.values()].some((publication) => publication.kind === Track.Kind.Audio &&
+      publication.isEncrypted && publication.isSubscribed && publication.track?.mediaStreamTrack.readyState === "live")) return null;
     const reference = { roomId: call.roomId, rtcSessionId: "m.call#ROOM", participantId: member.rtcBackendIdentity };
     const proof = await this.verify(reference, call.controller.signal);
     if (proof.userId !== recipientId) throw new Error("Outbound recipient identity changed");
