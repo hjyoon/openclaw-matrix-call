@@ -26,7 +26,7 @@ async function freePort(host: string) {
   return port;
 }
 
-async function fixture(host = "127.0.0.1") {
+async function fixture(host = "127.0.0.1", policyForCaller?: Parameters<typeof createNativeAgentService>[1]) {
   const directory = await mkdtemp(path.join(tmpdir(), "matrix-call-native-test-"));
   const secretFile = path.join(directory, "agent.secret");
   await writeFile(secretFile, secret + "\n", { mode: 0o600 });
@@ -42,7 +42,7 @@ async function fixture(host = "127.0.0.1") {
   const background = vi.fn(() => {});
   const runBackground = <T>(operation: () => T): T => { background(); return operation(); };
   const api = { runtime, lifecycle: { runInBackgroundContext: runBackground, registerRuntimeLifecycle: vi.fn() } } as unknown as OpenClawPluginApi;
-  const service = createNativeAgentService(api);
+  const service = createNativeAgentService(api, policyForCaller);
   const baseUrl = `http://${host === "::1" ? "[::1]" : host}:${port}`;
   const cleanup = async () => { await service.stop!(context); await rm(directory, { recursive: true, force: true }); };
   return { directory, context, settings, runtime, api, background, runBackground, service, run, baseUrl, cleanup };
@@ -226,4 +226,18 @@ describe("native signed agent service lifecycle", () => {
       expect(await agent.reply(turn())).toEqual({ text: "Hello 한국어" });
     } finally { occupied.close(); await test.cleanup(); }
   });
+});
+
+it("connects signed non-owner voice to a revocable call scope through the native service", async () => {
+  let active = true; const userId = "@visitor:example.org";
+  const f = await fixture("127.0.0.1", (caller) => active && caller.userId === userId ? { owners: [userId], rooms: ["!private"], agents: ["assistant"] } : undefined);
+  try {
+    await f.service.start(f.context);
+    const adapter = await HttpAgentAdapter.connect({ baseUrl: f.baseUrl, secret });
+    const value = turn();
+    const input = { ...value, caller: { ...value.caller, userId, roomId: "!private" }, messages: [{ ...value.messages[0]!, senderId: userId }] };
+    expect((await adapter.reply(input)).text).toBe("Hello 한국어");
+    expect(f.run.mock.calls[0]![0]).toMatchObject({ senderIsOwner: false, toolsAllow: [] });
+    active = false; await expect(adapter.reply({ ...input, turnId: randomUUID() })).rejects.toThrow("http-error");
+  } finally { await f.cleanup(); }
 });

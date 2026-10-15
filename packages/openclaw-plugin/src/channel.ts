@@ -6,6 +6,7 @@ import { CallError, policySchema } from "@matrix-call/core";
 const accountSchema = z.strictObject({
   enabled: z.boolean().default(false),
   policy: policySchema.optional(),
+  selfCalls: z.boolean().default(false),
   agentService: z.strictObject({
     secretFile: z.string().min(1).max(4096).refine(isAbsolute),
     host: z.enum(["127.0.0.1", "::1"]).default("127.0.0.1"),

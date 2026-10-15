@@ -34,6 +34,8 @@ Number records in order. An accepted ADR is a historical record, not a second in
 | [0024](0024-container-gateway-loopback-networking.md) | Accepted | Optional Gateway-container network sharing with separate worker authority and coordinated replacement |
 | [0025](0025-outbound-call-and-opening-speech.md) | Accepted | Explicit recipient-bound outbound calling and opening speech independent of scheduling |
 
+| [0026](0026-authenticated-self-calls.md) | Accepted | Trusted Matrix self-calls with private room discovery and per-call voice authority |
+
 ## Record format
 
 Use a descriptive filename and the following sections: status, date, context, decision, alternatives considered, and consequences. State implementation limits explicitly. A decision to support a capability does not establish that the capability is implemented or tested.

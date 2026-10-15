@@ -6,8 +6,9 @@ import { readSecretFileSync } from "openclaw/plugin-sdk/secret-file";
 import { createAgentServer } from "@matrix-call/agent-http";
 import { OpenClawAgentAdapter } from "./agent.js";
 import { matrixCallChannel } from "./channel.js";
+import type { CallPolicy, VerifiedParticipant } from "@matrix-call/core";
 
-export function createNativeAgentService(api: Pick<OpenClawPluginApi, "runtime" | "lifecycle">): OpenClawPluginService {
+export function createNativeAgentService(api: Pick<OpenClawPluginApi, "runtime" | "lifecycle">, policyForCaller?: (caller: VerifiedParticipant) => CallPolicy | undefined): OpenClawPluginService {
   let worker: ReturnType<typeof createAgentServer> | undefined;
   let transition = Promise.resolve();
   const close = async (): Promise<void> => {
@@ -38,6 +39,7 @@ export function createNativeAgentService(api: Pick<OpenClawPluginApi, "runtime" 
         if (!background) throw new Error("Managed plugin background context unavailable");
         const adapter = new OpenClawAgentAdapter({
           runtime: api.runtime, policy: account.policy!,
+          policyForCaller,
           commandRuntime: createLoggerBackedRuntime({ logger: {
             info: () => {},
             error: () => { context.logger.error("Matrix Call agent command failed"); },
@@ -45,7 +47,7 @@ export function createNativeAgentService(api: Pick<OpenClawPluginApi, "runtime" 
         });
         phase = "listener";
         await background(async () => {
-          worker = createAgentServer({ secret, policy: account.policy!, timeoutMs: settings.timeoutMs, agent: {
+          worker = createAgentServer({ secret, policy: account.policy!, policyForCaller, timeoutMs: settings.timeoutMs, agent: {
             id: adapter.id, historyMode: adapter.historyMode,
             reply: (turn) => background(() => adapter.reply(turn)),
           } });

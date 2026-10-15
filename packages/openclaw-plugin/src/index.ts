@@ -23,7 +23,7 @@ export default defineChannelPluginEntry({
       handler: control.command,
     });
     if (api.registrationMode === "full") {
-      api.registerService(createNativeAgentService(api));
+      api.registerService(createNativeAgentService(api, control.policyForCaller));
       api.registerService(control.service);
       api.registerGatewayMethod("matrixcall.control", async ({ params, respond, signal, hasCurrentClientAuthority }) => {
         const assertAuthorized = () => { if (!hasCurrentClientAuthority?.()) throw new NativeControlError("forbidden"); };

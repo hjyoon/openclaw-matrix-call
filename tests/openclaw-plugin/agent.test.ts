@@ -158,3 +158,14 @@ describe("OpenClaw agent adapter", () => {
     expect((await store.get(first.id))!.messages.map((m) => m.text)).toEqual(["First", "Hello", "Follow-up", "Hello"]);
   });
 });
+
+it("uses a revocable per-call participant policy without granting host owner authority", async () => {
+  const f = setup(); let active = true;
+  const userId = "@visitor:example.org"; const roomId = "!private";
+  const scoped = { owners: [userId], rooms: [roomId], agents: ["assistant"] };
+  const adapter = new OpenClawAgentAdapter({ ...f.options, policyForCaller: (caller) => active && caller.userId === userId && caller.roomId === roomId ? scoped : undefined });
+  const input = { ...turn(), caller: { ...request.caller, userId, roomId, expiresAtMs: Date.now() + 60000 }, messages: [{ ...request.messages[0]!, senderId: userId }] };
+  expect(await adapter.reply(input)).toEqual({ text: "Hello" });
+  expect(f.run.mock.calls[0]![0]).toMatchObject({ senderIsOwner: false, toolsAllow: [], runContext: { senderId: userId, chatId: roomId } });
+  active = false; await expect(adapter.reply(input)).rejects.toThrow("forbidden");
+});

@@ -1,6 +1,6 @@
 # ADR 0025: Outbound calling with opening speech
 
-Status: Accepted
+Status: Accepted; initial owner-only restriction superseded by [ADR 0026](0026-authenticated-self-calls.md)
 
 Date: 2026-10-15
 

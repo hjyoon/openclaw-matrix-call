@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
   AuthenticationError, RequestAuthenticator, agentRequestSchema, agentResponseSchema,
-  authorizeParticipant, parsePolicy, type AgentPort, type AgentReply, type CallPolicy,
+  authorizeParticipant, parsePolicy, type AgentPort, type AgentReply, type CallPolicy, type VerifiedParticipant,
 } from "@matrix-call/core";
 
 class BodyError extends Error {
@@ -36,6 +36,7 @@ function json(response: ServerResponse, status: number, body: string, headers: R
 
 export function createAgentServer(options: {
   secret: string; agent: AgentPort; policy: CallPolicy; timeoutMs?: number; maxTurns?: number;
+  policyForCaller?: ((caller: VerifiedParticipant) => CallPolicy | undefined) | undefined;
 }) {
   const timeoutMs = options.timeoutMs ?? 30_000;
   const maxTurns = options.maxTurns ?? 4_096;
@@ -80,9 +81,10 @@ export function createAgentServer(options: {
       if (closing) { signed(503, { error: "agent-closed" }); return; }
       const turn = parsed.data;
       try {
-        authorizeParticipant(policy, turn.caller, turn.caller, Date.now());
+        const currentPolicy = parsePolicy(options.policyForCaller?.(turn.caller) ?? policy);
+        authorizeParticipant(currentPolicy, turn.caller, turn.caller, Date.now());
         const latest = turn.messages.at(-1)!;
-        if (!policy.agents.includes(turn.agentId) || latest.role !== "user" || latest.senderId !== turn.caller.userId) {
+        if (!currentPolicy.agents.includes(turn.agentId) || latest.role !== "user" || latest.senderId !== turn.caller.userId) {
           throw new Error("invalid-caller");
         }
       } catch { signed(403, { error: "forbidden" }); return; }

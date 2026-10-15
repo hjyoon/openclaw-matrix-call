@@ -295,3 +295,18 @@ describe("portable authenticated agent service", () => {
     expect(() => createAgentServer({ secret: "bad", policy, agent: { id: "test", historyMode: "messages", reply: vi.fn() } })).toThrow("invalid-auth");
   });
 });
+
+it("admits a caller only while the application supplies an exact per-call policy", async () => {
+  let active = true;
+  const callerId = "@visitor:example.org";
+  const scoped = { owners: [callerId], rooms: ["!private"], agents: ["assistant"] };
+  const f = await fixture({ policyForCaller: (caller) => active && caller.userId === callerId && caller.roomId === "!private" ? scoped : undefined });
+  const next = () => { const turn = input(); return { ...turn, caller: { ...turn.caller, userId: callerId, roomId: "!private" }, messages: [{ ...turn.messages[0]!, senderId: callerId }] }; };
+  try {
+    expect((await f.post(next())).status).toBe(200);
+    const invalid = next(); invalid.caller.deviceVerified = false;
+    expect((await f.post(invalid)).status).toBe(403);
+    expect((await f.post({ ...next(), agentId: "other" })).status).toBe(403);
+    active = false; expect((await f.post(next())).status).toBe(403);
+  } finally { await f.close(); }
+});

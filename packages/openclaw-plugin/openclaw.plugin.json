@@ -7,7 +7,9 @@
     "matrix-call"
   ],
   "contracts": {
-    "tools": ["matrix_call"]
+    "tools": [
+      "matrix_call"
+    ]
   },
   "configSchema": {
     "type": "object",
@@ -72,6 +74,10 @@
               "agents"
             ],
             "additionalProperties": false
+          },
+          "selfCalls": {
+            "default": false,
+            "type": "boolean"
           },
           "agentService": {
             "readOnly": true,
