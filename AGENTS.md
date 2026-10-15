@@ -20,4 +20,4 @@ Document implementation status accurately. Require a real encrypted audio intero
 
 Target Matrix protocols rather than Element-specific UI behavior. Keep MatrixRTC and legacy Matrix VoIP signaling behind separate transport adapters. Publish tested protocol capabilities and client interoperability results; do not infer calling support from Matrix login or messaging alone.
 
-Keep control-owner authority separate from self-call participants. Bind ordinary-user calls to the trusted Matrix sender and a verified private room; preserve device verification and per-caller status/leave boundaries.
+Keep control-owner, requester and recipient authority separate. Bind ordinary-user call control to the trusted Matrix requester and voice participation to the actual recipient in a verified private room. Preserve device verification, explicit third-party-call opt-in and per-requester status/leave boundaries.

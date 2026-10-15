@@ -116,6 +116,7 @@ describe("development channel configuration", () => {
     expect(matrixCallChannel.config.defaultAccountId!({})).toBe("default");
     const account = matrixCallChannel.config.resolveAccount({});
     expect(account.enabled).toBe(false);
+    expect(account.thirdPartyCalls).toBe(false);
     expect(matrixCallChannel.config.isEnabled!(account, {})).toBe(false);
     expect(await matrixCallChannel.config.isConfigured!(account, {})).toBe(false);
     expect(matrixCallChannel.config.unconfiguredReason!(account, {})).toContain("agent service");
@@ -135,6 +136,8 @@ describe("development channel configuration", () => {
 
   it.each([
     { channels: { "matrix-call": { enabled: true } } },
+    { channels: { "matrix-call": { enabled: true, policy, thirdPartyCalls: true } } },
+    { channels: { "matrix-call": { enabled: true, policy, selfCalls: false, thirdPartyCalls: true } } },
     { channels: { "matrix-call": { enabled: false, unexpected: true } } },
     { channels: { "matrix-call": { enabled: true, policy: { ...policy, owners: [] } } } },
     ...[
@@ -156,6 +159,12 @@ describe("development channel configuration", () => {
 
   it("rejects an unknown account", () => {
     expect(() => matrixCallChannel.config.resolveAccount({}, "other")).toThrow("invalid-input");
+  });
+
+  it("enables third-party recipient selection independently of control-owner admission", () => {
+    const cfg = { channels: { "matrix-call": { enabled: true, policy, selfCalls: true, thirdPartyCalls: true } } };
+    expect(matrixCallChannel.config.resolveAccount(cfg).thirdPartyCalls).toBe(true);
+    expect(matrixCallChannel.config.resolveAllowFrom!({ cfg })).toEqual(policy.owners);
   });
 
   it("defaults a configured agent service to bounded loopback operation", () => {

@@ -7,6 +7,7 @@ const accountSchema = z.strictObject({
   enabled: z.boolean().default(false),
   policy: policySchema.optional(),
   selfCalls: z.boolean().default(false),
+  thirdPartyCalls: z.boolean().default(false),
   agentService: z.strictObject({
     secretFile: z.string().min(1).max(4096).refine(isAbsolute),
     host: z.enum(["127.0.0.1", "::1"]).default("127.0.0.1"),
@@ -19,7 +20,7 @@ const accountSchema = z.strictObject({
     timeoutMs: z.number().int().min(1).max(300_000).default(35_000),
     allowInsecureLoopback: z.boolean().default(false),
   }).readonly().optional(),
-}).refine((account) => !account.enabled || account.policy !== undefined).readonly();
+}).refine((account) => (!account.enabled || account.policy !== undefined) && (!account.thirdPartyCalls || account.selfCalls)).readonly();
 
 type MatrixCallAccount = z.infer<typeof accountSchema> & { accountId: "default" };
 
@@ -45,6 +46,9 @@ export const matrixCallChannel: ChannelPlugin<MatrixCallAccount> = {
     allOf: [{
       if: { required: ["enabled"], properties: { enabled: { const: true } } },
       then: { required: ["policy"] },
+    }, {
+      if: { required: ["thirdPartyCalls"], properties: { thirdPartyCalls: { const: true } } },
+      then: { required: ["selfCalls"], properties: { selfCalls: { const: true } } },
     }],
   } },
   config: {

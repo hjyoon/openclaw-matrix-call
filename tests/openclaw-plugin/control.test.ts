@@ -9,7 +9,7 @@ import type { OpenClawPluginApi, PluginCommandContext } from "openclaw/plugin-sd
 import type { OpenClawPluginServiceContext } from "openclaw/plugin-sdk/plugin-entry";
 import type { AnyAgentTool, OpenClawPluginToolContext } from "openclaw/plugin-sdk/core";
 import { createNativeWorkerControl, NativeControlError } from "../../packages/openclaw-plugin/src/control.js";
-import { createWorkerServer, WorkerHttpClient, WorkerHttpError, WorkerMediaController } from "../../packages/worker/src/index.js";
+import { createWorkerServer, MediaControlError, WorkerHttpClient, WorkerHttpError, WorkerMediaController } from "../../packages/worker/src/index.js";
 
 const secret = "ab".repeat(32);
 const policy = { owners: ["@owner:example.org"], rooms: ["!room:example.org"], agents: ["main"] };
@@ -17,7 +17,7 @@ const join = { operation: "join", roomId: policy.rooms[0]! };
 const authorized = () => {};
 const signal = () => new AbortController().signal;
 
-async function fixture(limits = {}, outbound = false, selfCalls = false) {
+async function fixture(limits = {}, outbound = false, selfCalls = false, thirdPartyCalls = false) {
   const directory = await mkdtemp(path.join(tmpdir(), "matrix-call-control-test-"));
   const secretFile = path.join(directory, "worker.secret");
   await writeFile(secretFile, secret + "\n", { mode: 0o600 });
@@ -29,7 +29,7 @@ async function fixture(limits = {}, outbound = false, selfCalls = false) {
   const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const settings = { baseUrl, secretFile, allowInsecureLoopback: true, timeoutMs: 1000 };
   const context: OpenClawPluginServiceContext = {
-    config: { channels: { "matrix-call": { enabled: true, policy, workerControl: settings, selfCalls } } },
+    config: { channels: { "matrix-call": { enabled: true, policy, workerControl: settings, selfCalls, thirdPartyCalls } } },
     stateDir: directory, logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   };
   const background = vi.fn(() => {});
@@ -584,6 +584,74 @@ describe("authenticated self calls", () => {
       if (kind === "authority") f.transport.dial.mockImplementationOnce(async () => { allowed = false; });
       await expect(f.control.execute(request, () => { if (!allowed) throw new NativeControlError("forbidden"); }, undefined, { userId })).rejects.toThrow();
       expect(f.control.policyForCaller(caller)).toBeUndefined();
+    } finally { await f.cleanup(); }
+  });
+
+  it("lets an ordinary requester call another user while keeping control and voice identities separate", async () => {
+    const f = await fixture({}, true, true, true);
+    const recipientId = "@recipient:remote.example";
+    try {
+      await f.control.service.start(f.context);
+      const tool = f.control.tool.create(context(userId, "!request-room")) as AnyAgentTool;
+      expect(tool.description).toContain("explicitly requested");
+      expect(tool.parameters).toMatchObject({ properties: { recipientId: { type: "string" } } });
+      expect((tool.parameters as { properties: { recipientId: object } }).properties.recipientId).not.toHaveProperty("enum");
+      const result = await tool.execute("call", { ...request, recipientId });
+      expect(result.details).toMatchObject({ recipientId, roomId: "!self-room", openingMessageDelivered: true });
+      expect(f.transport.recipientRoom).toHaveBeenCalledWith(recipientId, "!request-room", expect.any(AbortSignal));
+      expect(f.transport.dial.mock.calls[0]![0]).toMatchObject({ recipientId, roomId: "!self-room", selfCall: true });
+      const sessionId = f.media.status().session!.sessionId;
+      expect((await tool.execute("status", { operation: "status" })).details).toMatchObject({ session: { sessionId } });
+      expect(f.control.policyForCaller(caller)).toBeUndefined();
+      const recipient = { ...caller, userId: recipientId };
+      expect(f.control.policyForCaller(recipient)).toEqual({ owners: [recipientId], rooms: ["!self-room"], agents: policy.agents });
+      expect(f.control.policyForCaller({ ...recipient, roomId: "!request-room" })).toBeUndefined();
+      for (const sender of [recipientId, "@unrelated:example.org"]) {
+        const other = f.control.tool.create(context(sender)) as AnyAgentTool;
+        expect((await other.execute("status", { operation: "status" })).details).toEqual({ available: true, session: null });
+        expect(await other.execute("leave", { operation: "leave", sessionId })).toMatchObject({ isError: true, details: { error: "not-found" } });
+      }
+      expect((await tool.execute("leave", { operation: "leave", sessionId })).details).toEqual({ closed: true });
+      expect(f.control.policyForCaller(recipient)).toBeUndefined();
+      expect(policy.owners).toEqual(["@owner:example.org"]);
+    } finally { await f.cleanup(); }
+  });
+
+  it.each(["private-room-required", "verification-required"])("refuses third-party calls before dialing when recipient setup fails: %s", async (code) => {
+    const f = await fixture({}, true, true, true);
+    f.transport.recipientRoom.mockRejectedValueOnce(new MediaControlError(code as "private-room-required" | "verification-required"));
+    try {
+      await f.control.service.start(f.context);
+      const tool = f.control.tool.create(context()) as AnyAgentTool;
+      expect(await tool.execute("call", { ...request, recipientId: "@recipient:example.org" })).toMatchObject({ isError: true, details: { error: code } });
+      expect(f.transport.dial).not.toHaveBeenCalled();
+      expect(f.control.policyForCaller(caller)).toBeUndefined();
+    } finally { await f.cleanup(); }
+  });
+
+  it.each([userId, policy.owners[0]!])("supports explicit recipient commands for %s without owner promotion", async (senderId) => {
+    const f = await fixture({}, true, true, true);
+    try {
+      await f.control.service.start(f.context);
+      expect((await f.command("call-to @recipient:example.org Hello recipient.", { senderId })).text).toContain('"recipientId":"@recipient:example.org"');
+      expect(f.transport.recipientRoom).toHaveBeenCalledWith("@recipient:example.org", undefined, expect.any(AbortSignal));
+      const sessionId = f.media.status().session!.sessionId;
+      expect((await f.command("leave " + sessionId, { senderId })).text).toContain('"closed":true');
+      expect((await f.command("call-to @recipient:example.org", { senderId })).text).toContain("Usage:");
+      expect((await f.command("call-to not-a-matrix-id Hello.", { senderId })).text).toContain("invalid-request");
+    } finally { await f.cleanup(); }
+  });
+
+  it("retains self-only and disabled-call command boundaries unless third-party calls are enabled", async () => {
+    const f = await fixture({}, true, true);
+    try {
+      await f.control.service.start(f.context);
+      expect((await f.command("call-to @recipient:example.org Hello.", { senderId: userId })).text).toContain("forbidden");
+      await f.control.service.stop!(f.context);
+      f.context.config = { channels: { "matrix-call": { enabled: true, policy, workerControl: f.settings } } };
+      await f.control.service.start(f.context);
+      expect((await f.command("call-to @recipient:example.org Hello.")).text).toContain("forbidden");
+      expect(f.transport.dial).not.toHaveBeenCalled();
     } finally { await f.cleanup(); }
   });
 });

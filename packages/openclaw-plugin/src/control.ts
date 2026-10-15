@@ -24,7 +24,8 @@ const controlSchema = z.discriminatedUnion("operation", [
 type State = {
   client: WorkerHttpClient; policy: CallPolicy; controller: AbortController; timeoutMs: number;
   pending: Set<Promise<unknown>>; owned: Set<string>;
-  selfCalls: boolean; callers: Map<string, { userId: string; roomId: string; active: boolean }>;
+  selfCalls: boolean; thirdPartyCalls: boolean;
+  callers: Map<string, { requesterId: string; recipientId: string; roomId: string; active: boolean }>;
 };
 
 export class NativeControlError extends Error {
@@ -87,7 +88,7 @@ export function createNativeWorkerControl(api: Pick<OpenClawPluginApi, "lifecycl
             }
           }
         });
-        state = { client, policy: account.policy!, controller, timeoutMs: settings.timeoutMs, pending: new Set(), owned: new Set(), selfCalls: account.selfCalls, callers: new Map() };
+        state = { client, policy: account.policy!, controller, timeoutMs: settings.timeoutMs, pending: new Set(), owned: new Set(), selfCalls: account.selfCalls, thirdPartyCalls: account.thirdPartyCalls, callers: new Map() };
         context.logger.info("Matrix Call worker control authenticated");
       } catch { throw new Error("Matrix Call worker control could not start"); }
     }),
@@ -109,11 +110,12 @@ export function createNativeWorkerControl(api: Pick<OpenClawPluginApi, "lifecycl
       assertCurrent();
       const input = parsed.data;
       if (input.operation === "join" || input.operation === "dial") {
-        if (requester && input.operation === "dial" && input.recipientId !== undefined && input.recipientId !== requester.userId) throw new NativeControlError("forbidden");
+        const recipientId = input.operation === "dial" ? input.recipientId ?? requester?.userId : undefined;
+        if (requester && !current.thirdPartyCalls && recipientId !== requester.userId) throw new NativeControlError("forbidden");
         let roomId = input.roomId;
         if (requester) {
           const preferredRoomId = input.roomId ?? requester.preferredRoomId;
-          roomId = await current.client.recipientRoom({ recipientId: requester.userId, ...(preferredRoomId === undefined ? {} : { preferredRoomId }) }, signal);
+          roomId = await current.client.recipientRoom({ recipientId: recipientId!, ...(preferredRoomId === undefined ? {} : { preferredRoomId }) }, signal);
           assertCurrent();
         } else {
           if (!current.policy.rooms.includes(roomId!)) throw new NativeControlError("forbidden");
@@ -122,13 +124,13 @@ export function createNativeWorkerControl(api: Pick<OpenClawPluginApi, "lifecycl
         if (current.owned.size >= maxOwned) throw new WorkerHttpError("capacity-exceeded");
         const id = randomUUID();
         current.owned.add(id);
-        if (requester) current.callers.set(id, { userId: requester.userId, roomId: roomId!, active: true });
+        if (requester) current.callers.set(id, { requesterId: requester.userId, recipientId: recipientId!, roomId: roomId!, active: true });
         try {
           const result = input.operation === "join"
             ? await current.client.join(roomId!, signal, id)
-            : await current.client.dial({ roomId: roomId!, recipientId: requester?.userId ?? input.recipientId!, message: input.message, ringTimeoutMs: input.ringTimeoutMs, ...(requester ? { selfCall: true } : {}) }, signal, id);
+            : await current.client.dial({ roomId: roomId!, recipientId: recipientId!, message: input.message, ringTimeoutMs: input.ringTimeoutMs, ...(requester ? { selfCall: true } : {}) }, signal, id);
           assertCurrent();
-          return input.operation === "dial" ? Object.freeze({ ...result, recipientId: requester?.userId ?? input.recipientId, openingMessageDelivered: true }) : result;
+          return input.operation === "dial" ? Object.freeze({ ...result, recipientId, openingMessageDelivered: true }) : result;
         }
         catch (error) {
           const caller = current.callers.get(id); if (caller) caller.active = false;
@@ -138,7 +140,7 @@ export function createNativeWorkerControl(api: Pick<OpenClawPluginApi, "lifecycl
       }
       const status = await current.client.status(signal);
       assertCurrent();
-      if (requester && status.session && current.callers.get(status.session.sessionId)?.userId !== requester.userId) {
+      if (requester && status.session && current.callers.get(status.session.sessionId)?.requesterId !== requester.userId) {
         if (input.operation === "status") return Object.freeze({ available: status.available, session: null });
         throw new WorkerHttpError("not-found");
       }
@@ -171,12 +173,12 @@ export function createNativeWorkerControl(api: Pick<OpenClawPluginApi, "lifecycl
       return {
         name: "matrix_call", label: "Matrix Call", catalogMode: "direct-only",
         description: state!.selfCalls
-          ? `Call the authenticated requester ${context.requesterSenderId}. Discover their existing encrypted two-person room with the bot, ring and speak the opening message after a verified answer. Recipient devices must be verified first. Only self-calls and the requester's own status/leave are permitted. No automatic retries or scheduling.`
+          ? `Call ${state!.thirdPartyCalls ? "a Matrix recipient explicitly requested by the user" : "the authenticated requester " + context.requesterSenderId}. Omit recipientId to call the requester. Discover the recipient's existing encrypted two-person room with the bot, ring and speak the opening message after a verified answer. Recipient devices must be verified first. Status and leave apply only to calls initiated by this requester. Use an exact Matrix ID, never infer identity from a display name. No automatic retries or scheduling.`
           : "Call a configured Matrix recipient, ring their client, and speak the opening message after a verified answer without waiting for them to speak. Use only for an explicit owner request. Requires a configured private two-person room. No automatic retries or scheduling. Status and exact-session leave are also available.",
         parameters: { type: "object", additionalProperties: false, required: ["operation"], properties: {
           operation: { type: "string", enum: ["dial", "status", "leave"] },
-          roomId: { type: "string", ...(state!.selfCalls ? {} : { enum: [...state!.policy.rooms] }), description: "Private two-person room; optional for self-calls, which discover the requester's room" },
-          recipientId: { type: "string", enum: state!.selfCalls ? [context.requesterSenderId!] : [...state!.policy.owners], description: "The requester's Matrix ID; optional for self-calls" },
+          roomId: { type: "string", ...(state!.selfCalls ? {} : { enum: [...state!.policy.rooms] }), description: "Optional preferred private room; membership is checked against the recipient" },
+          recipientId: { type: "string", ...(state!.thirdPartyCalls ? {} : { enum: state!.selfCalls ? [context.requesterSenderId!] : [...state!.policy.owners] }), description: "Exact recipient Matrix ID (@user:server); defaults to the authenticated requester when selfCalls is enabled" },
           message: { type: "string", minLength: 1, maxLength: 1000, description: "Opening words to speak after the recipient answers" },
           ringTimeoutMs: { type: "integer", minimum: 1000, maximum: 60000 },
           sessionId: { type: "string", description: "Exact active session UUID, required for leave" },
@@ -209,11 +211,12 @@ export function createNativeWorkerControl(api: Pick<OpenClawPluginApi, "lifecycl
       else if (parts.length === 2 && parts[0] === "join") request = { operation: "join", roomId: parts[1] };
       else if (parts.length === 2 && parts[0] === "leave") request = { operation: "leave", sessionId: parts[1] };
       else if (parts.length >= 4 && parts[0] === "dial") request = { operation: "dial", roomId: parts[1], recipientId: parts[2], message: parts.slice(3).join(" ") };
+      else if (parts.length >= 3 && parts[0] === "call-to") request = { operation: "dial", recipientId: parts[1], message: parts.slice(2).join(" ") };
       else if (parts.length >= 2 && parts[0] === "call") request = { operation: "dial", message: parts.slice(1).join(" ") };
-      else return { text: "Usage: /matrixcall status | dial <room-id> <recipient-id> <opening-message> | join <room-id> | leave <session-id>" };
+      else return { text: "Usage: /matrixcall status | call <opening-message> | call-to <recipient-id> <opening-message> | dial <room-id> <recipient-id> <opening-message> | join <room-id> | leave <session-id>" };
       const self = state!.selfCalls && !state!.policy.owners.includes(context.senderId!);
-      const result = await execute(request, assertAuthorized, undefined, self || parts[0] === "call" ? { userId: context.senderId! } : undefined);
-      return { text: `Matrix Call media control: ${JSON.stringify(result)}. ${parts[0] === "dial" || parts[0] === "call" ? "Opening speech sent after a verified answer." : "Assistant readiness remains unverified."}` };
+      const result = await execute(request, assertAuthorized, undefined, self || parts[0] === "call" || parts[0] === "call-to" ? { userId: context.senderId! } : undefined);
+      return { text: `Matrix Call media control: ${JSON.stringify(result)}. ${parts[0] === "dial" || parts[0] === "call" || parts[0] === "call-to" ? "Opening speech sent after a verified answer." : "Assistant readiness remains unverified."}` };
     } catch (error) {
       const code = nativeControlErrorCode(error);
       return { text: `Matrix Call control unavailable: ${code}` };
@@ -222,7 +225,7 @@ export function createNativeWorkerControl(api: Pick<OpenClawPluginApi, "lifecycl
   const policyForCaller = (caller: VerifiedParticipant): CallPolicy | undefined => {
     if (!state || state.controller.signal.aborted) return undefined;
     for (const entry of state.callers.values()) {
-      if (entry.active && entry.userId === caller.userId && entry.roomId === caller.roomId) return Object.freeze({ owners: [entry.userId], rooms: [entry.roomId], agents: state.policy.agents });
+      if (entry.active && entry.recipientId === caller.userId && entry.roomId === caller.roomId) return Object.freeze({ owners: [entry.recipientId], rooms: [entry.roomId], agents: state.policy.agents });
     }
     return undefined;
   };

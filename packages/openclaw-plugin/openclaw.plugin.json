@@ -79,6 +79,10 @@
             "default": false,
             "type": "boolean"
           },
+          "thirdPartyCalls": {
+            "default": false,
+            "type": "boolean"
+          },
           "agentService": {
             "readOnly": true,
             "type": "object",
@@ -163,6 +167,28 @@
               "required": [
                 "policy"
               ]
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "thirdPartyCalls"
+              ],
+              "properties": {
+                "thirdPartyCalls": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "selfCalls"
+              ],
+              "properties": {
+                "selfCalls": {
+                  "const": true
+                }
+              }
             }
           }
         ]
