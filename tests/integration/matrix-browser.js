@@ -57,6 +57,17 @@ window.matrixTest = {
     }
     return replies;
   },
+  async ringNotifications(id, senderId) {
+    const notices = [];
+    for (const event of client.getRoom(id)?.getLiveTimeline().getEvents() ?? []) {
+      if (event.getSender() !== senderId) continue;
+      await client.decryptEventIfNeeded(event);
+      if (event.getType() === EventType.RTCNotification && event.getContent().notification_type === "ring") {
+        notices.push({ eventId: event.getId(), ...event.getContent() });
+      }
+    }
+    return notices;
+  },
   async join(id, owners, focusUrl) {
     roomId = id;
     session = client.matrixRTC.getRoomSession(client.getRoom(roomId));

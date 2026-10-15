@@ -14,6 +14,7 @@ import { startTestSfu } from "./integration/sfu.mjs";
 import { startTestAuthorization } from "./integration/authorization.mjs";
 import { loadTestControl } from "./integration/control.mjs";
 import { verifyBrowserDriver } from "./integration/browser-driver.mjs";
+import { verifyOutboundCall } from "./integration/outbound-call.mjs";
 import { readLiveModel } from "./integration/live-model.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -232,11 +233,12 @@ try {
   }
   assert.equal((await restoredControl.request("/v1/media/leave", { sessionId: restoredSession.value.sessionId })).status, 200);
   assert.equal((await controls[1].request("/v1/media/leave", { sessionId: sessions[1] })).status, 200);
+  const outbound = process.env.MATRIX_CALL_OUTBOUND === "1" ? await verifyOutboundCall({ root, directory, chromium, api, waitFor, homeserver, registrationSecret, origin, focusUrl: authorization.url, sfuUrl: sfu.url }) : {};
   const driver = process.env.MATRIX_CALL_RELEASED_CLIENT === "1"
     ? await (await import("./integration/released-call.mjs")).verifyReleasedCall({ root, directory, chromium, api, waitFor, homeserver, serverName, registrationSecret, roomId: room.room_id, creator: accounts[0], focusUrl: authorization.url, sfuUrl: sfu.url })
     : await verifyBrowserDriver({ root, directory, api, waitFor, homeserver, registrationSecret, roomId: room.room_id,
       creator: accounts[0], owner: accounts[1], ownerKeys: fingerprints[1], peer: pages[1], focusUrl: authorization.url, sfuUrl: sfu.url });
-  console.log(JSON.stringify({ browser: restored.browser().version(), synapse: "1.162.0", matrixSdk: "43.0.0", livekit: "1.13.9", authorization: "0.8.0", matrixRtcKeys: true, authenticatedDeviceBinding: true, plaintextRejected: true, deviceClaimRejected: true, persistentKeysAndTrust: true, matrixAudio: true, restartAndRejoin: true, focusAuthorization: true, authenticatedWorkerControl: true, ...driver }));
+  console.log(JSON.stringify({ browser: restored.browser().version(), synapse: "1.162.0", matrixSdk: "43.0.0", livekit: "1.13.9", authorization: "0.8.0", matrixRtcKeys: true, authenticatedDeviceBinding: true, plaintextRejected: true, deviceClaimRejected: true, persistentKeysAndTrust: true, matrixAudio: true, restartAndRejoin: true, focusAuthorization: true, authenticatedWorkerControl: true, ...outbound, ...driver }));
   succeeded = true;
 } finally {
   if (!succeeded) console.log(JSON.stringify({ openIdStatuses }));
