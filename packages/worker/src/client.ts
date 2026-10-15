@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { RequestAuthenticator } from "@matrix-call/core";
 import {
   mediaDialSchema, mediaErrorSchema, mediaJoinResponseSchema, mediaJoinSchema, mediaLeaveResponseSchema, mediaLeaveSchema,
-  mediaStatusSchema, workerCapabilitiesSchema, type MediaRemoteError,
+  mediaStatusSchema, workerCapabilitiesSchema, recipientRoomSchema, recipientRoomResponseSchema, type MediaRemoteError,
 } from "./protocol.js";
 
 export class WorkerHttpError extends Error {
@@ -54,9 +54,10 @@ export class WorkerHttpClient {
   readonly #timeoutMs: number;
   readonly #fetch: typeof globalThis.fetch;
   readonly outboundCalls: boolean;
+  readonly selfCalls: boolean;
   private constructor(
-    base: URL, auth: RequestAuthenticator, timeoutMs: number, fetcher: typeof globalThis.fetch, outboundCalls: boolean,
-  ) { this.#base = base; this.#auth = auth; this.#timeoutMs = timeoutMs; this.#fetch = fetcher; this.outboundCalls = outboundCalls; }
+    base: URL, auth: RequestAuthenticator, timeoutMs: number, fetcher: typeof globalThis.fetch, outboundCalls: boolean, selfCalls: boolean,
+  ) { this.#base = base; this.#auth = auth; this.#timeoutMs = timeoutMs; this.#fetch = fetcher; this.outboundCalls = outboundCalls; this.selfCalls = selfCalls; }
 
   static async connect(options: {
     baseUrl: string; secret: string; timeoutMs?: number; allowInsecureLoopback?: boolean;
@@ -82,7 +83,7 @@ export class WorkerHttpClient {
     const auth = new RequestAuthenticator({ secret, audience: parsed.data.audience });
     auth.verify({ method: "RESPONSE_200", path: endpoint.pathname, body }, Object.fromEntries(response.headers));
     if (!parsed.data.mediaControl) throw new WorkerHttpError("transport-unavailable");
-    return new WorkerHttpClient(base, auth, timeoutMs, fetcher, parsed.data.outboundCalls === true);
+    return new WorkerHttpClient(base, auth, timeoutMs, fetcher, parsed.data.outboundCalls === true, parsed.data.selfCalls === true);
   }
 
   async status(signal: AbortSignal) {
@@ -103,10 +104,18 @@ export class WorkerHttpClient {
 
   async dial(value: unknown, signal: AbortSignal, sessionId: string = randomUUID()) {
     const input = mediaDialSchema.parse({ ...mediaDialSchema.parse(value), sessionId });
-    if (!this.outboundCalls) throw new WorkerHttpError("transport-unavailable");
+    if (!this.outboundCalls || (input.selfCall && !this.selfCalls)) throw new WorkerHttpError("transport-unavailable");
     const result = mediaJoinResponseSchema.parse(await this.#request("dial", input, signal));
     if (result.roomId !== input.roomId || result.sessionId !== input.sessionId) throw new WorkerHttpError("invalid-response");
     return result;
+  }
+
+  async recipientRoom(value: unknown, signal: AbortSignal) {
+    const input = recipientRoomSchema.parse(value);
+    if (!this.selfCalls) throw new WorkerHttpError("transport-unavailable");
+    const result = recipientRoomResponseSchema.parse(await this.#request("recipient-room", input, signal));
+    if (result.recipientId !== input.recipientId) throw new WorkerHttpError("invalid-response");
+    return result.roomId;
   }
 
   async #request(operation: string, value: unknown, callerSignal: AbortSignal): Promise<unknown> {

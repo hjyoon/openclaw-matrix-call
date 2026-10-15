@@ -4,8 +4,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { AuthenticationError, RequestAuthenticator } from "@matrix-call/core";
 import { MediaControlError, type WorkerMediaController } from "./media.js";
 
-const mediaPaths = new Set(["/v1/media/status", "/v1/media/join", "/v1/media/dial", "/v1/media/leave"]);
-const mediaErrorStatus = { "invalid-request": 400, "forbidden-room": 403, "forbidden-recipient": 403, "transport-unavailable": 501, busy: 409, "not-found": 404, closed: 409, "backend-failed": 503, "session-reused": 409, "capacity-exceeded": 503 } as const;
+const mediaPaths = new Set(["/v1/media/status", "/v1/media/join", "/v1/media/dial", "/v1/media/recipient-room", "/v1/media/leave"]);
+const mediaErrorStatus = { "invalid-request": 400, "forbidden-room": 403, "forbidden-recipient": 403, "transport-unavailable": 501, busy: 409, "not-found": 404, closed: 409, "backend-failed": 503, "session-reused": 409, "capacity-exceeded": 503, "private-room-required": 409, "verification-required": 403 } as const;
 
 class BodyError extends Error {
   constructor(readonly status: 400 | 413) {
@@ -58,7 +58,7 @@ export function createWorkerServer(secret: string, media?: WorkerMediaController
   const server = createServer({ requestTimeout: 10_000, headersTimeout: 5_000, maxHeaderSize: 8_192 },
     async (request, response) => {
       if (request.method === "GET" && request.url === "/v1/media/capabilities") {
-        const value = { protocolVersion: 1, audience, mediaControl: Boolean(media), clientSessionIds: true, ...(media?.canDial ? { outboundCalls: true } : {}) };
+        const value = { protocolVersion: 1, audience, mediaControl: Boolean(media), clientSessionIds: true, ...(media?.canDial ? { outboundCalls: true } : {}), ...(media?.canSelfCall ? { selfCalls: true } : {}) };
         const body = JSON.stringify(value);
         json(response, 200, value, auth.sign({ method: "RESPONSE_200", path: request.url, body }));
         return;
@@ -94,6 +94,7 @@ export function createWorkerServer(secret: string, media?: WorkerMediaController
         if (path === "/v1/media/status") signed(200, media.status(value));
         else if (path === "/v1/media/join") signed(200, await media.join(value, controller.signal));
         else if (path === "/v1/media/dial") signed(200, await media.dial(value, controller.signal));
+        else if (path === "/v1/media/recipient-room") signed(200, await media.recipientRoom(value, controller.signal));
         else { await media.leave(value); signed(200, { closed: true }); }
       } catch (error) {
         request.resume();
