@@ -8,6 +8,7 @@ import { ConnectionState, RoomEvent, Track } from "livekit-client";
 import { BrowserMatrixRuntime, waitUntil, refreshPublication, authorizeFocus, publicationFailure } from "../../packages/browser-worker/src/runtime.js";
 import { MatrixPublicationGuard, MatrixPublicationChangedError } from "../../packages/browser-worker/src/guard.js";
 import { VerifiedMatrixRtcKeys } from "../../packages/matrixrtc/src/verified-keys.js";
+import { MatrixRtcRecipientVerifier } from "../../packages/matrixrtc/src/recipients.js";
 import { MatrixRtcParticipantVerifier } from "../../packages/matrixrtc/src/participants.js";
 import { parseBrowserConfig } from "../../packages/browser-worker/src/config.js";
 import type { BrowserMedia } from "../../packages/browser-worker/src/media.js";
@@ -103,7 +104,7 @@ describe("production Matrix browser runtime", () => {
     } finally { await f.runtime.close(); }
   });
 
-  it("rings a dedicated room and waits for current verified encrypted recipient media", async () => {
+  it("rings a dedicated room and accepts a verified listener without incoming audio", async () => {
     const f = await outboundReady();
     await expect(f.runtime.recipient(f.remote.userId)).rejects.toThrow("unavailable");
     await f.runtime.connect("!room", { recipientId: f.remote.userId, ringTimeoutMs: 20000 });
@@ -112,8 +113,6 @@ describe("production Matrix browser runtime", () => {
       await expect(f.runtime.recipient("@other:example.org")).rejects.toThrow("unavailable");
       expect(await f.runtime.recipient(f.remote.userId)).toBeNull();
       f.session.memberships = [f.local, f.remote];
-      expect(await f.runtime.recipient(f.remote.userId)).toBeNull();
-      await admit(f);
       const remoteMedia = f.media.room.remoteParticipants.get(f.remote.rtcBackendIdentity)!;
       f.media.room.remoteParticipants.clear();
       expect(await f.runtime.recipient(f.remote.userId)).toBeNull();
@@ -134,8 +133,8 @@ describe("production Matrix browser runtime", () => {
       if (state === "expired") await vi.advanceTimersByTimeAsync(1000);
       else {
         const reference = { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: f.remote.rtcBackendIdentity };
-        const proof = await f.runtime.verify(reference, signal());
-        vi.spyOn(f.runtime, "verify").mockImplementationOnce(async () => {
+        const proof = await f.runtime.verifyRecipient(reference, signal());
+        vi.spyOn(f.runtime, "verifyRecipient").mockImplementationOnce(async () => {
           if (state === "late-proof") await vi.advanceTimersByTimeAsync(1000);
           return { ...proof, userId: state === "wrong-user" ? "@other:example.org" : proof.userId };
         });
@@ -144,7 +143,7 @@ describe("production Matrix browser runtime", () => {
     } finally { await f.runtime.close(); }
   });
 
-  it.each(["no-track", "video", "plaintext", "unsubscribed", "ended", "empty"])("waits for recipient media that is %s before verifying the answer", async (state) => {
+  it.each(["no-track", "video", "plaintext", "unsubscribed", "ended", "empty"])("does not require incoming %s media to authorize opening speech", async (state) => {
     const f = await outboundReady(); await f.runtime.connect("!room", { recipientId: f.remote.userId, ringTimeoutMs: 20000 });
     try {
       f.session.memberships = [f.local, f.remote]; await admit(f);
@@ -155,7 +154,7 @@ describe("production Matrix browser runtime", () => {
       if (state === "ended") f.publication.track.mediaStreamTrack.readyState = "ended";
       if (state === "empty") f.media.room.remoteParticipants.get(f.remote.rtcBackendIdentity)!.trackPublications.clear();
       const verification = vi.spyOn(f.runtime, "verify");
-      expect(await f.runtime.recipient(f.remote.userId)).toBeNull(); expect(verification).not.toHaveBeenCalled();
+      expect(await f.runtime.recipient(f.remote.userId)).toMatchObject({ participantId: f.remote.rtcBackendIdentity }); expect(verification).not.toHaveBeenCalled();
     } finally { await f.runtime.close(); }
   });
 
@@ -674,4 +673,37 @@ it("ends an answered outbound call when its exact recipient leaves", async () =>
     await vi.waitFor(() => expect(f.media.close).toHaveBeenCalled());
     expect(f.runtime.status().connected).toBe(false);
   } finally { await f.runtime.close(); }
+});
+
+describe("outbound recipient proof lifetime", () => {
+  it.each(["absent", "ordinary", "local-left", "closing"])("refuses output verification for an unavailable %s call", async (kind) => {
+    const f = await outboundReady();
+    const reference = { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: f.remote.rtcBackendIdentity };
+    try {
+      if (kind === "ordinary") await f.runtime.connect("!room");
+      else if (kind !== "absent") await f.runtime.connect("!room", { recipientId: f.remote.userId, ringTimeoutMs: 20000 });
+      if (kind === "local-left") f.session.memberships = [f.remote];
+      const closing = kind === "closing" ? f.runtime.disconnect() : undefined;
+      await expect(f.runtime.verifyRecipient(reference, signal())).rejects.toThrow("unavailable");
+      await closing;
+    } finally { await f.runtime.close(); }
+  });
+
+  it.each(["local-left", "closed", "closing", "reconnected", "wrong-user"])("rejects a recipient result after %s", async (kind) => {
+    const f = await outboundReady(); await f.runtime.connect("!room", { recipientId: f.remote.userId, ringTimeoutMs: 20000 });
+    f.session.memberships = [f.local, f.remote];
+    const reference = { roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: f.remote.rtcBackendIdentity };
+    const proof = await f.runtime.verifyRecipient(reference, signal());
+    vi.spyOn(MatrixRtcRecipientVerifier.prototype, "verify").mockImplementationOnce(async () => {
+      if (kind === "local-left") f.session.memberships = [f.remote];
+      else if (kind !== "wrong-user") {
+        const closing = f.runtime.disconnect();
+        if (kind !== "closing") await closing;
+        if (kind === "reconnected") { f.session.memberships = [f.local]; await f.runtime.connect("!room", { recipientId: f.remote.userId, ringTimeoutMs: 20000 }); }
+      }
+      return { ...proof, userId: kind === "wrong-user" ? "@other:example.org" : proof.userId };
+    });
+    try { await expect(f.runtime.verifyRecipient(reference, signal())).rejects.toThrow(kind === "wrong-user" ? "identity changed" : "unavailable"); }
+    finally { await f.runtime.close(); }
+  });
 });

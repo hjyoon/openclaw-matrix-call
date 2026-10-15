@@ -3,7 +3,7 @@ import { MatrixRTCSessionEvent, type MatrixRTCSession } from "matrix-js-sdk/lib/
 import type { IRTCNotificationContent } from "matrix-js-sdk/lib/matrixrtc/types.js";
 import { RoomEvent, Track } from "livekit-client";
 import type { ParticipantReference, PcmAudio } from "@matrix-call/core";
-import { MatrixMediaKeyProvider, VerifiedMatrixRtcKeys, MatrixRtcParticipantVerifier, membershipSnapshot, OpenIdFocusAuthorizer, FocusAuthorizationError, type FocusAuthorizationPort, type FocusAuthorizationSource, type OutboundKeySource } from "../../matrixrtc/src/index.js";
+import { MatrixMediaKeyProvider, VerifiedMatrixRtcKeys, MatrixRtcParticipantVerifier, MatrixRtcRecipientVerifier, membershipSnapshot, OpenIdFocusAuthorizer, FocusAuthorizationError, type FocusAuthorizationPort, type FocusAuthorizationSource, type OutboundKeySource } from "../../matrixrtc/src/index.js";
 import { createMatrixClient, enrollPinnedDevices, initializeMatrixClient, joinedEncryptedRoom } from "./client.js";
 import { createBrowserMedia, type BrowserMedia } from "./media.js";
 import { MatrixPublicationGuard, MatrixPublicationChangedError } from "./guard.js";
@@ -250,12 +250,11 @@ export class BrowserMatrixRuntime {
     const members = call.session.memberships.filter((member) => member.userId === recipientId);
     if (members.length > 1) throw new Error("Outbound recipient membership is ambiguous");
     const member = members[0];
-    if (!member || !call.keys.hasCurrentKey(member.rtcBackendIdentity)) return null;
+    if (!member) return null;
     const participant = call.media.room.remoteParticipants.get(member.rtcBackendIdentity);
-    if (!participant || ![...participant.trackPublications.values()].some((publication) => publication.kind === Track.Kind.Audio &&
-      publication.isEncrypted && publication.isSubscribed && publication.track?.mediaStreamTrack.readyState === "live")) return null;
+    if (!participant) return null;
     const reference = { roomId: call.roomId, rtcSessionId: "m.call#ROOM", participantId: member.rtcBackendIdentity };
-    const proof = await this.verify(reference, call.controller.signal);
+    const proof = await this.verifyRecipient(reference, call.controller.signal);
     if (proof.userId !== recipientId) throw new Error("Outbound recipient identity changed");
     if (Date.now() >= call.outbound.expiresAtMs) throw new Error("Outbound answer deadline expired");
     call.outbound.participantId = member.rtcBackendIdentity;
@@ -284,6 +283,16 @@ export class BrowserMatrixRuntime {
     const proof = await new MatrixRtcParticipantVerifier({ roomId: call.roomId, client: this.#client, session: call.session,
       media: call.media.room, keys: call.keys, now: Date.now }).verify(reference, signal);
     if (this.#call !== call || call.controller.signal.aborted || !this.#localMembership(call)) throw new Error("Matrix media is unavailable");
+    return proof;
+  }
+
+  async verifyRecipient(reference: ParticipantReference, signal: AbortSignal) {
+    const call = this.#call;
+    if (!call?.connected || call.controller.signal.aborted || !call.outbound || !this.#localMembership(call)) throw new Error("Outbound recipient is unavailable");
+    const proof = await new MatrixRtcRecipientVerifier({ roomId: call.roomId, client: this.#client, session: call.session,
+      media: call.media.room, now: Date.now }).verify(reference, signal);
+    if (this.#call !== call || call.controller.signal.aborted || !this.#localMembership(call)) throw new Error("Outbound recipient is unavailable");
+    if (proof.userId !== call.outbound.recipientId) throw new Error("Outbound recipient identity changed");
     return proof;
   }
 

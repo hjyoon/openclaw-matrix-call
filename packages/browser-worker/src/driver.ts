@@ -177,6 +177,16 @@ export class BrowserDriver implements RtcTransportPort, ParticipantVerifier {
     return proof;
   }
 
+  async verifyRecipient(reference: ParticipantReference, signal: AbortSignal) {
+    signal.throwIfAborted();
+    if (!this.#connected) throw new Error("Browser driver is unavailable");
+    const generation = this.#generation;
+    const proof = await this.#page.evaluate((reference) => window.matrixCall.verifyRecipient(reference, new AbortController().signal), reference);
+    signal.throwIfAborted();
+    if (!this.#connected || generation !== this.#generation) throw new Error("Browser driver call changed");
+    return proof;
+  }
+
   async disconnect(): Promise<void> {
     if (this.#closed) return;
     if (this.#disconnecting) return this.#disconnecting;

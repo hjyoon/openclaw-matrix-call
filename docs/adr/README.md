@@ -36,6 +36,7 @@ Number records in order. An accepted ADR is a historical record, not a second in
 
 | [0026](0026-authenticated-self-calls.md) | Accepted | Trusted Matrix self-calls with private room discovery and per-call voice authority |
 | [0027](0027-third-party-call-requesters-and-recipients.md) | Accepted | Explicit recipient selection with separate requester control and callee voice authority |
+| [0028](0028-outbound-listener-verification.md) | Accepted | Verified outbound listeners can hear opening speech without publishing microphone media |
 
 ## Record format
 

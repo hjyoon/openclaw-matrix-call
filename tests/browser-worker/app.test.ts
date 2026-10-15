@@ -22,7 +22,7 @@ async function fixture() {
   await writeFile(secret, "ab".repeat(32), { mode: 0o600 });
   await writeFile(identity, JSON.stringify(credentials), { mode: 0o600 });
   await writeFile(config, JSON.stringify({ ...configuration, credentialsFile: identity }));
-  const driver = { available: true, recipientRoom: vi.fn(async (_recipient: string, _preferred: string | undefined, _signal: AbortSignal) => "!private"), waitForRecipient: vi.fn(async (_userId: string, _signal: AbortSignal): Promise<ParticipantReference> => ({ roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: "speaker" })), verify: vi.fn(async (reference: ParticipantReference) => ({ ...reference, userId: configuration.owners[0]!, deviceId: "OWNER", expiresAtMs: Date.now() + 30000, mediaEncrypted: true, deviceVerified: true })), publish: vi.fn(async (_audio: PcmAudio) => {}), onAudio: vi.fn((_listener: (reference: ParticipantReference, audio: PcmAudio) => Promise<void>) => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), close: vi.fn(async () => {}), onEnded: vi.fn((_listener: () => Promise<void>) => {}) };
+  const driver = { available: true, verifyRecipient: vi.fn(async (reference: ParticipantReference) => ({ ...reference, userId: configuration.owners[0]!, deviceId: "OWNER", expiresAtMs: Date.now() + 30000, deviceVerified: true })), recipientRoom: vi.fn(async (_recipient: string, _preferred: string | undefined, _signal: AbortSignal) => "!private"), waitForRecipient: vi.fn(async (_userId: string, _signal: AbortSignal): Promise<ParticipantReference> => ({ roomId: "!room", rtcSessionId: "m.call#ROOM", participantId: "speaker" })), verify: vi.fn(async (reference: ParticipantReference) => ({ ...reference, userId: configuration.owners[0]!, deviceId: "OWNER", expiresAtMs: Date.now() + 30000, mediaEncrypted: true, deviceVerified: true })), publish: vi.fn(async (_audio: PcmAudio) => {}), onAudio: vi.fn((_listener: (reference: ParticipantReference, audio: PcmAudio) => Promise<void>) => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), close: vi.fn(async () => {}), onEnded: vi.fn((_listener: () => Promise<void>) => {}) };
   start.mockReset().mockResolvedValue(driver);
   const agent = { id: "http-test", historyMode: "messages", check: vi.fn(async (_signal: AbortSignal) => {}), reply: vi.fn(async (_turn: AgentTurn) => ({ text: "Agent reply" })) };
   const speech = { check: vi.fn(async (_signal: AbortSignal) => {}), transcribe: vi.fn(async () => "Transcript"), synthesize: vi.fn(async () => ({ samples: new Int16Array([1, 2]), sampleRate: 16_000, channels: 1 as const })) };
@@ -38,6 +38,7 @@ async function fixture() {
 
 describe("browser worker application", () => {
   it("rings the configured recipient and speaks first without microphone input or inference", async () => {
+    const log = vi.spyOn(console, "info").mockImplementation(() => {});
     const f = await fixture(); await f.enableVoice(); const worker = await startBrowserWorker(f.env);
     const request = { roomId: "!room", recipientId: configuration.owners[0], message: "Good morning." };
     try {
@@ -46,7 +47,8 @@ describe("browser worker application", () => {
       expect(f.driver.connect).toHaveBeenCalledWith("!room", expect.any(AbortSignal), { recipientId: request.recipientId, ringTimeoutMs: 20000 });
       expect(f.driver.waitForRecipient).toHaveBeenCalledWith(request.recipientId, expect.any(AbortSignal));
       expect(f.speech.synthesize).toHaveBeenCalledWith("Good morning.", expect.any(AbortSignal));
-      expect(f.driver.publish).toHaveBeenCalledOnce(); expect(f.driver.verify).toHaveBeenCalledTimes(2);
+      expect(f.driver.publish).toHaveBeenCalledOnce(); expect(f.driver.verifyRecipient).toHaveBeenCalledTimes(2); expect(f.driver.verify).not.toHaveBeenCalled();
+      expect(log.mock.calls.map(([value]) => JSON.parse(value as string))).toEqual(["connecting", "waiting-answer", "synthesizing", "publishing", "connected"].map((stage) => ({ event: "browser-outbound-stage", stage })));
       expect(f.speech.transcribe).not.toHaveBeenCalled(); expect(f.agent.reply).not.toHaveBeenCalled();
       expect(f.driver.waitForRecipient.mock.invocationCallOrder[0]).toBeLessThan(f.speech.synthesize.mock.invocationCallOrder[0]!);
       await worker.media.leave({ sessionId: result.sessionId });
@@ -71,11 +73,14 @@ describe("browser worker application", () => {
   });
 
   it("does not synthesize or publish an opening after recipient identity changes", async () => {
+    const log = vi.spyOn(console, "info").mockImplementation(() => {});
     const f = await fixture(); await f.enableVoice(); const worker = await startBrowserWorker(f.env);
-    f.driver.verify.mockImplementationOnce(async (reference) => ({ ...reference, userId: "@other:example.org", deviceId: "OTHER", expiresAtMs: Date.now() + 30000, mediaEncrypted: true, deviceVerified: true }));
+    f.driver.verifyRecipient.mockImplementationOnce(async (reference) => ({ ...reference, userId: "@other:example.org", deviceId: "OTHER", expiresAtMs: Date.now() + 30000, mediaEncrypted: true, deviceVerified: true }));
     try {
       await expect(worker.media.dial({ roomId: "!room", recipientId: configuration.owners[0], message: "Private greeting." }, new AbortController().signal)).rejects.toThrow("backend-failed");
       expect(f.speech.synthesize).not.toHaveBeenCalled(); expect(f.driver.publish).not.toHaveBeenCalled();
+      expect(log).toHaveBeenLastCalledWith(JSON.stringify({ event: "browser-outbound-failed", stage: "waiting-answer" }));
+      expect(JSON.stringify(log.mock.calls)).not.toContain("Private greeting");
       expect(f.driver.disconnect).toHaveBeenCalledOnce(); expect(worker.media.status().session).toBeNull();
     } finally { await worker.close(); await f.clean(); }
   });
@@ -251,6 +256,7 @@ describe("self-call browser application", () => {
     await writeFile(path, JSON.stringify({ ...JSON.parse(await readFile(path, "utf8")), selfCalls: true }));
     const userId = "@visitor:example.org";
     f.driver.verify.mockImplementation(async (reference) => ({ ...reference, userId, deviceId: "VISITOR", expiresAtMs: Date.now() + 30000, mediaEncrypted: true, deviceVerified: true }));
+    f.driver.verifyRecipient.mockImplementation(async (reference) => ({ ...reference, userId, deviceId: "VISITOR", expiresAtMs: Date.now() + 30000, deviceVerified: true }));
     const worker = await startBrowserWorker(f.env);
     try {
       expect(await worker.media.recipientRoom({ recipientId: userId }, new AbortController().signal)).toMatchObject({ roomId: "!private" });

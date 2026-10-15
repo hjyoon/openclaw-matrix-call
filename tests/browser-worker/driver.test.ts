@@ -18,7 +18,7 @@ function fixture() {
   const log = vi.spyOn(console, "info").mockImplementation(() => {});
   const config = parseBrowserConfig(configuration, credentials);
   const keys = { ed25519: "A".repeat(43), curve25519: "B".repeat(43) };
-  const runtime = { recipientRoom: vi.fn(async (_recipientId: string, _preferredRoomId: string | undefined) => "!private"), recipient: vi.fn(async (_id: string): Promise<ParticipantReference | null> => null), takeAudio: vi.fn(async (): Promise<BrowserUtterance | null> => null), resumeAudio: vi.fn(async () => {}), initialize: vi.fn(async () => keys), prepare: vi.fn(async () => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), publish: vi.fn(async () => {}), verify: vi.fn(async (reference: object) => ({ ...reference, userId: "@owner:example.org", deviceId: "OWNER", expiresAtMs: Date.now() + 10_000, deviceVerified: true, mediaEncrypted: true })), status: vi.fn(() => ({ connected: true })) };
+  const runtime = { verifyRecipient: vi.fn(async (reference: object) => ({ ...reference, userId: "@owner:example.org", deviceId: "OWNER", expiresAtMs: Date.now() + 10000, deviceVerified: true })), recipientRoom: vi.fn(async (_recipientId: string, _preferredRoomId: string | undefined) => "!private"), recipient: vi.fn(async (_id: string): Promise<ParticipantReference | null> => null), takeAudio: vi.fn(async (): Promise<BrowserUtterance | null> => null), resumeAudio: vi.fn(async () => {}), initialize: vi.fn(async () => keys), prepare: vi.fn(async () => {}), connect: vi.fn(async () => {}), disconnect: vi.fn(async () => {}), publish: vi.fn(async () => {}), verify: vi.fn(async (reference: object) => ({ ...reference, userId: "@owner:example.org", deviceId: "OWNER", expiresAtMs: Date.now() + 10_000, deviceVerified: true, mediaEncrypted: true })), status: vi.fn(() => ({ connected: true })) };
   vi.stubGlobal("window", { createMatrixCall: vi.fn(() => runtime) });
   const page = { goto: vi.fn(async () => {}), waitForFunction: vi.fn(async (fn: () => boolean) => { expect(fn()).toBe(true); }), evaluate: vi.fn(async (fn: (arg: unknown) => unknown, arg: unknown) => fn(arg)), close: vi.fn(async () => {}) };
   const spare = { close: vi.fn(async () => {}) };
@@ -346,6 +346,25 @@ describe("self-call room driver", () => {
       const result = driver.recipientRoom("@visitor:example.org", "!source", controller.signal);
       if (kind === "ready") { expect(await result).toBe("!private"); expect(f.runtime.recipientRoom).toHaveBeenCalledWith("@visitor:example.org", "!source"); }
       else await expect(result).rejects.toThrow();
+    } finally { await driver.close(); }
+  });
+});
+
+
+describe("outbound recipient verification", () => {
+  it.each(["unavailable", "cancelled", "ready", "late-cancel", "disconnected", "reconnected"])("keeps a recipient proof bound to its live driver: %s", async (kind) => {
+    const f = fixture(); const driver = await BrowserDriver.start(f.config); const controller = new AbortController();
+    try {
+      if (kind !== "unavailable") await driver.connect("!room", signal());
+      if (kind === "cancelled") controller.abort(new Error("cancelled"));
+      if (["late-cancel", "disconnected", "reconnected"].includes(kind)) f.runtime.verifyRecipient.mockImplementationOnce(async () => {
+        if (kind === "late-cancel") controller.abort(new Error("cancelled"));
+        else { await driver.disconnect(); if (kind === "reconnected") await driver.connect("!room", signal()); }
+        return {} as never;
+      });
+      const pending = driver.verifyRecipient(reference, controller.signal);
+      if (kind === "ready") { expect(await pending).toMatchObject({ userId: "@owner:example.org" }); expect(f.runtime.verify).not.toHaveBeenCalled(); }
+      else await expect(pending).rejects.toThrow(kind === "unavailable" ? "unavailable" : kind.includes("cancel") ? "cancelled" : "changed");
     } finally { await driver.close(); }
   });
 });

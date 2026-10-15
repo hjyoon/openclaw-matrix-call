@@ -36,17 +36,27 @@ export async function startBrowserWorker(env: NodeJS.ProcessEnv = process.env) {
   const outbound = ports ? {
     async dial(request: MediaDialRequest, signal: AbortSignal) {
       opening = true;
+      let stage = "connecting";
+      const report = (next: "connecting" | "waiting-answer" | "synthesizing" | "publishing" | "connected"): void => { stage = next; console.info(JSON.stringify({ event: "browser-outbound-stage", stage })); };
       try {
+        report("connecting");
         await voice!.endSession();
         voice = request.selfCall ? makeVoice([request.recipientId], [request.roomId]) : makeVoice();
         await driver.connect(request.roomId, signal, { recipientId: request.recipientId, ringTimeoutMs: request.ringTimeoutMs, ...(request.selfCall === undefined ? {} : { selfCall: request.selfCall }) });
+        report("waiting-answer");
         const reference = await driver.waitForRecipient(request.recipientId, signal);
-        await speakReply(request.message, { synthesis: ports.speech, transport: driver, verify: async () => {
-          const proof = await driver.verify(reference, signal);
-          if (proof.userId !== request.recipientId) throw new Error("Outbound recipient identity changed");
-          return proof;
-        } }, signal);
-      } finally { opening = false; }
+        await speakReply(request.message, {
+          synthesis: { synthesize: async (text, signal) => { report("synthesizing"); return ports.speech.synthesize(text, signal); } },
+          transport: { publish: async (audio, signal) => { report("publishing"); await driver.publish(audio, signal); } },
+          verify: async () => {
+            const proof = await driver.verifyRecipient(reference, signal);
+            if (proof.userId !== request.recipientId) throw new Error("Outbound recipient identity changed");
+            return proof;
+          },
+        }, signal);
+        report("connected");
+      } catch (error) { console.info(JSON.stringify({ event: "browser-outbound-failed", stage })); throw error; }
+      finally { opening = false; }
     },
     async recipientRoom(recipientId: string, preferredRoomId: string | undefined, signal: AbortSignal) {
       try { return await driver.recipientRoom(recipientId, preferredRoomId, signal); }
