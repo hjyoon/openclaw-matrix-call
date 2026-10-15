@@ -25,3 +25,5 @@ Alpha.3 adds opt-in [authenticated self-calls](self-calls.md). Every admitted Ma
 The [installed alpha.3 self-call deployment](installed-self-calls.md) enables this policy for ordinary Matrix requesters while preserving existing administrator permissions and device verification.
 
 Alpha.4 additionally supports `channels.matrix-call.thirdPartyCalls: true` with `selfCalls: true`. An admitted requester can select another exact Matrix ID; control belongs to the requester and delegated voice participation belongs to the recipient. The existing signed alpha.3 worker protocol remains compatible. No administrator enrollment is required for either person.
+
+The current [installed alpha.4 deployment](installed-third-party-calls.md) enables ordinary-user third-party requests, with existing recipient device verification and separate requester/callee authority.

@@ -55,3 +55,5 @@ The worker handles one call at a time. Other attempts receive `busy`. Scheduling
 The runtime suite passes 1,293 tests with 100% per-file statements, branches, functions and lines. Tests cover ordinary third-party requests, distinct requester/callee authority, unrelated-user status/leave rejection, self-only default behavior and missing recipient setup before dialing.
 
 `MATRIX_CALL_SELF_CALLS=1 MATRIX_CALL_THIRD_PARTY_CALLS=1 pnpm verify:matrix-commands` checks an actual installed Gateway receiving ordinary-user Matrix requests, calling a third enrolled recipient's private room and allowing the requester to cancel through a model tool. Its chat, media and model fixtures do not prove real-client audio. The independent `pnpm verify:matrix-self-calls` check covers real MatrixRTC ringing, encrypted opening audio, subsequent non-owner voice input/reply, recipient hangup and unanswered cleanup against isolated infrastructure and authenticated speech/model fixtures.
+
+The [installed alpha.4 deployment](installed-third-party-calls.md) records exact artifacts, preserved policy, successful readiness and remaining phone-test limits.

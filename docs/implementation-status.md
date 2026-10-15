@@ -10,7 +10,7 @@ Updated: 2026-10-15. This is the current development baseline; earlier server se
 - Matrix compatibility is defined by protocol capabilities. Element is one client to test. MatrixRTC and legacy Matrix VoIP need separate adapters.
 - Runtime coverage requires 100% statements, branches, functions, and lines per file. Coverage does not prove real encrypted audio interoperability.
 - Administrator policy accepts explicit owners, rooms and logical agents. The unpublished alpha.4 source supports opt-in ordinary-user self-calls and third-party calls with separate requester control and recipient voice scope; see [calling policy](self-calls.md).
-- The [first public alpha](publication-0.1.0-alpha.1.md) is distributed through ClawHub with paired GitHub assets. Subsequent unpublished candidates were installed on the operator's existing server; see [installed self-call policy](installed-self-calls.md). Public alpha.1 remains unchanged.
+- The [first public alpha](publication-0.1.0-alpha.1.md) is distributed through ClawHub with paired GitHub assets. Subsequent unpublished candidates were installed on the operator's existing server; see [installed ordinary-user calling](installed-third-party-calls.md). Public alpha.1 remains unchanged.
 
 Decision rationale and changes are recorded in [ADRs](adr/README.md). This status document describes implementation evidence, not a second set of development instructions.
 

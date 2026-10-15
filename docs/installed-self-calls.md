@@ -1,5 +1,7 @@
 # Installed self-call policy
 
+This records the alpha.3 installation. The current [alpha.4 deployment](installed-third-party-calls.md) additionally permits explicitly selected third-party recipients and retains the workers described here.
+
 On 2026-10-15, the operator enabled self-calling for ordinary Matrix users on the existing Docker deployment. This uses an unpublished alpha.3 native package and speech image from `016265033f5721b445f9596505449e44932df4bd`, plus browser runtime bundles from `8c31337695727fddcaadbe89f34c63f08859edaf` to release the shared call slot when the answered recipient leaves.
 
 The native channel and browser both have `selfCalls: true`. Matrix DMs are open with per-room sessions. Group sender admission is open, with mentions required in ordinary rooms and bot threads. The private administrative room retains its owner-only sender rule. Control owners, command owners, existing owner device pins and model authentication were preserved. The requested scope is calls to the authenticated requester, not calls to arbitrary third parties.
